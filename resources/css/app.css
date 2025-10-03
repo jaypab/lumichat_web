@@ -1,0 +1,490 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =========================================================
+   Base helpers
+   ========================================================= */
+[x-cloak]{ display:none !important; }
+
+/* =========================================================
+   0) TOKENS
+   ========================================================= */
+:root{
+  --sidebar-w: 256px;
+  --gutter-x: 1rem;
+  --hamburger-size: 40px;
+  --hamburger-gap: 12px;
+
+  /* Chat bubble target width (legacy, v1 bubbles) */
+  --bubble-w: 620px;
+
+  --sidebar-grad-a: #4f46e5;
+  --sidebar-grad-b: #7c3aed;
+}
+@media (min-width:640px){ :root{ --gutter-x: 1.25rem; } }
+@media (min-width:1024px){ :root{ --gutter-x: 1.5rem; } }
+
+/* =========================================================
+   1) GLOBAL
+   ========================================================= */
+.layout-wrapper{ display:flex; min-height:100vh; }
+body{ @apply bg-gray-50 text-gray-900; }
+.dark body{ @apply bg-gray-900 text-gray-100; }
+
+/* =========================================================
+   2) SIDEBAR (IDs preserved)
+   ========================================================= */
+#sidebar.sidebar-shell{
+  position:fixed; inset:0 auto 0 0; z-index:40;
+  width:var(--sidebar-w); height:100vh;
+  display:flex; flex-direction:column;
+  border-radius:0 0 12px 0;
+  background:linear-gradient(135deg, var(--sidebar-grad-a), var(--sidebar-grad-b));
+  background-size:200% 200%;
+  animation:sidebarGradient 14s ease infinite;
+  color:#fff;
+  box-shadow:0 10px 30px rgba(0,0,0,.18);
+  transition:transform .30s ease-in-out;
+}
+@keyframes sidebarGradient{
+  0%{ background-position:0% 50%; }
+  50%{ background-position:100% 50%; }
+  100%{ background-position:0% 50%; }
+}
+body.sidebar-hidden #sidebar{ transform:translateX(calc(-1 * var(--sidebar-w))); }
+
+.sidebar-x{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:36px; height:36px; border-radius:.5rem;
+  color:#fff; background:rgba(255,255,255,.12);
+  transition:background .2s, transform .2s;
+}
+.sidebar-x:hover{ background:rgba(255,255,255,.2); transform:scale(1.05); }
+
+.section-label{
+  font-size:.72rem; letter-spacing:.18em; font-weight:800;
+  color:rgba(255,255,255,.85); padding:0 .5rem; margin-bottom:.5rem;
+}
+
+/* Fixed icon sizing */
+.sidebar-icon{
+  width:22px !important; height:22px !important;
+  flex-shrink:0; object-fit:contain; display:inline-block;
+}
+.icon-white{ filter:invert(1) brightness(1.15); }
+.logout-icon{ filter:none !important; }
+
+.nav-item{
+  display:flex; align-items:center; gap:.75rem;
+  padding:.75rem 1rem; border-radius:.75rem;
+  border:1px solid transparent; color:#fff;
+  transition:background .2s, border-color .2s;
+}
+.nav-item:hover{ background:rgba(255,255,255,.12); }
+.nav-item--active{ background:rgba(255,255,255,.22); border-color:rgba(255,255,255,.18); }
+
+.nav-pill{
+  display:flex; align-items:center; gap:.75rem;
+  padding:.75rem 1rem; border-radius:.9rem;
+  background:rgba(255,255,255,.18);
+  transition:background .2s, transform .15s;
+}
+.nav-pill:hover{ background:rgba(255,255,255,.24); transform:translateY(-1px); }
+.nav-pill--danger{ background:rgba(244,63,94,.15); color:#ffe4e6; }
+.nav-pill--danger:hover{ background:rgba(244,63,94,.22); }
+
+/* =========================================================
+   3) MAIN CONTENT + HEADER
+   ========================================================= */
+.main-content{
+  flex:1 1 auto; display:flex; flex-direction:column;
+  height:100vh; overflow:hidden;
+  margin-left:var(--sidebar-w);
+  transition:margin-left .30s ease-in-out;
+}
+@media (max-width:1024px){ .main-content{ margin-left:0; } }
+body.sidebar-hidden .main-content{ margin-left:0; }
+
+.header-shell{
+  position:sticky; top:0; z-index:60;
+  backdrop-filter:saturate(180%) blur(8px);
+  @apply bg-white/90 dark:bg-gray-900/80 border-b border-gray-100 dark:border-gray-700;
+}
+.header-inner{
+  height:64px; display:flex; align-items:center; justify-content:space-between; gap:.75rem;
+  padding-left:var(--gutter-x); padding-right:var(--gutter-x);
+}
+
+/* =========================================================
+   4) HAMBURGER + Header new chat
+   ========================================================= */
+.hamburger-btn.header-only{
+  display:none; align-items:center; justify-content:center;
+  width:var(--hamburger-size); height:var(--hamburger-size);
+  border-radius:.75rem; background:#fff; color:#374151;
+  box-shadow:0 2px 10px rgba(0,0,0,.08);
+  transition:transform .15s ease;
+}
+.hamburger-btn.header-only:hover{ transform:scale(1.04); }
+.dark .hamburger-btn.header-only{ background:#111827; color:#e5e7eb; box-shadow:0 2px 10px rgba(0,0,0,.35); }
+body.sidebar-hidden .hamburger-btn.header-only{ display:inline-flex; }
+
+.header-newchat{
+  opacity:0; visibility:hidden; transform:translateY(-4px) scale(.98);
+  transition:opacity .22s ease, transform .22s ease, visibility .22s ease;
+}
+body.sidebar-hidden .header-newchat{
+  visibility:visible; opacity:1; transform:translateY(0) scale(1);
+  animation:newchat-pop .9s cubic-bezier(.2,.8,.2,1) .22s 1;
+}
+@keyframes newchat-pop{
+  0%{ transform:translateY(0) scale(1); }
+  60%{ transform:translateY(0) scale(1.04); }
+  100%{ transform:translateY(0) scale(1); }
+}
+
+/* =========================================================
+   4.2) CHAT PANEL ENTRANCE / EXIT
+   ========================================================= */
+.chat-appear{ animation:chatFadeSlide .9s cubic-bezier(.25,.8,.25,1); }
+@keyframes chatFadeSlide{
+  0%{ opacity:0; transform:translateY(24px) scale(.96); }
+  50%{ opacity:1; transform:translateY(-4px) scale(1.02); }
+  100%{ opacity:1; transform:translateY(0) scale(1); }
+}
+.chat-disappear{ animation:chatFadeOut .9s cubic-bezier(.4,0,.2,1) forwards; }
+@keyframes chatFadeOut{
+  0%{ opacity:1; transform:translateY(0) scale(1); }
+  40%{ opacity:.8; transform:translateY(8px) scale(.98); }
+  100%{ opacity:0; transform:translateY(20px) scale(.95); }
+}
+
+/* =========================================================
+   5) CHAT METRICS + BUBBLE HARD LOCK (legacy v1)
+   ========================================================= */
+
+/* Hard-lock chat font metrics to Inter */
+.chat-panel,
+#chat-messages,
+#chat-messages .bubble{
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+               Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif !important;
+  font-size: 15px !important;
+  line-height: 22px !important;
+  letter-spacing: 0 !important;
+}
+
+/* v1 default lock */
+/* legacy lock – exclude v2 */
+html body #chat-messages .bubble:not(.lb2){
+  display:inline-block !important;
+  box-sizing:border-box !important;
+  width:auto !important;
+  max-width:var(--bubble-w) !important;
+  min-height:0 !important;
+  padding:8px 12px !important;
+  margin:0 !important;
+  white-space:pre-wrap !important;
+  word-break:normal !important;
+  overflow-wrap:anywhere !important;
+}
+
+/* also neutralizer */
+html body #chat-messages .bubble[class*="max-w-"]:not(.lb2),
+html body #chat-messages .bubble[class*="w-"]:not(.lb2){
+  width:auto !important;
+  max-width:var(--bubble-w) !important;
+}
+
+/* NOTE: v1 kept bubble-tight behavior */
+#chat-messages .bubble.bubble-tight{
+  font-size: inherit !important;
+  line-height: inherit !important;
+  padding: inherit !important;
+}
+
+/* Theme skins */
+.bubble-ai{ @apply bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100; }
+.bubble-user{ @apply bg-indigo-600 text-white dark:bg-indigo-500; }
+
+/* =========================================================
+   5.1) BUBBLE v2 (scoped & editable)  <<<< YOU WILL TUNE THIS
+   ========================================================= */
+
+/* One knob to change width globally for v2 bubbles */
+:root{ --lb-width: 520px; } /* EDIT HERE: 480px, 560px, etc. */
+
+#lb-scope .lb2{
+  /* shrink-to-content, capped by px OR characters */
+  width: -moz-fit-content !important;
+  width: fit-content !important;
+  max-width: min(var(--lb-width), 46ch) !important;
+
+  /* alignment + spacing */
+  text-align: left !important;
+  padding: 6px 10px !important;
+
+  /* stability */
+  display: inline-block !important;
+  box-sizing: border-box !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  white-space: pre-wrap !important;
+  word-break: normal !important;
+  overflow-wrap: anywhere !important;
+
+  /* default on left column */
+  align-self: flex-start !important;
+}
+
+/* user messages still on the right, but keep shrink behavior */
+#lb-scope .msg-row.items-end .lb2,
+#lb-scope .msg-row.text-right .lb2{
+  align-self: flex-end !important;
+}
+
+/* ensure bubble-tight doesn't wipe our padding/metrics */
+#lb-scope .lb2.bubble-tight{
+  padding: 6px 10px !important;
+  font-size: 15px !important;
+  line-height: 22px !important;
+}
+
+/* =========================================================
+   6) PANEL SCROLL
+   ========================================================= */
+.panel-scroll{ height:calc(100vh - 64px); overflow:auto; padding:1rem; }
+@media (min-width:640px){ .panel-scroll{ padding:1.25rem; } }
+@media (min-width:1024px){ .panel-scroll{ padding:1.5rem; } }
+
+/* =========================================================
+   7) TYPING DOTS (generic)
+   ========================================================= */
+@keyframes typing-bounce{ 0%,80%,100%{ transform:scale(.8); opacity:.55; } 40%{ transform:scale(1.2); opacity:1; } }
+.bubble-ai.is-typing{
+  display:inline-flex; align-items:center; gap:.35rem;
+  padding:.45rem .6rem; min-height:unset; max-width:fit-content;
+  color:#6b7280;
+}
+.bubble-ai .dot{
+  width:6px; height:6px; border-radius:9999px; background-color:currentColor;
+  display:inline-block; animation:typing-bounce 1.15s infinite;
+}
+.bubble-ai .dot:nth-child(2){ animation-delay:.15s; }
+.bubble-ai .dot:nth-child(3){ animation-delay:.30s; }
+
+/* =========================================================
+   8) DROPDOWN
+   ========================================================= */
+.dropdown{
+  position:absolute; right:0; margin-top:.5rem; width:14rem; border-radius:.75rem; overflow:hidden;
+  @apply hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg;
+}
+.dropdown-item{
+  display:block; padding:.5rem .75rem; font-size:.9rem;
+  @apply text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700;
+}
+.dropdown-sep{ @apply my-1 border-t border-gray-100 dark:border-gray-700; }
+
+/* =========================================================
+   9) THEME HOOKS / BUTTONS
+   ========================================================= */
+.card-shell{ @apply bg-white border border-gray-200 rounded-2xl shadow-sm dark:bg-gray-800 dark:border-gray-700; }
+.title-dynamic{ @apply text-gray-900 dark:text-gray-100; }
+.muted-dynamic{ @apply text-gray-500 dark:text-gray-400; }
+.btn-primary{ @apply inline-flex items-center justify-center rounded-xl px-5 py-2.5 font-semibold bg-indigo-600 text-white hover:bg-indigo-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500; }
+.btn-secondary{ @apply inline-flex items-center justify-center rounded-xl px-4 py-2.5 font-semibold bg-white text-gray-800 border border-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-700 dark:hover:bg-gray-700; }
+.input-dynamic{ @apply rounded-lg border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-500; }
+
+/* =========================================================
+   10) CHAT ROWS (stable layout)
+   ========================================================= */
+.msg-row{
+  display:flex; flex-direction:column;
+  width:100%; max-width:100%; min-width:0;
+}
+.msg-row .bubble{ display:inline-block; white-space:pre-wrap; word-break:normal; overflow-wrap:anywhere; }
+
+/* =========================================================
+   11) COMPOSER
+   ========================================================= */
+#chat-form .group{ position:relative; height:48px; border-radius:9999px; }
+#chat-form textarea{
+  height:100%; min-height:48px; line-height:1.5;
+  padding-top:10px; padding-bottom:10px; padding-right:7.5rem; resize:none;
+}
+#char-counter{ pointer-events:none; }
+#chat-form .group{ box-shadow:0 1px 0 rgba(99,102,241,.12), 0 1px 2px rgba(0,0,0,.04); }
+
+/* =========================================================
+   12) SCROLLBAR POLISH
+   ========================================================= */
+#chat-messages{ scrollbar-width:thin; scrollbar-color:rgba(99,102,241,.35) transparent; }
+#chat-messages::-webkit-scrollbar{ height:8px; width:8px; }
+#chat-messages::-webkit-scrollbar-thumb{ background:rgba(99,102,241,.35); border-radius:9999px; }
+#chat-messages::-webkit-scrollbar-track{ background:transparent; }
+
+/* =========================================================
+   13) STUDENT GLOBAL TOGGLES
+   ========================================================= */
+html[data-app="student"].reduce-motion *, 
+html[data-app="student"].reduce-motion *::before, 
+html[data-app="student"].reduce-motion *::after{
+  animation:none !important; transition:none !important; scroll-behavior:auto !important;
+}
+html[data-app="student"].font-sm body{ font-size:15px; }
+html[data-app="student"].font-md body{ font-size:16px; }
+html[data-app="student"].font-lg body{ font-size:17.5px; }
+html[data-app="student"].compact .p-6{ padding:1rem !important; }
+html[data-app="student"].compact .px-6{ padding-left:1rem !important; padding-right:1rem !important; }
+html[data-app="student"].compact .py-6{ padding-top:1rem !important; padding-bottom:1rem !important; }
+html[data-app="student"].compact .h-11{ height:2.5rem !important; }
+
+/* =========================================================
+   14) FORM INPUT POLISH
+   ========================================================= */
+@layer components{
+  .select-ui{
+    @apply h-11 w-full rounded-xl border border-gray-300 bg-white pl-3 pr-10 text-[15px] text-gray-900 shadow-sm transition
+           focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 dark:bg-gray-900 dark:border-gray-600 dark:text-gray-100;
+    line-height:normal; appearance:none; -webkit-appearance:none; -moz-appearance:none;
+    background-repeat:no-repeat; background-position:right .65rem center; background-size:16px 16px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' viewBox='0 0 24 24'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  }
+  .dark .select-ui{
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' viewBox='0 0 24 24'%3E%3Cpath stroke='%23d1d5db' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  }
+  .select-ui:disabled{ @apply bg-gray-50 text-gray-400 dark:bg-gray-800 dark:text-gray-500; filter:saturate(.9); }
+  .select-ui::-ms-expand{ display:none; }
+  .select-ui option{ @apply text-gray-900 dark:text-gray-100; }
+
+  .input-ui{
+    @apply h-11 w-full rounded-xl border border-gray-300 bg-white px-3 text-[15px] text-gray-900 shadow-sm
+           transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 dark:bg-gray-900 dark:border-gray-600 dark:text-gray-100;
+    line-height:1.25rem;
+  }
+
+  /* Pretty date input with custom icon */
+  input[type="date"].input-ui{
+    padding-right:2.5rem; background-repeat:no-repeat; background-position:right .7rem center; background-size:18px 18px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none'%3E%3Crect x='3' y='4' width='18' height='17' rx='3' stroke='%236b7280' stroke-width='1.6'/%3E%3Cpath d='M8 2v4M16 2v4M3 9h18' stroke='%236b7280' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  }
+  .dark input[type="date"].input-ui{
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none'%3E%3Crect x='3' y='4' width='18' height='17' rx='3' stroke='%23d1d5db' stroke-width='1.6'/%3E%3Cpath d='M8 2v4M16 2v4M3 9h18' stroke='%23d1d5db' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  }
+  input[type="date"].input-ui::-webkit-calendar-picker-indicator{ opacity:0; cursor:pointer; margin-right:-2px; }
+}
+
+/* =========================================================
+   15) TIME PILL + PROFILE CARD helpers
+   ========================================================= */
+@layer components{
+  .time-pill{
+    @apply inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium
+           text-gray-700 shadow-sm transition hover:bg-gray-50 hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30
+           dark:bg-gray-900 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800;
+  }
+  .time-pill--selected{ @apply border-indigo-600 bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:border-indigo-600; }
+
+  .form-head{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:.75rem; margin-bottom:.75rem; min-height:44px;
+  }
+  .btn-size{
+    display:inline-flex; align-items:center; justify-content:center;
+    height:40px; padding:0 1rem; min-width:116px; border-radius:.75rem;
+  }
+  .btn-press{ transition:transform .12s ease, box-shadow .12s ease; }
+  .btn-press:active{ transform:translateY(1px) scale(.985); }
+}
+
+/* =========================================================
+   16) ADMIN RAIL (parity styling)
+   ========================================================= */
+#adminSidebar{
+  border-radius:0 0 12px 0 !important;
+  box-shadow:0 10px 30px rgba(0,0,0,.18) !important;
+  background-color:#4f46e5 !important;
+  background-image:linear-gradient(135deg, var(--sidebar-grad-a), var(--sidebar-grad-b)) !important;
+  background-size:200% 200% !important;
+  animation:sidebarGradient 14s ease infinite !important;
+}
+#adminSidebar .nav-item{
+  display:flex; align-items:center; gap:.75rem; padding:.75rem 1rem !important;
+  border-radius:.9rem !important; transition:background .2s, transform .12s ease; position:relative;
+}
+#adminSidebar .nav-item:hover{ background:rgba(255,255,255,.14) !important; transform:translateY(-1px); }
+#adminSidebar .nav-item.is-active{
+  background:rgba(255,255,255,.22) !important; border:1px solid rgba(255,255,255,.18) !important;
+  box-shadow:0 4px 12px rgba(0,0,0,.08);
+}
+#adminSidebar .nav-item.is-active::before{
+  content:""; position:absolute; left:10px; top:50%; transform:translateY(-50%);
+  width:4px; height:26px; border-radius:999px; background:rgba(255,255,255,.96);
+}
+#adminSidebar .nav-item > span.inline-flex{ border-radius:.75rem !important; background:rgba(255,255,255,.1) !important; }
+#adminSidebar .nav-item.is-active > span.inline-flex{ background:rgba(255,255,255,.2) !important; }
+#adminSidebar .sidebar-icon{
+  width:22px !important; height:22px !important; object-fit:contain;
+  -webkit-filter:invert(1) brightness(1.15); filter:invert(1) brightness(1.15);
+}
+#adminSidebar .logout-icon{ filter:none !important; }
+#adminSidebar #railScroll::-webkit-scrollbar{ width:10px; }
+#adminSidebar #railScroll::-webkit-scrollbar-thumb{
+  background:rgba(255,255,255,.65); border-radius:9999px; border:2px solid rgba(255,255,255,.25); background-clip:padding-box;
+}
+#adminSidebar #railScroll{ scrollbar-color:rgba(255,255,255,.7) transparent; }
+
+/* Collapsed state polish */
+@media (min-width:1024px){
+  body.admin-collapsed #adminSidebar .rail-header{ justify-content:center !important; gap:.5rem; }
+  body.admin-collapsed #adminSidebar .rail-header img{ width:44px !important; height:44px !important; border-radius:9999px !important; }
+  body.admin-collapsed #adminSidebar a.nav-item{ margin:.45rem 0 !important; padding:.5rem 0 !important; }
+  body.admin-collapsed #adminSidebar a.nav-item > span.inline-flex{
+    width:3rem !important; height:3rem !important; border-radius:.9rem !important; background:rgba(255,255,255,.12) !important;
+  }
+  body.admin-collapsed #adminSidebar a.nav-item img.sidebar-icon{
+    width:26px !important; height:26px !important; -webkit-filter:invert(1) brightness(1.1); filter:invert(1) brightness(1.1);
+  }
+  body.admin-collapsed #adminSidebar a.nav-item:hover > span.inline-flex{
+    background:rgba(255,255,255,.18) !important; transform:translateY(-1px);
+    transition:transform .12s ease, background .2s ease;
+  }
+  body.admin-collapsed #adminSidebar a.nav-item.is-active::before{ display:none !important; }
+  body.admin-collapsed #adminSidebar a.nav-item.is-active > span.inline-flex{ background:rgba(255,255,255,.22) !important; }
+}
+
+/* =========================================================
+   17) DASHBOARD ENTRANCE ANIMATIONS
+   ========================================================= */
+.animate-fadeup{
+  opacity:0; transform:translateY(12px) scale(.98);
+  animation:fadeUp .6s cubic-bezier(.22,1,.36,1) forwards; will-change:transform, opacity;
+}
+@keyframes fadeUp{
+  0%{ opacity:0; transform:translateY(12px) scale(.96); }
+  70%{ opacity:1; transform:translateY(-2px) scale(1.02); }
+  100%{ opacity:1; transform:translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion:reduce){
+  .animate-fadeup{ animation:none !important; opacity:1 !important; transform:none !important; }
+}
+.stagger-list > *{ opacity:0; transform:translateY(6px); animation:fadeUp .5s ease forwards; }
+.stagger-60 > *{ animation-delay:0ms; }
+.stagger-60 > *:nth-child(2){ animation-delay:60ms; }
+.stagger-60 > *:nth-child(3){ animation-delay:120ms; }
+.stagger-60 > *:nth-child(4){ animation-delay:180ms; }
+.stagger-60 > *:nth-child(5){ animation-delay:240ms; }
+.stagger-60 > *:nth-child(6){ animation-delay:300ms; }
+.stagger-60 > *:nth-child(7){ animation-delay:360ms; }
+.stagger-60 > *:nth-child(8){ animation-delay:420ms; }
+
+.stagger-80 > *{ animation-delay:0ms; }
+.stagger-80 > *:nth-child(2){ animation-delay:80ms; }
+.stagger-80 > *:nth-child(3){ animation-delay:160ms; }
+.stagger-80 > *:nth-child(4){ animation-delay:240ms; }
+.stagger-80 > *:nth-child(5){ animation-delay:320ms; }
+.stagger-80 > *:nth-child(6){ animation-delay:400ms; }
+.stagger-80 > *:nth-child(7){ animation-delay:480ms; }
+.stagger-80 > *:nth-child(8){ animation-delay:560ms; }
