@@ -42,31 +42,41 @@
   @endphp
 
   @if($isStudent)
-    <script>
-      (() => {
-        try {
-          const root = document.documentElement;
-          root.setAttribute('data-app','student');
-          const get = k => localStorage.getItem(k);
+  <script>
+    (() => {
+      try {
+        const root = document.documentElement;
+        root.setAttribute('data-app','student');
+        const get = k => localStorage.getItem(k);
 
-          // Dark
-          const dark = get('lumichat_dark');
-          const wantsDark = dark === '1' || (!dark && matchMedia('(prefers-color-scheme: dark)').matches);
-          root.classList.toggle('dark', !!wantsDark);
+        // ---- Dark (explicit only; default LIGHT) ----
+        let dark = get('lumichat_dark');
+        if (dark === null) {
+          // first load → pin to light
+          localStorage.setItem('lumichat_dark','0');
+          dark = '0';
+        }
+        // normalize legacy true/false
+        if (dark === 'true') { localStorage.setItem('lumichat_dark','1'); dark = '1'; }
+        if (dark === 'false'){ localStorage.setItem('lumichat_dark','0'); dark = '0'; }
 
-          // Reduce motion
-          root.classList.toggle('reduce-motion', get('lumichat_reduce_motion') === '1');
+        const wantsDark = dark === '1';
+        root.classList.toggle('dark', wantsDark);
 
-          // Font size
-          const fs = get('lumichat_font_size') || 'md';
-          root.classList.add('font-' + (['sm','md','lg'].includes(fs) ? fs : 'md'));
+        // Reduce motion
+        root.classList.toggle('reduce-motion', get('lumichat_reduce_motion') === '1');
 
-          // Compact
-          root.classList.toggle('compact', get('lumichat_compact') === '1');
-        } catch(_) {}
-      })();
-    </script>
-  @else
+        // Font size
+        const fs = get('lumichat_font_size') || 'md';
+        root.classList.add('font-' + (['sm','md','lg'].includes(fs) ? fs : 'md'));
+
+        // Compact
+        root.classList.toggle('compact', get('lumichat_compact') === '1');
+      } catch(_) {}
+    })();
+  </script>
+@else
+
     <script>
       try{
         const pref = localStorage.getItem('lumichat_dark');
