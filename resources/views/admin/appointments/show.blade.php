@@ -1,6 +1,7 @@
 {{-- resources/views/admin/appointments/show.blade.php --}}
 @extends('layouts.admin')
-@section('title', 'Admin · Appointment #'.$appointment->id)
+@section('title', 'Admin - Appointment #'.$appointment->id)
+@section('page_title', 'Appointment Summary') 
 
 @section('content')
 @php

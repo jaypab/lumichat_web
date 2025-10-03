@@ -1,6 +1,7 @@
 {{-- resources/views/admin/appointments/follow-up.blade.php --}}
 @extends('layouts.admin')
 @section('title', 'Create Follow-up · Appointment #'.$appointment->id)
+@section('page_title', 'Create Follow Up') 
 
 @section('content')
 @php

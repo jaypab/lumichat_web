@@ -1,6 +1,7 @@
 {{-- resources/views/admin/diagnosis-reports/index.blade.php --}}
 @extends('layouts.admin')
-@section('title','Admin · Diagnosis Reports')
+@section('title','Admin - Diagnosis Reports')
+@section('page_title', 'Diagnosis Reports') 
 
 @section('content')
 @php

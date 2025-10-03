@@ -1,6 +1,9 @@
 {{-- resources/views/chat.blade.php --}}
 @extends('layouts.app')
-@section('title', 'Chat')
+@section('tab_title', 'Lumi - Chat Interface')   {{-- browser tab text --}}
+@section('page_title', 'Chat')
+
+@section('content')
 
 @section('content')
 <meta name="csrf-token" content="{{ csrf_token() }}">

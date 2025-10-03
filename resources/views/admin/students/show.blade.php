@@ -1,5 +1,6 @@
 @extends('layouts.admin')
-@section('title', 'Student Details')
+@section('title', 'Admin - Student Details')
+@section('page_title', 'Student Details') 
 
 @section('content')
 <div class="max-w-7xl mx-auto p-6 space-y-6">

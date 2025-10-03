@@ -1,5 +1,6 @@
 @extends('layouts.admin')
-@section('title','Course Analytics • Details')
+@section('title','Admin - Course Details')
+@section('page_title', 'Course Analytics Summary') 
 
 @php
   // Prefer the ID passed by controller; fall back to route param or model property.

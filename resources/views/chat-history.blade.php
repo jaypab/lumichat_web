@@ -1,6 +1,7 @@
 @extends('layouts.app')
 
-@section('title', 'Chat History')
+@section('title', 'Lumi - Chat History')
+@section('page_title', 'Manage History')  
 
 @section('content')
 <div class="max-w-4xl mx-auto p-6 space-y-6">

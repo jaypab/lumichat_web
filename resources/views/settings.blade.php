@@ -1,5 +1,6 @@
 @extends('layouts.app')
-@section('title', 'Settings')
+@section('title', 'Lumi - Settings')
+@section('page_title', 'Settings')  
 
 @section('content')
 <meta name="csrf-token" content="{{ csrf_token() }}">

@@ -4,12 +4,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>@yield('title','Dashboard') • LumiCHAT</title>
+  <title>{{ trim($__env->yieldContent('title')) ?: 'Admin • Dashboard' }}</title>
   <!-- SweetAlert2 -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
   @vite(['resources/css/app.css','resources/js/app.js'])
-
+  @include('layouts.partials.favicons')
   <style>
     :root{
       --rail-expanded: 18rem;   /* 288px */
@@ -286,7 +286,7 @@
                     d="M4 6h16M4 12h16M4 18h16"/>
             </svg>
           </button>
-          <h1 class="text-lg font-semibold">@yield('title','Dashboard')</h1>
+          <h1 class="text-lg font-semibold">@yield('page_title','Dashboard')</h1>
         </div>
         <div class="text-sm text-slate-600">{{ auth()->user()->name ?? 'Master Admin' }}</div>
       </div>
