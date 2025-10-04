@@ -1,6 +1,6 @@
 {{-- resources/views/admin/appointments/assign.blade.php --}}
 @extends('layouts.admin')
-@section('title','Assign Counselor · Appointment #'.$appointment->id)
+@section('title','Assign - Appointment #'.$appointment->id)
 
 @section('content')
 @php

@@ -1,6 +1,8 @@
-{{-- resources/views/appointment/history.blade.php --}}
+
 @extends('layouts.app')
-@section('title','Appointment History')
+
+@section('title', 'Lumi - Appointment History')
+@section('page_title', 'Manage History')  
 
 @php
   use Illuminate\Support\Str;

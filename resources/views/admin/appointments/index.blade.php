@@ -1,6 +1,7 @@
 {{-- resources/views/admin/appointments/index.blade.php --}}
 @extends('layouts.admin')
-@section('title','Admin · Appointments')
+@section('title','Admin - Appointments')
+@section('page_title', 'Manage Appointments') 
 
 @php
   use Carbon\Carbon;

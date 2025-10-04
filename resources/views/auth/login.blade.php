@@ -18,7 +18,7 @@
            class="relative w-14 h-14 rounded-full mb-3 shadow-md">
     </div>
     <h2 class="text-2xl font-bold text-gray-800 font-poppins">LumiChat</h2>
-    <p class="text-sm text-gray-500">Your mental health support companion</p>
+    <p class="text-sm">Your mental health support companion</p>
   </div>
 
   {{-- ===== UI styles: checkbox, eye toggle, loader, and SweetAlert theme ===== --}}

@@ -1,5 +1,6 @@
 @extends('layouts.admin')
-@section('title','Diagnosis Report Details')
+@section('title','Admin - Diagnosis Report')
+@section('page_title', 'Diagnosis Report Information') 
 
 @section('content')
 @php

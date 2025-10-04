@@ -1,5 +1,6 @@
 @extends('layouts.admin')
-@section('title','Admin · Course Analytics')
+@section('title','Admin - Course Analytics')
+@section('page_title', 'Course Analytics') 
 
 @section('content')
 <div class="max-w-7xl mx-auto space-y-6">

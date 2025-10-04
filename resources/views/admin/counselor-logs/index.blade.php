@@ -1,5 +1,6 @@
 @extends('layouts.admin')
-@section('title','Admin · Counselors Logs')
+@section('title','Admin - Counselors Logs')
+@section('page_title', 'Counselors Logs') 
 
 @section('content')
 @php

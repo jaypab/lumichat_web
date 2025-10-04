@@ -1,5 +1,6 @@
 @extends('layouts.admin')
-@section('title','Counselor Logs · '.$counselor->full_name)
+@section('title','Counselor Logs - '.$counselor->full_name)
+@section('page_title', 'Counselors Logs Summary') 
 
 @section('content')
 @php

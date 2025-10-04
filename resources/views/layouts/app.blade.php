@@ -2,9 +2,9 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
   <meta charset="utf-8" />
-  <title>{{ trim($__env->yieldContent('title')) ?: 'LumiCHAT' }}</title>
+  <title>{{ trim($__env->yieldContent('title')) ?: 'Lumi - Chat Interface' }}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-
+  @include('layouts.partials.favicons')
   {{-- =========================================================
        0) CRITICAL FONT LOADING (prevents chat bubble resize)
       ========================================================= --}}
@@ -42,36 +42,50 @@
   @endphp
 
   @if($isStudent)
-    <script>
-      (() => {
-        try {
-          const root = document.documentElement;
-          root.setAttribute('data-app','student');
-          const get = k => localStorage.getItem(k);
+  <script>
+    (() => {
+      try {
+        const root = document.documentElement;
+        root.setAttribute('data-app','student');
+        const get = k => localStorage.getItem(k);
 
-          // Dark
-          const dark = get('lumichat_dark');
-          const wantsDark = dark === '1' || (!dark && matchMedia('(prefers-color-scheme: dark)').matches);
-          root.classList.toggle('dark', !!wantsDark);
+        // ---- Dark (explicit only; default LIGHT) ----
+        let dark = get('lumichat_dark');
+        if (dark === null) {
+          // first load → pin to light
+          localStorage.setItem('lumichat_dark','0');
+          dark = '0';
+        }
+        // normalize legacy true/false
+        if (dark === 'true') { localStorage.setItem('lumichat_dark','1'); dark = '1'; }
+        if (dark === 'false'){ localStorage.setItem('lumichat_dark','0'); dark = '0'; }
 
-          // Reduce motion
-          root.classList.toggle('reduce-motion', get('lumichat_reduce_motion') === '1');
+        const wantsDark = dark === '1';
+        root.classList.toggle('dark', wantsDark);
 
-          // Font size
-          const fs = get('lumichat_font_size') || 'md';
-          root.classList.add('font-' + (['sm','md','lg'].includes(fs) ? fs : 'md'));
+        // Reduce motion
+        root.classList.toggle('reduce-motion', get('lumichat_reduce_motion') === '1');
 
-          // Compact
-          root.classList.toggle('compact', get('lumichat_compact') === '1');
-        } catch(_) {}
-      })();
-    </script>
-  @else
+        // Font size
+        const fs = get('lumichat_font_size') || 'md';
+        root.classList.add('font-' + (['sm','md','lg'].includes(fs) ? fs : 'md'));
+
+        // Compact
+        root.classList.toggle('compact', get('lumichat_compact') === '1');
+      } catch(_) {}
+    })();
+  </script>
+@else
+
     <script>
       try{
-        const pref = localStorage.getItem('lumichat_dark');
-        const wantsDark = pref === '1' || (!pref && matchMedia('(prefers-color-scheme: dark)').matches);
-        if (wantsDark) document.documentElement.classList.add('dark');
+        let pref = localStorage.getItem('lumichat_dark');
+        if (pref === null) { localStorage.setItem('lumichat_dark','0'); pref = '0'; }
+        if (pref === 'true') { localStorage.setItem('lumichat_dark','1'); pref = '1'; }
+        if (pref === 'false'){ localStorage.setItem('lumichat_dark','0'); pref = '0'; }
+
+        const wantsDark = pref === '1';
+        document.documentElement.classList.toggle('dark', wantsDark);
       }catch(_){}
     </script>
   @endif
@@ -297,22 +311,25 @@
 
     {{-- ============================ MAIN CONTENT ============================ --}}
     @php
-      use Illuminate\Support\Str;
-      $yieldTitle = trim($__env->yieldContent('title'));
-      $routeName  = Route::currentRouteName();
-      $autoTitle  = '';
-      if (!$yieldTitle && $routeName) {
-        $autoTitle = Str::of($routeName)->replace(['.', '_'], ' ')->title();
-        $autoTitle = Str::of($autoTitle)->replace(['Index', 'Show'], '')->trim();
-      }
-      $pageTitle = $yieldTitle ?: ($autoTitle ?: 'LumiCHAT');
+    use Illuminate\Support\Str;
 
-      $initials = '';
-      if (Auth::check()) {
-        $parts = preg_split('/\s+/', trim(Auth::user()->name ?? ''));
-        $initials = strtoupper(collect($parts)->take(2)->map(fn($s)=>mb_substr($s,0,1))->implode(''));
-      }
-    @endphp
+    // Page heading (H1) comes from 'page_title' or falls back to route-derived title.
+    $yieldHeading = trim($__env->yieldContent('page_title'));   // <-- new section name
+    $routeName    = Route::currentRouteName();
+    $autoTitle    = '';
+    if (!$yieldHeading && $routeName) {
+      $autoTitle = Str::of($routeName)->replace(['.', '_'], ' ')->title();
+      $autoTitle = Str::of($autoTitle)->replace(['Index', 'Show'], '')->trim();
+    }
+    $pageTitle = $yieldHeading ?: ($autoTitle ?: 'LumiCHAT');
+
+    // User initials (unchanged)
+    $initials = '';
+    if (Auth::check()) {
+      $parts = preg_split('/\s+/', trim(Auth::user()->name ?? ''));
+      $initials = strtoupper(collect($parts)->take(2)->map(fn($s)=>mb_substr($s,0,1))->implode(''));
+    }
+  @endphp
 
     <div class="main-content">
       <header class="header-shell">

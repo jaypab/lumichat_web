@@ -1,6 +1,7 @@
 {{-- resources/views/profile/edit.blade.php --}}
 @extends('layouts.app')
-@section('title', 'Profile')
+@section('title', 'Lumi - Profile')
+@section('page_title', 'Profile Information')  
 
 @section('content')
 @php

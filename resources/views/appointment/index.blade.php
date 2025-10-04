@@ -1,6 +1,7 @@
-{{-- resources/views/appointment/index.blade.php --}}
 @extends('layouts.app')
-@section('title','Appointment')
+
+@section('title', 'Lumi - Appointment')
+@section('page_title', 'Appointment')  
 
 @section('content')
 <div class="mx-auto max-w-6xl px-4 pt-0 pb-8 animate-fadeup">

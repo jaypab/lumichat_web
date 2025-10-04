@@ -1,5 +1,6 @@
 @extends('layouts.admin')
-@section('title','Admin · Student Records')
+@section('title','Admin - Student Records')
+@section('page_title', 'Manage Students') 
 
 @section('content')
 <div class="max-w-7xl mx-auto p-6 space-y-6">

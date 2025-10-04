@@ -1,5 +1,6 @@
 @extends('layouts.admin')
-@section('title','Chatbot Session')
+@section('title','Admin - Chatbot Details')
+@section('page_title', 'Chatbot Session Summary') 
 
 @section('content')
 @php

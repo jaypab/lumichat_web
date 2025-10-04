@@ -1,5 +1,6 @@
 @extends('layouts.admin')
-@section('title','Admin · Chatbot Sessions')
+@section('title','Admin - Chatbot Sessions')
+@section('page_title', 'Chatbot Sessions') 
 
 @php
   $q       = $q ?? request('q', '');
