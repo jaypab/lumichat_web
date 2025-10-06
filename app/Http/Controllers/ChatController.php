@@ -168,6 +168,30 @@ HTML;
         return false;
     }
 
+    /**
+     * Build the full Rasa webhook URL from env/config safely.
+     * (No logic change to behavior, just centralized construction.)
+     */
+    private function rasaWebhookUrl(): string
+    {
+        // If services.rasa.url or RASA_URL is provided, prefer it.
+        $direct = (string) config('services.rasa.url', env('RASA_URL', ''));
+        if (!empty($direct)) {
+            return $direct;
+        }
+
+        $base  = rtrim((string) env('RASA_BASE_URL', 'http://127.0.0.1:5005'), '/');
+        $path  = '/' . ltrim((string) env('RASA_WEBHOOK_PATH', '/webhooks/rest/webhook'), '/');
+        $token = trim((string) env('RASA_TOKEN', ''), "\"'"); // strip accidental quotes
+
+        // Append token once
+        if ($token !== '') {
+            $sep = (str_contains($path, '?') ? '&' : '?');
+            return $base . $path . $sep . 'token=' . urlencode($token);
+        }
+        return $base . $path;
+    }
+
     /* =========================================================================
      | UI pages
      * =========================================================================*/
@@ -179,14 +203,11 @@ HTML;
         // If we were asked to start fresh (via New Chat), don't auto-attach latest.
         $startFresh = (bool) session('start_fresh', false);
         if ($startFresh) {
-            // Clear the flag so Home reloads normally next time (if you want Home to reuse latest).
             session()->forget('start_fresh');
         }
 
         $activeId = session('chat_session_id');
 
-        // If there's no active session AND we are NOT starting fresh, you may auto-attach latest.
-        // If you want Home to also always start fresh, just remove this whole block.
         if (!$activeId && !$startFresh) {
             $latest = ChatSession::where('user_id', $userId)->latest('updated_at')->first();
             if ($latest) {
@@ -195,7 +216,6 @@ HTML;
             }
         }
 
-        // If still no active session (fresh start), show empty chat list + greeting
         $showGreeting = !$activeId;
 
         $chats = collect();
@@ -216,11 +236,8 @@ HTML;
 
     public function newChat(Request $request)
     {
-        // Forget any active session and mark that we want a fresh blank screen.
         session()->forget('chat_session_id');
         session(['start_fresh' => true]);
-
-        // Redirect to chat.index; store() will create a new ChatSession on the first send.
         return redirect()->route('chat.index');
     }
 
@@ -293,12 +310,18 @@ HTML;
         }
 
         // 5) Call Rasa
-        $rasaUrl   = config('services.rasa.url', env('RASA_URL', 'http://127.0.0.1:5005/webhooks/rest/webhook'));
-        $metadata  = $this->buildRasaMetadata($sessionId, $lang, $msgRisk);
+        // FIX: central & safe URL + timeout/SSL from env (no logic change)
+        $rasaUrl  = $this->rasaWebhookUrl();
+        $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk);
         $botReplies = [];
 
+        $timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
+        $verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
+
+        $r = null; // prevent "undefined $r" in logger below
         try {
-            $r = Http::timeout(8)
+            $r = Http::timeout($timeout)
+                ->withOptions(['verify' => $verify])
                 ->withHeaders(['Accept' => 'application/json'])
                 ->post($rasaUrl, [
                     'sender'   => 'u_' . $userId . '_s_' . $sessionId,
@@ -317,21 +340,22 @@ HTML;
                 "It’s okay to feel that way. I’m here to listen. Would you like to share more? / Sige ra na, ania ko maminaw. Gusto nimo isulti pa ug dugang?"
             ];
         }
+
         if (empty($botReplies)) {
             $botReplies = [
                 "I’m here to support you. Would you like to share more about how you’re feeling? / Ania ko para motabang. Gusto nimo isulti pa ug dugang kung unsa imong gibati?"
             ];
             $this->logActivity('rasa_no_reply', 'Rasa returned no replies', $sessionId, [
-                'response' => $r->body() ?? null,
-            ]); 
+                'response' => is_object($r) ? $r->body() : null,
+            ]);
         } else {
             if (count($botReplies) > 3) {
                 $this->logActivity('rasa_multiple_replies', count($botReplies) . ' replies from Rasa', $sessionId, [
                     'sample'   => array_slice($botReplies, 0, 3),
                     'full'     => $botReplies,
                 ]);
+            }
         }
-    }
 
         // 6) Risk elevation + crisis prompt
         $current = $session->risk_level ?: 'low';
@@ -373,21 +397,17 @@ HTML;
         $link = Route::has('features.enable_appointment')
             ? URL::signedRoute('features.enable_appointment')
             : (Route::has('appointment.index')
-                ? route('appointment.index')    // <-- your /appointment page
+                ? route('appointment.index')
                 : url('/appointment'));
 
         $ctaHtml = '<a href="'.e($link).'">Book an appointment</a>';
 
         $botPayload = [];
         foreach ($botReplies as $reply) {
-            // choose EN/CEB first
             $reply = $this->pickLanguageVariant($reply, $lang);
-
-            // then replace CTA placeholder
             if (is_string($reply) && str_contains($reply, '{APPOINTMENT_LINK}')) {
                 $reply = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $reply);
             }
-
             $bot = Chat::create([
                 'user_id'         => $userId,
                 'chat_session_id' => $sessionId,
@@ -403,44 +423,31 @@ HTML;
             ];
         }
 
+        // FIX: remove duplicate block; compute once
         $tz       = config('app.timezone');
-$nowHuman = now()->timezone($tz)->format('H:i');
+        $nowHuman = now()->timezone($tz)->format('H:i');
 
-$rawReplies = is_array($botPayload) ? $botPayload : [$botPayload];
-$replies    = array_values(array_filter(array_map(function ($r) {
-    if (is_array($r)) {
-        if (isset($r['text']))      return trim((string) $r['text']);
-        if (isset($r['message']))   return trim((string) $r['message']);
-        if (isset($r['bot_reply'])) return trim((string) $r['bot_reply']);
-        return trim((string) json_encode($r));
+        $rawReplies = is_array($botPayload) ? $botPayload : [$botPayload];
+        $replies    = array_values(array_filter(array_map(function ($r) {
+            if (is_array($r)) {
+                if (isset($r['text']))      return trim((string) $r['text']);
+                if (isset($r['message']))   return trim((string) $r['message']);
+                if (isset($r['bot_reply'])) return trim((string) $r['bot_reply']);
+                return trim((string) json_encode($r));
+            }
+            return trim((string) $r);
+        }, $rawReplies), fn ($s) => $s !== ''));
+
+        return response()->json([
+            'user_message' => [
+                'text'       => $text,
+                'time_human' => $userMsg->sent_at->timezone($tz)->format('H:i'),
+                'sent_at'    => $userMsg->sent_at->toIso8601String(),
+            ],
+            'bot_reply'  => $replies,
+            'time_human' => $nowHuman,
+        ]);
     }
-    return trim((string) $r);
-}, $rawReplies), fn ($s) => $s !== ''));
-
-$tz       = config('app.timezone');
-$nowHuman = now()->timezone($tz)->format('H:i');
-
-$rawReplies = is_array($botPayload) ? $botPayload : [$botPayload];
-$replies    = array_values(array_filter(array_map(function ($r) {
-    if (is_array($r)) {
-        if (isset($r['text']))      return trim((string) $r['text']);
-        if (isset($r['message']))   return trim((string) $r['message']);
-        if (isset($r['bot_reply'])) return trim((string) $r['bot_reply']);
-        return trim((string) json_encode($r));
-    }
-    return trim((string) $r);
-}, $rawReplies), fn ($s) => $s !== ''));
-
-return response()->json([
-    'user_message' => [
-        'text'       => $text,
-        'time_human' => $userMsg->sent_at->timezone($tz)->format('H:i'),
-        'sent_at'    => $userMsg->sent_at->toIso8601String(),
-    ],
-    'bot_reply'  => $replies,
-    'time_human' => $nowHuman,
-]);    
-}
 
     /* =========================================================================
      | History utilities
