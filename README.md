@@ -26,7 +26,7 @@ LumiCHAT is a Laravel + Rasa–powered mental-health chatbot.
 
 ## 🧬 Clone the project
 ```bash
-git clone https://github.com/Nyzo0310/Lumichat_v1.7.git
+git clone https://github.com/jaypab/lumichat_web.git
 cd Lumichat_v1.7
 cd lumichat-backend
 
