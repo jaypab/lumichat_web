@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Http;
 
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\ProfileController;
@@ -21,6 +22,33 @@ Route::get('/', fn () => redirect()->route('chat.index'))->name('home');
 
 // Public pages
 Route::view('/privacy-policy', 'privacy-policy')->name('privacy.policy');
+
+/*
+|--------------------------------------------------------------------------
+| ✅ RASA Health Check (for staging / production)
+|--------------------------------------------------------------------------
+*/
+Route::get('/rasa-health', function () {
+    $base  = rtrim(env('RASA_PUBLIC_BASE', 'https://bot.lumichat.site'), '/');
+    $token = env('RASA_TOKEN', '');
+
+    try {
+        $res = Http::timeout(5)->get($base . '/status', ['token' => $token]);
+
+        return response()->json([
+            'ok' => $res->ok(),
+            'status' => $res->status(),
+            'body' => $res->json(),
+        ], $res->status());
+    } catch (\Throwable $e) {
+        return response()->json([
+            'ok' => false,
+            'error' => $e->getMessage(),
+            'hint' => 'Check systemctl status rasa/rasa-actions and Nginx proxy on the VPS.',
+        ], 503);
+    }
+})->name('rasa.health');
+
 
 /*
 |--------------------------------------------------------------------------
@@ -57,33 +85,35 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile',   [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     /* -------------------------- Appointment -------------------------- */
-    // Unified entrypoint (used by the sidebar): decides view based on whether the user has appointments
+    // Unified entrypoint (used by the sidebar)
     Route::get('/appointment', [AppointmentController::class, 'entrypoint'])->name('appointment.index');
-    // routes/web.php (or your student routes file)
+
+    // Appointment unseen count
     Route::middleware(['auth'])->group(function () {
-        // ... your existing routes
-    Route::get('/api/appointments/unseen', [\App\Http\Controllers\AppointmentController::class, 'unseenCount'])
-        ->name('appointments.unseen');
+        Route::get('/api/appointments/unseen', [\App\Http\Controllers\AppointmentController::class, 'unseenCount'])
+            ->name('appointments.unseen');
     });
 
-    // Explicit pages (use these for buttons/links)
-    Route::get('/appointment/book',     [AppointmentController::class, 'index'])->name('appointment.create');   // <-- FORCE booking form
-    Route::get('/appointment/history',  [AppointmentController::class, 'history'])->name('appointment.history'); // <-- FORCE history
+    // Explicit pages (buttons/links)
+    Route::get('/appointment/book',     [AppointmentController::class, 'index'])->name('appointment.create');
+    Route::get('/appointment/history',  [AppointmentController::class, 'history'])->name('appointment.history');
+
     Route::middleware('auth')->group(function () {
-    Route::get('/appointment/history/export/pdf', [AppointmentController::class, 'exportHistoryPdf'])
-        ->name('appointment.history.export.pdf');
-    Route::get('/appointment/{id}/export/pdf', [\App\Http\Controllers\AppointmentController::class, 'exportShowPdf'])
-        ->whereNumber('id')
-        ->name('appointment.show.export.pdf');
-});
+        Route::get('/appointment/history/export/pdf', [AppointmentController::class, 'exportHistoryPdf'])
+            ->name('appointment.history.export.pdf');
+        Route::get('/appointment/{id}/export/pdf', [\App\Http\Controllers\AppointmentController::class, 'exportShowPdf'])
+            ->whereNumber('id')
+            ->name('appointment.show.export.pdf');
+    });
+
     // Actions / APIs
-    Route::post('/appointment',                  [AppointmentController::class, 'store'])->name('appointment.store');
+    Route::post('/appointment', [AppointmentController::class, 'store'])->name('appointment.store');
     Route::get('/appointment/slots', [\App\Http\Controllers\AppointmentController::class, 'slots'])
-    ->name('appointment.slots');
+        ->name('appointment.slots');
     Route::get('/appointment/slots-pooled', [\App\Http\Controllers\AppointmentController::class, 'slotsPooled'])
-    ->name('appointment.slots.pooled');
-    Route::get('/appointment/view/{id}',         [AppointmentController::class, 'show'])->name('appointment.view');
-    Route::patch('/appointment/{id}/cancel',     [AppointmentController::class, 'cancel'])->name('appointment.cancel');
+        ->name('appointment.slots.pooled');
+    Route::get('/appointment/view/{id}', [AppointmentController::class, 'show'])->name('appointment.view');
+    Route::patch('/appointment/{id}/cancel', [AppointmentController::class, 'cancel'])->name('appointment.cancel');
 
     /* ------------------------ Self-Assessment ------------------------ */
     Route::get('/self-assessment',        [SelfAssessmentController::class,'create'])->name('self-assessment.create');
@@ -105,12 +135,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/settings',  [SettingsController::class, 'index'])->name('settings.index');
     Route::post('/settings', [SettingsController::class, 'update'])->name('settings.update');
 });
+
 Route::view('/support/contact', 'support.contact')->name('support.contact');
 Route::view('/support/bug', 'support.bug')->name('support.bug');
+
 /*
 |--------------------------------------------------------------------------
 | Auth scaffolding (login, logout, password reset, etc.)
 |--------------------------------------------------------------------------
 */
 require __DIR__ . '/auth.php';
-require __DIR__.'/admin.php'; 
+require __DIR__ . '/admin.php';
