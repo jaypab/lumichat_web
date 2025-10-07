@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 @section('title','Admin - Chatbot Details')
-@section('page_title', 'Chatbot Session Summary') 
+@section('page_title', 'Chatbot Session Summary')
 
 @section('content')
 @php
@@ -10,8 +10,13 @@
   $isHighRisk = in_array(strtolower((string)($session->risk_level ?? $session->risk ?? '')), ['high','high-risk','high_risk'], true)
                 || (int)($session->risk_score ?? 0) >= 80;
 
-  // ✅ Block book if already completed for this session
-  $canBook = $isHighRisk && empty($hasActiveForStudent) && empty($hasCompletedForThisSession);
+  // Book only if high-risk AND no active appt AND no completed after this session
+  $canBook = $isHighRisk && !$hasAnyActiveForStudent && !$hasCompletedForThisSession;
+
+  // One-time reschedule protection
+  $wasExpedited  = (bool) ($wasExpedited ?? ($session->expedited_at ?? false));
+  // Move earlier only if: high-risk + has active appt + not yet completed + not already expedited
+  $canMoveEarlier = $isHighRisk && $hasAnyActiveForStudent && !$hasCompletedForThisSession && !$wasExpedited;
 @endphp
 
 <div class="max-w-5xl mx-auto p-6 space-y-6">
@@ -38,6 +43,10 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M9 12.75 11.25 15 15 9.75"/></svg>
             Appointment Completed
           </span>
+        @elseif($wasExpedited)
+          <span class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300">
+            Already moved earlier
+          </span>
         @elseif($canBook)
           <button type="button" id="btnAdminBook"
             class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm">
@@ -46,6 +55,14 @@
             </svg>
             Book (High-Risk)
           </button>
+        @elseif($canMoveEarlier)
+          <button type="button" id="btnAdminMove"
+            class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 shadow-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M13 5l7 7-7 7M4 5h7v14H4z"/>
+            </svg>
+            Move earlier (High-Risk)
+          </button>
         @else
           <span class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-200 text-slate-700">
             Student already has an active appointment
@@ -53,7 +70,7 @@
         @endif
       @endif
 
-      {{-- Export PDF (URL fallback) --}}
+      {{-- Export PDF --}}
       <a href="{{ url('admin/chatbot-sessions/'.$session->id.'/pdf') }}"
         class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 active:scale-[.99] transition">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -78,7 +95,7 @@
   {{-- PRINTABLE AREA --}}
   <div id="sessionPrintable" class="space-y-6 print-area">
 
-    {{-- Summary card (with violet top accent) --}}
+    {{-- Summary card --}}
     <div class="relative bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
       <span class="pointer-events-none absolute inset-x-0 -top-px h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-fuchsia-500"></span>
 
@@ -118,7 +135,7 @@
       </div>
     </div>
 
-    {{-- Session Counts (with violet top accent) --}}
+    {{-- Session Counts --}}
     <div class="relative bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
       <div class="p-6">
         <div class="flex items-center justify-between">
@@ -231,6 +248,7 @@ function printNode(selector, title = document.title) {
 }
 </script>
 
+{{-- Calendar counts --}}
 <script>
 (() => {
   const endpoint = @json(route('admin.chatbot-sessions.calendar', $session->id));
@@ -281,9 +299,9 @@ function printNode(selector, title = document.title) {
 })();
 </script>
 
+{{-- BOOK (High-Risk) --}}
 <script>
 (() => {
-  // 🧷 Global guard – prevent double-binding when @stack('scripts') is included twice
   if (window.__LUMI_BOOK_BOUND__) return;
   window.__LUMI_BOOK_BOUND__ = true;
 
@@ -369,7 +387,7 @@ function printNode(selector, title = document.title) {
       const today = new Date();
       const defaultDate = `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
 
-      // ⏱️ Fetch FIRST, then open modal (prevents empty-first-modal bug)
+      // Fetch BEFORE opening modal
       const first = await loadSlots(defaultDate);
 
       let pollId = null;
@@ -440,10 +458,7 @@ function printNode(selector, title = document.title) {
             }
           };
 
-          // initial render
           compose(counEl.value);
-
-          // listeners
           dateEl.addEventListener('change', refetch);
           counEl.addEventListener('change', ()=>compose(counEl.value, false));
 
@@ -503,8 +518,169 @@ function printNode(selector, title = document.title) {
     }
   }
 
-  // ✅ SINGLE BIND (prevents the double-modal bug)
   btn.onclick = onAdminBookClick;
+})();
+</script>
+
+{{-- MOVE EARLIER (High-Risk Reschedule) --}}
+<script>
+(() => {
+  const moveBtn = document.getElementById('btnAdminMove');
+  if (!moveBtn) return;
+
+  const slotsEndpoint      = @json(route('admin.chatbot-sessions.slots', $session->id));
+  // IMPORTANT: ensure your route name is "admin.chatbot-sessions.reschedule"
+  // (inside the admin prefix group, use ->name('chatbot-sessions.reschedule'))
+  const rescheduleEndpoint = @json(route('admin.chatbot-sessions.reschedule', $session->id));
+
+  const DATE_RE=/^\d{4}-\d{2}-\d{2}$/; const TIME_RE=/^\d{2}:\d{2}$/;
+  const pad=n=>String(n).padStart(2,'0');
+  const isWeekday=ymd=>{const[y,m,d]=ymd.split('-').map(Number);const t=new Date(y,m-1,d).getDay();return t>=1&&t<=5;}
+  const notPast=ymd=>{const[y,m,d]=ymd.split('-').map(Number);const dt=new Date(y,m-1,d,23,59,59,999);const now=new Date();return dt>=new Date(now.getFullYear(),now.getMonth(),now.getDate());}
+
+  async function loadSlots(date){
+    const u=new URL(slotsEndpoint, window.location.origin); u.searchParams.set('date',date);
+    const res=await fetch(u,{headers:{'X-Requested-With':'XMLHttpRequest'}}); if(!res.ok) throw new Error('Failed to load slots');
+    return res.json();
+  }
+
+  function buildTimePills(container, items, pooledMap, selected=''){
+    container.innerHTML='';
+    const emptyEl=document.getElementById('adm-empty');
+    const times=Array.isArray(items)?items:[];
+    if(!times.length){ emptyEl?.classList.remove('hidden'); container.dataset.selected=''; return; }
+    emptyEl?.classList.add('hidden');
+
+    const total = Object.values(pooledMap||{}).reduce((a,b)=>a+Number(b||0),0);
+    const totalEl = document.getElementById('adm-total');
+    if (totalEl) totalEl.textContent = total ? `• ${total} total counselor-slots` : '';
+
+    times.forEach(s=>{
+      const cap=Math.max(0, Number((pooledMap && pooledMap[s.value]) ?? s.pooled ?? 0));
+      const b=document.createElement('button');
+      b.type='button'; b.dataset.value=s.value;
+      b.className='pill inline-flex flex-col items-center justify-center border border-slate-200 bg-white text-slate-800';
+      b.innerHTML=`<span class="time">${s.label}</span><span class="cap">(${cap} ${cap===1?'slot':'slots'})</span>`;
+      if(s.disabled){ b.disabled=true; b.classList.add('opacity-50','cursor-not-allowed'); }
+      else{
+        b.addEventListener('click',()=>{
+          [...container.querySelectorAll('button')].forEach(x=>x.classList.remove('pill--active'));
+          b.classList.add('pill--active'); container.dataset.selected=s.value;
+        });
+      }
+      if(!s.disabled && s.value===selected) b.classList.add('pill--active');
+      container.appendChild(b);
+    });
+
+    if(selected && !times.some(t=>!t.disabled && t.value===selected)){
+      container.dataset.selected='';
+    }
+  }
+
+  moveBtn.addEventListener('click', async ()=>{
+    const today=new Date();
+    const defaultDate=`${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
+
+    let first;
+    try{ first=await loadSlots(defaultDate); }
+    catch(err){ return Swal.fire({icon:'error', title:'Unable to load slots', text:String(err)}); }
+
+    const { value: form } = await Swal.fire({
+      title: 'Move appointment earlier',
+      html: `
+        <div style="text-align:left">
+          <label class="text-sm font-medium text-slate-700">1) Pick date *</label>
+          <input id="adm-date" type="date" value="${defaultDate}" min="{{ now()->toDateString() }}"
+                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+
+          <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="text-sm font-medium text-slate-700">2) Counselor *</label>
+              <select id="adm-counselor" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                ${(first.counselors||[]).map(c=>`<option value="${String(c.id)}">${String(c.name).replace(/</g,'&lt;')}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="text-sm font-medium text-slate-700">3) Time * <small id="adm-total" class="text-slate-500 font-normal"></small></label>
+              <div id="adm-times" class="mt-1 grid grid-times gap-2" data-selected="" tabindex="0" aria-label="Available times"></div>
+              <div id="adm-empty" class="text-xs text-slate-500 mt-1 hidden">No available times.</div>
+            </div>
+          </div>
+        </div>
+      `,
+      customClass:{ popup:'swal-wide' },
+      showCancelButton:true,
+      confirmButtonText:'Reschedule',
+      focusConfirm:false,
+      didOpen:()=>{
+        const dateEl=document.getElementById('adm-date');
+        const counEl=document.getElementById('adm-counselor');
+        const timeWrap=document.getElementById('adm-times');
+
+        let slotsMap=first.slots||{}; let pooledMap=first.pooled||{};
+
+        const compose=(cid, keepSel=true)=>{
+          const prev=keepSel?(timeWrap.dataset.selected||''):'';
+          const items=(slotsMap?.[cid]||[]);
+          buildTimePills(timeWrap, items, pooledMap, prev);
+        };
+        const refetch=async ()=>{
+          const val=dateEl.value;
+          if(!DATE_RE.test(val) || !isWeekday(val) || !notPast(val)){ buildTimePills(timeWrap,[],{},''); return; }
+          Swal.showLoading();
+          try{
+            const data=await loadSlots(val);
+            slotsMap=data.slots||{}; pooledMap=data.pooled||{};
+            const list=data.counselors||[]; const prev=counEl.value;
+            counEl.innerHTML=list.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+            if(list.length){ const keep=list.some(c=>String(c.id)===String(prev)); counEl.value=keep?prev:String(list[0].id); }
+            compose(counEl.value,true);
+          } finally{ try{ Swal.hideLoading(); }catch(_){ } }
+        };
+        compose(counEl.value);
+        dateEl.addEventListener('change', refetch);
+        counEl.addEventListener('change', ()=>compose(counEl.value,false));
+      },
+      preConfirm:()=>{
+        const date=document.getElementById('adm-date')?.value||'';
+        const counselorId=document.getElementById('adm-counselor')?.value||'';
+        const time=document.getElementById('adm-times')?.dataset.selected||'';
+        if(!DATE_RE.test(date)) return Swal.showValidationMessage('Invalid date format'), false;
+        if(!isWeekday(date))    return Swal.showValidationMessage('Weekends are closed (Mon–Fri only)'), false;
+        if(!notPast(date))      return Swal.showValidationMessage('Pick a future date'), false;
+        if(!TIME_RE.test(time)) return Swal.showValidationMessage('Please pick a time'), false;
+        if(!counselorId)        return Swal.showValidationMessage('Please choose a counselor'), false;
+        return { date, counselorId, time };
+      }
+    });
+
+    if(!form) return;
+
+    const fd=new FormData();
+    fd.append('_token', @json(csrf_token()));
+    fd.append('date', form.date);
+    fd.append('time', form.time);
+    fd.append('counselor_id', form.counselorId);
+
+    try{
+      const resp=await fetch(rescheduleEndpoint,{ method:'POST', body:fd, headers:{'X-Requested-With':'XMLHttpRequest'} });
+      const data=await resp.json().catch(()=>({}));
+      if(!resp.ok) throw new Error(data?.message || 'Reschedule failed.');
+
+      await Swal.fire({
+        icon:'success',
+        title:'Appointment rescheduled!',
+        html:`<div class="appt-compact">${data.html}</div>`,
+        customClass:{ popup:'swal-success swal-compact' },
+        width: Math.min(window.innerWidth - 32, 1200),
+        showCloseButton:true,
+        confirmButtonText:'OK',
+      });
+      window.location.reload();
+    }catch(e){
+      Swal.fire({ icon:'error', title:'Unable to reschedule', text:String(e) });
+    }
+  });
 })();
 </script>
 

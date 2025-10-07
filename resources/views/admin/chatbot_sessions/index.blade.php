@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 @section('title','Admin - Chatbot Sessions')
-@section('page_title', 'Chatbot Sessions') 
+@section('page_title', 'Chatbot Sessions')
 
 @php
   $q       = $q ?? request('q', '');
@@ -98,39 +98,34 @@
 
         <tbody class="divide-y divide-slate-100">
           @forelse ($sessions as $s)
-           @php
-              // Normalize risk fields coming from different repos/columns
+            @php
+              // Normalize risk fields
               $riskRaw = strtolower((string) ($s->risk_level ?? $s->risk ?? ''));
               $score   = (int) ($s->risk_score ?? 0);
 
-              // Match the show-page logic: high when label says high OR score >= 80
+              // High when label says high OR score >= 80
               $isHigh  = in_array($riskRaw, ['high','high-risk','high_risk'], true) || $score >= 80;
 
-              // Sessions already linked to blocking appointments (passed from controller)
-              $handled = in_array($s->id, $handledSessionIds ?? [], true);
+              // Maps provided by controller (session_id => bool)
+              $handled = (bool) ($handledAfter[$s->id] ?? false);  // pending/confirmed AFTER this session
+              $cleared = (bool) ($clearedAfter[$s->id] ?? false);  // completed AFTER this session
 
-              // Per-student guards (passed from controller)
-              $blockedByActive    = in_array($s->user_id, $studentsWithActive ?? [], true);
-              $clearedByCompleted = in_array($s->user_id, $studentsWithCompleted ?? [], true);
-
-              // Show red state only when the item is actionable:
-              // high-risk AND not already handled AND no active appt AND not cleared by completed
-              $showRed      = $isHigh && !$handled && !$blockedByActive && !$clearedByCompleted;
-
-              // Quick-book is available only for actionable (red) rows
+              // Show red only when actionable
+              $showRed      = $isHigh && !$handled && !$cleared;
               $canQuickBook = $showRed;
 
-              // Display code (optional, if you use it in the cell)
-              $code = 'LMC-' . (now()->format('Y')) . '-' . str_pad($s->id, 4, '0', STR_PAD_LEFT);
+              // Code for display
+              $year = $s->created_at?->format('Y') ?? now()->format('Y');
+              $code = 'LMC-' . $year . '-' . str_pad($s->id, 4, '0', STR_PAD_LEFT);
             @endphp
 
             <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition {{ $showRed ? 'bg-rose-50/40' : '' }}">
-              {{-- SESSION ID (link color forced to black; red only when actionable) --}}
+              {{-- SESSION ID --}}
               <td class="px-6 py-4 font-semibold">
                 <div class="flex items-center gap-2">
                   @if($showRed)
                     <span class="inline-block size-2.5 rounded-full bg-rose-600 ring-4 ring-rose-100/70"
-                          title="High risk" aria-label="High risk"></span>
+                          title="High risk since last booking" aria-label="High risk"></span>
                   @endif
 
                   @if($canQuickBook)
@@ -145,7 +140,6 @@
                       {{ $code }}
                     </a>
                   @else
-                    {{-- Go to Show page (no quick-book) --}}
                     <a href="{{ route('admin.chatbot-sessions.show', $s) }}"
                        class="hover:underline focus:underline text-slate-900 visited:text-slate-900">
                       {{ $code }}
@@ -218,36 +212,23 @@
   #cb-print-root tr { page-break-inside: avoid !important; }
 </style>
 @endsection
+
 @push('scripts')
 <style>
-  /* --- SweetAlert2 look & feel --- */
+  /* SweetAlert2 modal sizing/look */
   .swal-wide.swal2-popup{
     width:min(92vw,760px)!important;
     padding:0!important;
     border-radius:18px!important;
     box-shadow:0 30px 60px rgba(2,6,23,.25);
   }
-  .swal-wide .swal2-title{
-    margin:18px 22px 0!important;
-    font-size:22px!important;
-    font-weight:800!important;
-    color:#0f172a!important;
-  }
-  .swal-wide .swal2-html-container{
-    margin:0!important;
-    padding:16px 22px 22px!important;
-    text-align:left!important;
-  }
-  .swal-wide .swal2-actions{
-    margin:0!important;
-    padding:16px 22px 22px!important;
-  }
+  .swal-wide .swal2-title{ margin:18px 22px 0!important; font-size:22px!important; font-weight:800!important; color:#0f172a!important; }
+  .swal-wide .swal2-html-container{ margin:0!important; padding:16px 22px 22px!important; text-align:left!important; }
+  .swal-wide .swal2-actions{ margin:0!important; padding:16px 22px 22px!important; }
 
-  /* Inputs */
   .swal-field{ width:100%; border:1px solid #e2e8f0; border-radius:12px; padding:.55rem .75rem; }
   .swal-field:focus{ outline:0; box-shadow:0 0 0 3px rgba(79,70,229,.25); border-color:#c7d2fe; }
 
-  /* Time buttons */
   .time-grid{ display:grid; gap:.5rem; grid-template-columns:repeat(3,minmax(0,1fr)); }
   @media (min-width:640px){ .time-grid{ grid-template-columns:repeat(4,minmax(0,1fr)); } }
 
@@ -265,7 +246,6 @@
   .tiny-hint{ font-size:.78rem; color:#64748b; }
 </style>
 
-@push('scripts')
 <script>
 (() => {
   // Helpers
@@ -312,7 +292,7 @@
     }
   }
 
-  // Fast-book only on actionable session IDs
+  // Fast-book only on actionable (red) rows
   document.querySelectorAll('.js-fast-book').forEach(link=>{
     link.addEventListener('click', async (e)=>{
       e.preventDefault();
@@ -369,7 +349,6 @@
           let slotsMap=first.slots||{};
           let pooledMap=first.pooled||{};
 
-          // total pooled capacity
           const updateTotal=()=>{
             const total=Object.values(pooledMap||{}).reduce((a,b)=>a+Number(b||0),0);
             const el=document.getElementById('adm-total');
@@ -434,24 +413,24 @@
       fd.append('counselor_id', form.counselorId);
 
       try{
-        const resp = await fetch(bookEndpoint,{ method:'POST', body: fd, headers:{'X-Requested-With':'XMLHttpRequest'} });
+        const resp = await fetch(link.dataset.book,{ method:'POST', body: fd, headers:{'X-Requested-With':'XMLHttpRequest'} });
         const data = await resp.json().catch(()=>({}));
         if (!resp.ok) throw new Error(data?.message || 'Booking failed.');
 
         await Swal.fire({
           icon: 'success',
           title: 'Appointment booked!',
-          html: `<div class="appt-compact">${data.html}</div>`,   // <-- keeps our typography & grid styles
-          customClass: { popup: 'swal-success swal-compact' },    // <-- enables styles above
+          html: `<div class="appt-compact">${data.html}</div>`,
+          customClass: { popup: 'swal-success swal-compact' },
           width: Math.min(window.innerWidth - 32, 1200),
           showCloseButton: true,
           confirmButtonText: 'OK',
         });
-        
+
         window.location.reload();
-        } catch (err) {
-          Swal.fire({ icon:'error', title:'Unable to book', text:String(err) });
-        }
+      } catch (err) {
+        Swal.fire({ icon:'error', title:'Unable to book', text:String(err) });
+      }
     });
   });
 })();

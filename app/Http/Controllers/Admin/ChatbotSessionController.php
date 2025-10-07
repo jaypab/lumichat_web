@@ -4,13 +4,15 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Repositories\Contracts\ChatbotSessionRepositoryInterface;
+use App\Repositories\Contracts\AppointmentRepositoryInterface;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\View\View;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+use Illuminate\View\View;
+use Illuminate\Http\Response;
 
 class ChatbotSessionController extends Controller
 {
@@ -19,88 +21,120 @@ class ChatbotSessionController extends Controller
     private const DATE_KEY_ALL = 'all';
     private const DATE_KEYS    = ['all', '7d', '30d', 'month'];
 
-    /** Minutes per slot (keep in sync with student side) */
+    /** Minutes per slot */
     private const STEP_MINUTES = 30;
 
     /** Appointments that block a counselor’s slot */
     private const BLOCKING_STATUSES = ['pending','confirmed','completed'];
 
-    /** For THIS session, these statuses mean “already booked” (disable Book button) */
+    /** For THIS session, these statuses mean “already booked” (disable Book) */
     private const SESSION_ACTIVE_STATUSES = ['pending','confirmed'];
 
     public function __construct(
         protected ChatbotSessionRepositoryInterface $sessions
     ) {}
 
-    /** List chatbot sessions with optional free-text and date filters. */
-    public function index(Request $request): View
+    /** INDEX: list chatbot sessions with “handled/cleared AFTER session” maps */
+    public function index(Request $r): View
     {
-        $q       = trim((string) $request->input('q', ''));
-        $dateReq = (string) $request->input('date', self::DATE_KEY_ALL);
-        $dateKey = in_array($dateReq, self::DATE_KEYS, true) ? $dateReq : self::DATE_KEY_ALL;
+        $q       = (string) $r->query('q', '');
+        $dateKey = (string) $r->query('date', 'all');
 
-        // inside index()
         $sessions = $this->sessions->paginateWithFilters($q, $dateKey, self::PER_PAGE);
 
-        // Sessions already linked to any blocking appointment (existing behavior)
-        $handledSessionIds = DB::table('tbl_appointments')
-            ->whereNotNull('chatbot_session_id')
-            ->whereIn('status', self::BLOCKING_STATUSES) // ['pending','confirmed','completed']
-            ->pluck('chatbot_session_id')
-            ->unique()
-            ->all();
+        // Build “handled/cleared after this session” maps for the page
+        $pageSessions = collect($sessions->items());
+        $sessionIds   = $pageSessions->pluck('id')->all();
+        $byId         = $pageSessions->keyBy('id');
+        $studentIds   = $pageSessions->pluck('user_id')->unique()->all();
 
-        // 🔒 NEW: per-student guards
-        $studentsWithActive = DB::table('tbl_appointments')
+        $active = DB::table('tbl_appointments')
+            ->whereIn('student_id', $studentIds)
             ->whereIn('status', ['pending','confirmed'])
-            ->pluck('student_id')
-            ->unique()
-            ->all();
+            ->get(['student_id','created_at']);
 
-        $studentsWithCompleted = DB::table('tbl_appointments')
+        $completed = DB::table('tbl_appointments')
+            ->whereIn('student_id', $studentIds)
             ->where('status', 'completed')
-            ->pluck('student_id')
-            ->unique()
-            ->all();
+            ->get(['student_id','updated_at']);
 
-        return view('admin.chatbot_sessions.index', compact(
-            'sessions', 'q', 'dateKey',
-            'handledSessionIds',
-            'studentsWithActive',
-            'studentsWithCompleted'
-        ));
+        $activeByStudent    = $active->groupBy('student_id');
+        $completedByStudent = $completed->groupBy('student_id');
+
+        $handledAfter  = [];
+        $clearedAfter  = [];
+
+        foreach ($sessionIds as $sid) {
+            $sess = $byId[$sid] ?? null;
+            if (!$sess) { $handledAfter[$sid] = false; $clearedAfter[$sid] = false; continue; }
+
+            $sStudent = (int) $sess->user_id;
+            $sAt      = $sess->created_at;
+
+            // handled if any active appt booked AFTER (or same time as) this session
+            $handledAfter[$sid] = (bool) optional($activeByStudent->get($sStudent))->first(function ($ap) use ($sAt) {
+                return $ap->created_at >= $sAt;
+            });
+
+            // cleared if any completed appt completed AFTER (or same time as) this session
+            $clearedAfter[$sid] = (bool) optional($completedByStudent->get($sStudent))->first(function ($ap) use ($sAt) {
+                return $ap->updated_at >= $sAt;
+            });
+        }
+
+        return view('admin.chatbot_sessions.index', [
+            'sessions'     => $sessions,
+            'q'            => $q,
+            'dateKey'      => $dateKey,
+            'handledAfter' => $handledAfter,  // session_id => bool
+            'clearedAfter' => $clearedAfter,  // session_id => bool
+        ]);
     }
 
-    /** Show a single session with ordered chats. */
+    /** SHOW: one session + ordered chats + per-session handled flags */
     public function show(int $id): View
     {
         $session = $this->sessions->findWithOrderedChats($id);
         abort_unless($session, 404);
 
-        $hasActiveForThisSession = DB::table('tbl_appointments')
-            ->where('chatbot_session_id', $session->id)
-            ->whereIn('status', self::SESSION_ACTIVE_STATUSES) // ['pending','confirmed']
-            ->exists();
-
-        // 🔒 NEW: If the student already has any active appointment, block booking here too
-        $hasActiveForStudent = DB::table('tbl_appointments')
+        $hasAnyActiveForStudent = DB::table('tbl_appointments')
             ->where('student_id', $session->user_id)
-            ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
+            ->whereIn('status', ['pending','confirmed'])
             ->exists();
 
-        return view('admin.chatbot_sessions.show', compact(
-            'session',
-            'hasActiveForThisSession',
-            'hasActiveForStudent' // <-- pass to Blade
-        ));
+        $hasActiveAfterThisSession = DB::table('tbl_appointments')
+            ->where('student_id', $session->user_id)
+            ->whereIn('status', ['pending','confirmed'])
+            ->where('created_at', '>=', $session->created_at)
+            ->exists();
+
+        $hasCompletedForThisSession = DB::table('tbl_appointments')
+            ->where('student_id', $session->user_id)
+            ->where('status', 'completed')
+            ->where('updated_at', '>=', $session->created_at)
+            ->exists();
+
+        // ✅ robust one-time flag: either column is set OR an active appt is already linked to this session
+        $wasExpedited = !empty($session->expedited_at) || DB::table('tbl_appointments')
+            ->where('student_id', $session->user_id)
+            ->where('chatbot_session_id', $session->id)
+            ->whereIn('status', ['pending','confirmed'])
+            ->exists();
+
+        return view('admin.chatbot_sessions.show', [
+            'session'                    => $session,
+            'hasAnyActiveForStudent'     => $hasAnyActiveForStudent,
+            'hasActiveAfterThisSession'  => $hasActiveAfterThisSession,
+            'hasCompletedForThisSession' => $hasCompletedForThisSession,
+            'wasExpedited'               => $wasExpedited,
+        ]);
     }
 
-    /** Return per-day counts for a user's sessions (within a date range). */
+    /** JSON: per-day counts for a user's sessions (calendar header) */
     public function calendarCounts(int $id, Request $request): JsonResponse
     {
         $from = $request->query('from');
         $to   = $request->query('to');
-
         if (!$from || !$to) {
             return response()->json(['error' => 'from/to required'], 422);
         }
@@ -111,13 +145,11 @@ class ChatbotSessionController extends Controller
         }
 
         $counts = $this->sessions->perDayCountsForUser((int) $userId, $from, $to);
-
         return response()->json(['counts' => $counts]);
     }
 
-    /** Get counselor-wise slots for a date (Mon–Fri). */
-    // inside ChatbotSessionController.php
-   public function slots(int $id, Request $request): JsonResponse
+    /** JSON: counselor-wise slots + pooled capacity for a date (Mon–Fri) */
+    public function slots(int $id, Request $request): JsonResponse
     {
         $dateStr = (string) $request->query('date', '');
         if (!$dateStr || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateStr)) {
@@ -127,12 +159,9 @@ class ChatbotSessionController extends Controller
         $date   = Carbon::parse($dateStr)->startOfDay();
         $now    = now();
         $dowIso = $date->isoWeekday(); // 1..7 (Mon..Sun)
-
         if ($dowIso < 1 || $dowIso > 5) {
             return response()->json([
-                'counselors' => [],
-                'slots'      => [],
-                'pooled'     => [],
+                'counselors' => [], 'slots' => [], 'pooled' => [],
                 'message'    => 'Appointments are available Monday to Friday only.'
             ]);
         }
@@ -146,14 +175,13 @@ class ChatbotSessionController extends Controller
             return response()->json(['counselors'=>[], 'slots'=>[], 'pooled'=>[], 'message'=>'No active counselors.']);
         }
 
-        // helper to snap to 30-min grid
         $snap = function (Carbon $dt): Carbon {
             $m = (int) floor($dt->minute / 30) * 30;
             return $dt->copy()->setTime($dt->hour, $m, 0);
         };
 
         $slotsByCounselor = [];
-        $allTimes = []; // collect all unique HH:MM we will later count pooled capacity for
+        $allTimes = [];
 
         foreach ($counselors as $c) {
             $ranges = DB::table('tbl_counselor_availabilities')
@@ -177,7 +205,6 @@ class ChatbotSessionController extends Controller
 
                     $isPast = $date->isSameDay($now) && $slot->lte($now);
 
-                    // block only if this counselor already taken at this exact time
                     $taken = DB::table('tbl_appointments')
                         ->where('counselor_id', $c->id)
                         ->where('scheduled_at', $slot)
@@ -191,18 +218,16 @@ class ChatbotSessionController extends Controller
                             'label'    => $slot->format('g:i A'),
                             'disabled' => $isPast,
                         ];
-                        $allTimes[$hhmm] = true; // remember for pooled counting
+                        $allTimes[$hhmm] = true;
                     }
-
                     $cursor = $cursor->addMinutes(30);
                 }
             }
-
             $slotsByCounselor[$c->id] = collect($col)->unique('value')->sortBy('value')->values()->all();
         }
 
-        // 🔢 Pooled capacity per HH:MM (how many counselors are free)
-        $repo = app(\App\Repositories\Contracts\AppointmentRepositoryInterface::class);
+        // Pooled capacity per HH:MM
+        $repo   = app(AppointmentRepositoryInterface::class);
         $pooled = [];
         foreach (array_keys($allTimes) as $hhmm) {
             $t = Carbon::parse($date->toDateString().' '.$hhmm.':00');
@@ -212,12 +237,11 @@ class ChatbotSessionController extends Controller
         return response()->json([
             'counselors' => $counselors->map(fn($r)=>['id'=>$r->id,'name'=>$r->name])->values(),
             'slots'      => $slotsByCounselor,
-            'pooled'     => $pooled, // <-- NEW
+            'pooled'     => $pooled,
         ]);
     }
 
-
-    /** Admin books appointment for the session’s student with a chosen counselor+time. */
+    /** Admin books appointment for the session’s student with counselor+time */
     public function book(int $id, Request $request): JsonResponse
     {
         $session = $this->sessions->findWithOrderedChats($id);
@@ -226,15 +250,13 @@ class ChatbotSessionController extends Controller
         }
         $studentId = (int) $session->user_id;
 
-        // Block if student already has pending/confirmed (you added this earlier)
+        // ✅ block if the student already has ANY active appointment (pending/confirmed)
         $hasActiveForStudent = DB::table('tbl_appointments')
             ->where('student_id', $studentId)
             ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
             ->exists();
         if ($hasActiveForStudent) {
-            return response()->json([
-                'message' => 'This student already has an active appointment (pending/confirmed).'
-            ], 409);
+            return response()->json(['message' => 'Student already has an active appointment.'], 409);
         }
 
         $validated = $request->validate([
@@ -243,7 +265,6 @@ class ChatbotSessionController extends Controller
             'counselor_id' => ['required','integer','exists:tbl_counselors,id'],
         ]);
 
-        // snap to grid (existing)
         $raw  = Carbon::parse($validated['date'].' '.$validated['time'].':00')->second(0);
         $slot = (function(Carbon $dt){ $m=(int)floor($dt->minute/30)*30; return $dt->copy()->setTime($dt->hour,$m,0);} )($raw);
         if ($raw->ne($slot)) {
@@ -259,35 +280,12 @@ class ChatbotSessionController extends Controller
         }
 
         $counselorId   = (int) $validated['counselor_id'];
-        $counselorName = DB::table('tbl_counselors')->where('id',$counselorId)->value('name') ?? null; // ★ NEW
-        $note          = $this->composeBookingNote($session, $slot, $counselorName);                   // ★ NEW
-
-        // verify counselor availability (existing)
-        $fits = DB::table('tbl_counselor_availabilities')
-            ->where('counselor_id', $counselorId)
-            ->where('weekday', $dowIso)
-            ->get(['start_time','end_time'])
-            ->contains(function($r) use ($slot) {
-                $endOf = $slot->copy()->addMinutes(30);
-                $start = Carbon::parse($slot->toDateString().' '.$r->start_time);
-                $end   = Carbon::parse($slot->toDateString().' '.$r->end_time);
-                return $slot->gte($start) && $endOf->lte($end);
-            });
-        if (!$fits) {
-            return response()->json(['message'=>'Selected time is outside counselor availability.'], 422);
-        }
+        $counselorName = DB::table('tbl_counselors')->where('id',$counselorId)->value('name') ?? null;
+        $note          = $this->composeBookingNote($session, $slot, $counselorName);
 
         try {
-            DB::transaction(function () use ($studentId, $counselorId, $slot, $session, $note) { // ★ add $note
-                // re-check session active (race)
-                $activeNow = DB::table('tbl_appointments')
-                    ->where('chatbot_session_id', $session->id)
-                    ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
-                    ->lockForUpdate()
-                    ->exists();
-                if ($activeNow) throw new \RuntimeException('SESSION_ACTIVE');
-
-                // re-check student active (race)
+            DB::transaction(function () use ($studentId, $counselorId, $slot, $session, $note) {
+                // re-check for race
                 $activeNowForStudent = DB::table('tbl_appointments')
                     ->where('student_id', $studentId)
                     ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
@@ -295,7 +293,6 @@ class ChatbotSessionController extends Controller
                     ->exists();
                 if ($activeNowForStudent) throw new \RuntimeException('STUDENT_ACTIVE');
 
-                // counselor taken?
                 $taken = DB::table('tbl_appointments')
                     ->where('counselor_id', $counselorId)
                     ->where('scheduled_at', $slot)
@@ -304,19 +301,18 @@ class ChatbotSessionController extends Controller
                     ->exists();
                 if ($taken) throw new \RuntimeException('TAKEN');
 
-                // Insert appointment + the heartfelt note ★ NEW
                 DB::table('tbl_appointments')->insert([
                     'student_id'         => $studentId,
                     'counselor_id'       => $counselorId,
                     'scheduled_at'       => $slot,
                     'status'             => 'confirmed',
-                    'note'               => $note,              // ★ NEW
+                    'note'               => $note,
                     'chatbot_session_id' => $session->id,
                     'created_at'         => now(),
                     'updated_at'         => now(),
                 ]);
 
-                // (Optional) also create a notification if such a table exists ★ NEW
+                // Optional notification
                 if (Schema::hasTable('tbl_notifications')) {
                     DB::table('tbl_notifications')->insert([
                         'user_id'    => $studentId,
@@ -330,12 +326,10 @@ class ChatbotSessionController extends Controller
             });
         } catch (\RuntimeException $e) {
             if ($e->getMessage() === 'TAKEN')          return response()->json(['message'=>'That counselor/time just filled. Pick another slot.'], 409);
-            if ($e->getMessage() === 'SESSION_ACTIVE') return response()->json(['message'=>'This session already has an active appointment (pending/confirmed).'], 409);
             if ($e->getMessage() === 'STUDENT_ACTIVE') return response()->json(['message'=>'This student already has an active appointment (pending/confirmed).'], 409);
             throw $e;
         }
 
-        // Success payload now previews the message to the admin ★ NEW
         return response()->json([
             'ok'   => true,
             'html' => sprintf(
@@ -359,16 +353,14 @@ class ChatbotSessionController extends Controller
         ]);
     }
 
-    private function composeBookingNote(object $session, \Carbon\Carbon $slot, ?string $counselorName = null): string
+    private function composeBookingNote(object $session, Carbon $slot, ?string $counselorName = null): string
     {
         $studentName = (string) ($session->user->name ?? '');
-        $firstName   = \Illuminate\Support\Str::of($studentName)->trim()->before(' ')->value() ?: 'there';
+        $firstName   = Str::of($studentName)->trim()->before(' ')->value() ?: 'there';
 
         $niceDate = $slot->format('l, M d, Y');
         $niceTime = $slot->format('g:i A');
         $who      = $counselorName ? "with {$counselorName}" : "with our guidance counselor";
-
-        // You can move this to config if you like:
         $location = 'Guidance Office, Tagoloan Community College';
 
         return "Hi {$firstName},\n\n"
@@ -377,11 +369,12 @@ class ChatbotSessionController extends Controller
             . "📅 {$niceDate} • ⏰ {$niceTime}\n"
             . "👤 {$who}\n"
             . "📍 {$location}\n\n"
-            . "This is 100% confidential and judgment-free. Please arrive about 10 minutes early and bring your school ID if possible. "
+            . "This is 100% confidential and judgment-free. Please arrive ~10 minutes early and bring your school ID if possible. "
             . "If you need to reschedule, just reply to this message or visit the Guidance Office.\n\n"
             . "We’re here for you. One step at a time—you are not alone.";
     }
-    // App\Http\Controllers\Admin\ChatbotSessionController.php
+
+    /** EXPORT: list */
     public function exportPdf(Request $request)
     {
         $q       = trim((string) $request->input('q', ''));
@@ -395,21 +388,16 @@ class ChatbotSessionController extends Controller
                 return method_exists($p, 'items') ? collect($p->items()) : collect($p);
             })();
 
-        // inline logo
         $logoData = null;
         $logoPath = public_path('images/chatbot.png');
         if (is_file($logoPath)) {
             $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
         }
 
-       $pdf = app('dompdf.wrapper');
+        $pdf = app('dompdf.wrapper');
         $pdf->setPaper('a4', 'portrait');
-        $pdf->setOptions([  
-            'isHtml5ParserEnabled' => true,
-            'isRemoteEnabled'      => true,
-        ]);
+        $pdf->setOptions(['isHtml5ParserEnabled' => true, 'isRemoteEnabled' => true]);
 
-        // 🔴 was missing
         $pdf->loadView('admin.chatbot_sessions.pdf', [
             'rows'        => $rows,
             'q'           => $q,
@@ -418,42 +406,37 @@ class ChatbotSessionController extends Controller
             'logoData'    => $logoData,
         ]);
 
-        return $pdf->download('Chatbot_Sessions'.now()->format('Ymd_His').'.pdf');
+        return $pdf->download('Chatbot_Sessions_'.now()->format('Ymd_His').'.pdf');
     }
 
+    /** EXPORT: one session */
     public function exportOne(int $session)
     {
-        $row = $this->sessions->findWithOrderedChats($session)
-            ?? DB::table('tbl_chatbot_sessions')->where('id', $session)->first();
+        $row = $this->sessions->findWithOrderedChats($session);
+        if (!$row) {
+            if ($table = $this->sessionsTable()) {
+                $row = DB::table($table)->where('id', $session)->first();
+            }
+        }
         abort_unless($row, 404);
 
-        // inline logo
         $logoData = null;
         $logoPath = public_path('images/chatbot.png');
         if (is_file($logoPath)) {
             $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
         }
 
-        // risk & code
         $riskLevel = strtolower((string)($row->risk_level ?? $row->risk ?? ''));
         $riskScore = (int)($row->risk_score ?? 0);
         $isHigh    = in_array($riskLevel, ['high','high-risk','high_risk'], true) || $riskScore >= 80;
 
-        $year = $row->created_at ? \Carbon\Carbon::parse($row->created_at)->format('Y') : now()->format('Y');
+        $year = $row->created_at ? Carbon::parse($row->created_at)->format('Y') : now()->format('Y');
         $code = 'LMC-' . $year . '-' . str_pad((string)$session, 4, '0', STR_PAD_LEFT);
-
-        if (!is_dir(storage_path('fonts'))) {
-            @mkdir(storage_path('fonts'), 0777, true);
-        }
 
         $pdf = app('dompdf.wrapper');
         $pdf->setPaper('a4', 'portrait');
-        $pdf->setOptions([
-            'isHtml5ParserEnabled' => true,
-            'isRemoteEnabled'      => true,
-        ]);
+        $pdf->setOptions(['isHtml5ParserEnabled' => true, 'isRemoteEnabled' => true]);
 
-        // 🔴 was missing
         $pdf->loadView('admin.chatbot_sessions.session_pdf', [
             'session'     => $row,
             'code'        => $code,
@@ -465,4 +448,162 @@ class ChatbotSessionController extends Controller
         return $pdf->download('Chatbot_Session_'.$session.'_'.now()->format('Ymd_His').'.pdf');
     }
 
+    public function reschedule(int $id, Request $request): JsonResponse
+    {
+        $session = $this->sessions->findWithOrderedChats($id);
+        if (!$session || empty($session->user_id)) {
+            return response()->json(['message' => 'Session not found.'], 404);
+        }
+        $studentId = (int) $session->user_id;
+
+        // one-time guard
+        if (!empty($session->expedited_at)) {
+            return response()->json(['message' => 'This session was already moved earlier.'], 409);
+        }
+
+        // earliest FUTURE active appt to move
+        $appt = DB::table('tbl_appointments')
+            ->where('student_id', $studentId)
+            ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
+            ->where('scheduled_at', '>', now())
+            ->orderBy('scheduled_at')
+            ->first();
+
+        if (!$appt) {
+            return response()->json(['message' => 'No active appointment to reschedule.'], 409);
+        }
+
+        // validate inputs (throws 422 JSON on fail)
+        $request->validate([
+            'date'         => ['required','date_format:Y-m-d'],
+            'time'         => ['required','regex:/^\d{2}:\d{2}$/'],
+            'counselor_id' => ['required','integer','exists:tbl_counselors,id'],
+        ]);
+
+        // pull values (avoid using $validated)
+        $date        = (string) $request->input('date');
+        $time        = (string) $request->input('time');
+        $counselorId = (int)    $request->input('counselor_id');
+
+        // build & check slot
+        $raw  = Carbon::parse($date.' '.$time.':00')->second(0);
+        $slot = (function(Carbon $dt){ $m=(int)floor($dt->minute/30)*30; return $dt->copy()->setTime($dt->hour,$m,0);} )($raw);
+        if ($raw->ne($slot))                                return response()->json(['message'=>'Please choose a 30-minute step time.'], 422);
+        if ($slot->isoWeekday() < 1 || $slot->isoWeekday() > 5) return response()->json(['message'=>'Mon–Fri only.'], 422);
+        if ($slot->lte(now()))                              return response()->json(['message'=>'Please choose a future time.'], 422);
+
+        $counselorName = DB::table('tbl_counselors')->where('id',$counselorId)->value('name') ?? null;
+        $note = $this->composeRescheduleNote($session, $slot, $counselorName);
+
+        try {
+            DB::transaction(function () use ($session, $appt, $studentId, $counselorId, $slot, $note) {
+                // lock session row (dynamic table name support)
+                $sessTable = $this->sessionsTable();
+                if ($sessTable) {
+                    $sessRow = DB::table($sessTable)->where('id',$session->id)->lockForUpdate()->first();
+                    if (!$sessRow || !empty($sessRow->expedited_at)) {
+                        throw new \RuntimeException('ALREADY_EXPEDITED');
+                    }
+                }
+
+                // lock current appt
+                $current = DB::table('tbl_appointments')->where('id',$appt->id)->lockForUpdate()->first();
+                if (!$current || !in_array($current->status, self::SESSION_ACTIVE_STATUSES, true)) {
+                    throw new \RuntimeException('APPT_GONE');
+                }
+
+                // ensure target slot free
+                $taken = DB::table('tbl_appointments')
+                    ->where('counselor_id', $counselorId)
+                    ->where('scheduled_at', $slot)
+                    ->whereIn('status', self::BLOCKING_STATUSES)
+                    ->lockForUpdate()
+                    ->exists();
+                if ($taken) throw new \RuntimeException('TAKEN');
+
+                // move the appt
+                DB::table('tbl_appointments')->where('id',$appt->id)->update([
+                    'counselor_id'       => $counselorId,
+                    'scheduled_at'       => $slot,
+                    'note'               => $note,
+                    'chatbot_session_id' => $session->id,
+                    'updated_at'         => now(),
+                ]);
+
+                // mark session as expedited (if columns exist)
+                if ($sessTable) {
+                    $updates = ['updated_at' => now()];
+                    if (Schema::hasColumn($sessTable, 'expedited_appt_id')) $updates['expedited_appt_id'] = $appt->id;
+                    if (Schema::hasColumn($sessTable, 'expedited_at'))      $updates['expedited_at']      = now();
+                    DB::table($sessTable)->where('id',$session->id)->update($updates);
+                }
+
+                // optional notification
+                if (Schema::hasTable('tbl_notifications')) {
+                    DB::table('tbl_notifications')->insert([
+                        'user_id'    => $studentId,
+                        'title'      => 'Appointment Rescheduled',
+                        'body'       => $note,
+                        'type'       => 'appointment',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            });
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage()==='ALREADY_EXPEDITED') return response()->json(['message'=>'This session was already moved earlier.'], 409);
+            if ($e->getMessage()==='TAKEN')            return response()->json(['message'=>'That time just filled. Pick another.'], 409);
+            if ($e->getMessage()==='APPT_GONE')        return response()->json(['message'=>'The appointment changed. Reload and try again.'], 409);
+            throw $e;
+        }
+
+        return response()->json([
+            'ok'   => true,
+            'html' => sprintf(
+                '
+                <div class="kv-grid">
+                <div class="kv"><span class="label">Student:</span>   <span class="value">%s</span></div>
+                <div class="kv"><span class="label">Counselor:</span> <span class="value">%s</span></div>
+                <div class="kv"><span class="label">New Date:</span>  <span class="value">%s</span></div>
+                <div class="kv"><span class="label">New Time:</span>  <span class="value">%s</span></div>
+                </div>
+                <div style="margin:6px 0 2px"><b>Note sent to student:</b></div>
+                <div style="white-space:pre-wrap">%s</div>
+                ',
+                e($session->user->name ?? ('#'.$studentId)),
+                e($counselorName ?? '—'),
+                e($slot->format('M d, Y')),
+                e($slot->format('g:i A')),
+                e($note)
+            ),
+        ]);
+    }
+
+
+    /** Different message when we move an appointment earlier */
+    private function composeRescheduleNote(object $session, Carbon $slot, ?string $counselorName = null): string
+    {
+        $studentName = (string) ($session->user->name ?? '');
+        $firstName   = Str::of($studentName)->trim()->before(' ')->value() ?: 'there';
+
+        $niceDate = $slot->format('l, M d, Y');
+        $niceTime = $slot->format('g:i A');
+        $who      = $counselorName ? "with {$counselorName}" : "with our guidance counselor";
+        $location = 'Guidance Office, Tagoloan Community College';
+
+        return "Hi {$firstName},\n\n"
+            . "Because your recent LumiCHAT session was flagged as high-risk, we moved your guidance appointment to an earlier time so we can check in with you sooner:\n\n"
+            . "📅 {$niceDate} • ⏰ {$niceTime}\n"
+            . "👤 {$who}\n"
+            . "📍 {$location}\n\n"
+            . "If this time won’t work, reply to this message or visit the Guidance Office and we’ll adjust it. You’re not alone—we’re here for you.";
+    }
+
+    private function sessionsTable(): ?string
+    {
+        foreach (['tbl_chatbot_sessions', 'chatbot_sessions', 'tbl_chatbot_session'] as $name) {
+            if (Schema::hasTable($name)) return $name;
+        }
+        return null;
+    }
 }
