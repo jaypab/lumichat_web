@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 
+
 // Auth controller for admin login form (reuse your auth controller)
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 
@@ -15,6 +16,7 @@ use App\Http\Controllers\Admin\SelfAssessmentController;
 use App\Http\Controllers\Admin\DiagnosisReportController;
 use App\Http\Controllers\Admin\CounselorLogController;
 use App\Http\Controllers\Admin\CourseAnalyticsController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -67,6 +69,10 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
     Route::post('chatbot-sessions/{session}/book',
         [ChatbotSessionController::class, 'book']
     )->whereNumber('session')->name('chatbot-sessions.book');
+
+    Route::post('chatbot-sessions/{session}/reschedule',
+        [ChatbotSessionController::class, 'reschedule']
+    )->whereNumber('session')->name('chatbot-sessions.reschedule');
 
     Route::get('chatbot-sessions/{session}/pdf',
         [ChatbotSessionController::class, 'exportOne']
