@@ -386,60 +386,61 @@ if (!$session) {
   
 }
 
-// After saving the user's message: accumulate counts on EVERY user message
+// Accumulate emotion counts on EVERY user message (no overwrite with empty)
 if (!empty($emotions)) {
     $current = $this->emotionsAsCounts($session->emotions ?? []);
     $updated = $this->incrementEmotionCounts($current, $emotions);
-    // only hit DB when something actually changed
     if ($updated !== $current) {
         $session->update(['emotions' => $updated]);
     }
 }
 
+// 5) Call Rasa
+$rasaUrl  = $this->rasaWebhookUrl(); // ← use your helper (handles token)
+$metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk);
+$botReplies = [];
+$r = null;
 
-        // 5) Call Rasa
-        $rasaUrl   = config('services.rasa.url', env('RASA_URL', 'http://127.0.0.1:5005/webhooks/rest/webhook'));
-        $metadata  = $this->buildRasaMetadata($sessionId, $lang, $msgRisk);
-        $botReplies = [];
+// define timeout/verify BEFORE use
+$timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
+$verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
 
-        try {
-            $r = Http::timeout($timeout)
-                ->withOptions(['verify' => $verify])
-                ->withHeaders(['Accept' => 'application/json'])
-                ->post($rasaUrl, [
-                    'sender'   => 'u_' . $userId . '_s_' . $sessionId,
-                    'message'  => $text,
-                    'metadata' => $metadata,
-                ]);
+try {
+    $r = Http::timeout($timeout)
+        ->withOptions(['verify' => $verify])
+        ->withHeaders(['Accept' => 'application/json'])
+        ->post($rasaUrl, [
+            'sender'   => 'u_' . $userId . '_s_' . $sessionId,
+            'message'  => $text,
+            'metadata' => $metadata,
+        ]);
 
-            if ($r->ok()) {
-                $payload = $r->json() ?? [];
-                foreach ($payload as $piece) {
-                    if (!empty($piece['text'])) $botReplies[] = $piece['text'];
-                }
-            }
-        } catch (\Throwable $e) {
-            $botReplies = [
-                "It’s okay to feel that way. I’m here to listen. Would you like to share more? / Sige ra na, ania ko maminaw. Gusto nimo isulti pa ug dugang?"
-            ];
+    if ($r->ok()) {
+        $payload = $r->json() ?? [];
+        foreach ($payload as $piece) {
+            if (!empty($piece['text'])) $botReplies[] = $piece['text'];
         }
+    }
+} catch (\Throwable $e) {
+    // graceful fallback
+    $botReplies = [
+        "It’s okay to feel that way. I’m here to listen. Would you like to share more? / Sige ra na, ania ko maminaw. Gusto nimo isulti pa ug dugang?"
+    ];
+}
 
-        if (empty($botReplies)) {
-            $botReplies = [
-                "I’m here to support you. Would you like to share more about how you’re feeling? / Ania ko para motabang. Gusto nimo isulti pa ug dugang kung unsa imong gibati?"
-            ];
-            $this->logActivity('rasa_no_reply', 'Rasa returned no replies', $sessionId, [
-                'response' => is_object($r) ? $r->body() : null,
-            ]);
-        } else {
-            if (count($botReplies) > 3) {
-                $this->logActivity('rasa_multiple_replies', count($botReplies) . ' replies from Rasa', $sessionId, [
-                    'sample'   => array_slice($botReplies, 0, 3),
-                    'full'     => $botReplies,
-                ]);
-            }
-        }
-
+if (empty($botReplies)) {
+    $botReplies = [
+        "I’m here to support you. Would you like to share more about how you’re feeling? / Ania ko para motabang. Gusto nimo isulti pa ug dugang kung unsa imong gibati?"
+    ];
+    $this->logActivity('rasa_no_reply', 'Rasa returned no replies', $sessionId, [
+        'response' => is_object($r) ? $r->body() : null,
+    ]);
+} else if (count($botReplies) > 3) {
+    $this->logActivity('rasa_multiple_replies', count($botReplies) . ' replies from Rasa', $sessionId, [
+        'sample' => array_slice($botReplies, 0, 3),
+        'full'   => $botReplies,
+    ]);
+}
         // 6) Risk elevation + crisis prompt
         $current = $session->risk_level ?: 'low';
         $order   = ['low' => 0, 'moderate' => 1, 'high' => 2];
@@ -505,8 +506,7 @@ if (!empty($emotions)) {
                 'sent_at'    => $bot->sent_at->toIso8601String(),
             ];
         }
-
-        $tz       = config('app.timezone');
+$tz       = config('app.timezone');
 $nowHuman = now()->timezone($tz)->format('H:i');
 
 $rawReplies = is_array($botPayload) ? $botPayload : [$botPayload];
@@ -520,20 +520,6 @@ $replies    = array_values(array_filter(array_map(function ($r) {
     return trim((string) $r);
 }, $rawReplies), fn ($s) => $s !== ''));
 
-$tz       = config('app.timezone');
-$nowHuman = now()->timezone($tz)->format('H:i');
-
-        $rawReplies = is_array($botPayload) ? $botPayload : [$botPayload];
-        $replies    = array_values(array_filter(array_map(function ($r) {
-            if (is_array($r)) {
-                if (isset($r['text']))      return trim((string) $r['text']);
-                if (isset($r['message']))   return trim((string) $r['message']);
-                if (isset($r['bot_reply'])) return trim((string) $r['bot_reply']);
-                return trim((string) json_encode($r));
-            }
-            return trim((string) $r);
-        }, $rawReplies), fn ($s) => $s !== ''));
-
 return response()->json([
     'user_message' => [
         'text'       => $text,
@@ -542,8 +528,49 @@ return response()->json([
     ],
     'bot_reply'  => $replies,
     'time_human' => $nowHuman,
-]);    
+]);
+
 }
+private function emotionsAsCounts(null|array|string $value): array
+{
+    // Normalize any shape (null | list | map | JSON) → assoc counts: ['sad'=>3,'tired'=>1]
+    if (is_string($value)) {
+        $decoded = json_decode($value, true);
+        $value = is_array($decoded) ? $decoded : [];
+    }
+    if (!is_array($value)) return [];
+
+    $isList = array_keys($value) === range(0, count($value) - 1);
+    if ($isList) {
+        $out = [];
+        foreach ($value as $lbl) {
+            if (!is_string($lbl) || $lbl === '') continue;
+            $k = strtolower($lbl);
+            $out[$k] = ($out[$k] ?? 0) + 1;
+        }
+        return $out;
+    }
+
+    // already a map; coerce to int counts
+    $out = [];
+    foreach ($value as $k => $v) {
+        if (!is_string($k)) continue;
+        $out[strtolower($k)] = max(0, (int) $v);
+    }
+    return $out;
+}
+
+private function incrementEmotionCounts(array $currentCounts, array $newLabels): array
+{
+    $cur = $this->emotionsAsCounts($currentCounts);
+    foreach ($newLabels as $lbl) {
+        if (!is_string($lbl) || $lbl === '') continue;
+        $k = strtolower($lbl);
+        $cur[$k] = ($cur[$k] ?? 0) + 1;
+    }
+    return $cur;
+}
+
 
     /* =========================================================================
      | History utilities
