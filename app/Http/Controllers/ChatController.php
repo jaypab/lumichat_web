@@ -398,14 +398,10 @@ if (!empty($emotions)) {
 
 
         // 5) Call Rasa
-        $rasaUrl  = $this->rasaWebhookUrl();
-        $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk);
+        $rasaUrl   = config('services.rasa.url', env('RASA_URL', 'http://127.0.0.1:5005/webhooks/rest/webhook'));
+        $metadata  = $this->buildRasaMetadata($sessionId, $lang, $msgRisk);
         $botReplies = [];
 
-        $timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
-        $verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
-
-        $r = null;
         try {
             $r = Http::timeout($timeout)
                 ->withOptions(['verify' => $verify])
@@ -511,7 +507,21 @@ if (!empty($emotions)) {
         }
 
         $tz       = config('app.timezone');
-        $nowHuman = now()->timezone($tz)->format('H:i');
+$nowHuman = now()->timezone($tz)->format('H:i');
+
+$rawReplies = is_array($botPayload) ? $botPayload : [$botPayload];
+$replies    = array_values(array_filter(array_map(function ($r) {
+    if (is_array($r)) {
+        if (isset($r['text']))      return trim((string) $r['text']);
+        if (isset($r['message']))   return trim((string) $r['message']);
+        if (isset($r['bot_reply'])) return trim((string) $r['bot_reply']);
+        return trim((string) json_encode($r));
+    }
+    return trim((string) $r);
+}, $rawReplies), fn ($s) => $s !== ''));
+
+$tz       = config('app.timezone');
+$nowHuman = now()->timezone($tz)->format('H:i');
 
         $rawReplies = is_array($botPayload) ? $botPayload : [$botPayload];
         $replies    = array_values(array_filter(array_map(function ($r) {
@@ -524,58 +534,16 @@ if (!empty($emotions)) {
             return trim((string) $r);
         }, $rawReplies), fn ($s) => $s !== ''));
 
-        return response()->json([
-            'user_message' => [
-                'text'       => $text,
-                'time_human' => $userMsg->sent_at->timezone($tz)->format('H:i'),
-                'sent_at'    => $userMsg->sent_at->toIso8601String(),
-            ],
-            'bot_reply'  => $replies,
-            'time_human' => $nowHuman,
-        ]);
-    }
-    // Normalize any stored shape (null | list | map) into a simple list of labels.
-// Decode stored JSON into a label=>count map.
-private function emotionsAsCounts(null|array|string $value): array
-{
-    if (is_string($value)) {
-        $decoded = json_decode($value, true);
-        $value = is_array($decoded) ? $decoded : [];
-    }
-    if (!is_array($value)) return [];
-
-    // If already a map of counts, normalize to int.
-    $isList = array_keys($value) === range(0, count($value) - 1);
-    if (!$isList) {
-        $out = [];
-        foreach ($value as $k => $v) {
-            if (!is_string($k)) continue;
-            $out[strtolower($k)] = max(0, (int) $v);
-        }
-        return $out;
-    }
-
-    // If it was a list (["sad","anxious"]), turn into counts.
-    $out = [];
-    foreach ($value as $label) {
-        if (!is_string($label) || $label === '') continue;
-        $k = strtolower($label);
-        $out[$k] = ($out[$k] ?? 0) + 1;
-    }
-    return $out;
+return response()->json([
+    'user_message' => [
+        'text'       => $text,
+        'time_human' => $userMsg->sent_at->timezone($tz)->format('H:i'),
+        'sent_at'    => $userMsg->sent_at->toIso8601String(),
+    ],
+    'bot_reply'  => $replies,
+    'time_human' => $nowHuman,
+]);    
 }
-
-// Increment counts for the newly detected labels.
-private function incrementEmotionCounts(array $counts, array $labels): array
-{
-    foreach ($labels as $label) {
-        if (!is_string($label) || $label === '') continue;
-        $k = strtolower($label);
-        $counts[$k] = ($counts[$k] ?? 0) + 1;
-    }
-    return $counts;
-}
-
 
     /* =========================================================================
      | History utilities
