@@ -410,43 +410,55 @@ class ChatbotSessionController extends Controller
     }
 
     /** EXPORT: one session */
-    public function exportOne(int $session)
-    {
-        $row = $this->sessions->findWithOrderedChats($session);
-        if (!$row) {
-            if ($table = $this->sessionsTable()) {
-                $row = DB::table($table)->where('id', $session)->first();
-            }
+  public function exportOne(int $session)
+{
+    $row = $this->sessions->findWithOrderedChats($session);
+    if (!$row) {
+        if ($table = $this->sessionsTable()) {
+            $row = DB::table($table)->where('id', $session)->first();
         }
-        abort_unless($row, 404);
-
-        $logoData = null;
-        $logoPath = public_path('images/chatbot.png');
-        if (is_file($logoPath)) {
-            $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
-        }
-
-        $riskLevel = strtolower((string)($row->risk_level ?? $row->risk ?? ''));
-        $riskScore = (int)($row->risk_score ?? 0);
-        $isHigh    = in_array($riskLevel, ['high','high-risk','high_risk'], true) || $riskScore >= 80;
-
-        $year = $row->created_at ? Carbon::parse($row->created_at)->format('Y') : now()->format('Y');
-        $code = 'LMC-' . $year . '-' . str_pad((string)$session, 4, '0', STR_PAD_LEFT);
-
-        $pdf = app('dompdf.wrapper');
-        $pdf->setPaper('a4', 'portrait');
-        $pdf->setOptions(['isHtml5ParserEnabled' => true, 'isRemoteEnabled' => true]);
-
-        $pdf->loadView('admin.chatbot_sessions.session_pdf', [
-            'session'     => $row,
-            'code'        => $code,
-            'logoData'    => $logoData,
-            'isHighRisk'  => $isHigh,
-            'generatedAt' => now()->format('Y-m-d H:i'),
-        ]);
-
-        return $pdf->download('Chatbot_Session_'.$session.'_'.now()->format('Ymd_His').'.pdf');
     }
+    abort_unless($row, 404);
+
+    $logoData = null;
+    $logoPath = public_path('images/chatbot.png');
+    if (is_file($logoPath)) {
+        $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
+    }
+
+    $riskLevel = strtolower((string)($row->risk_level ?? $row->risk ?? ''));
+    $riskScore = (int)($row->risk_score ?? 0);
+    $isHigh    = in_array($riskLevel, ['high','high-risk','high_risk'], true) || $riskScore >= 80;
+
+    $year = $row->created_at ? \Carbon\Carbon::parse($row->created_at)->format('Y') : now()->format('Y');
+    $code = 'LMC-' . $year . '-' . str_pad((string)$session, 4, '0', STR_PAD_LEFT);
+
+    // NEW: session counts for this student
+    $sessionCounts = ['all' => null, 'd30' => null, 'd7' => null];
+    if (!empty($row->user_id)) {
+        $uid = (int) $row->user_id;
+        $sessionCounts['all'] = DB::table('chat_sessions')->where('user_id', $uid)->count();
+        $sessionCounts['d30'] = DB::table('chat_sessions')->where('user_id', $uid)
+                                ->where('created_at', '>=', now()->subDays(30))->count();
+        $sessionCounts['d7']  = DB::table('chat_sessions')->where('user_id', $uid)
+                                ->where('created_at', '>=', now()->subDays(7))->count();
+    }
+
+    $pdf = app('dompdf.wrapper');
+    $pdf->setPaper('a4', 'portrait');
+    $pdf->setOptions(['isHtml5ParserEnabled' => true, 'isRemoteEnabled' => true]);
+
+    $pdf->loadView('admin.chatbot_sessions.session_pdf', [
+        'session'        => $row,
+        'code'           => $code,
+        'logoData'       => $logoData,
+        'isHighRisk'     => $isHigh,
+        'generatedAt'    => now()->format('Y-m-d H:i'),
+        'sessionCounts'  => $sessionCounts,   // ← pass to view
+    ]);
+
+    return $pdf->download('Chatbot_Session_'.$session.'_'.now()->format('Ymd_His').'.pdf');
+}
 
     public function reschedule(int $id, Request $request): JsonResponse
     {

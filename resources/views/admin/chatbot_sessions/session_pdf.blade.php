@@ -29,13 +29,12 @@
 </head>
 <body>
 
-  {{-- Brand (fixed size so it never grows) --}}
   <div class="brandbar">
     @if(!empty($logoData))
       <img src="{{ $logoData }}" alt="LumiCHAT" width="50" height="50" style="width:50px;height:50px;border-radius:50%;vertical-align:middle;">
     @endif
     <span class="brand-title">LumiCHAT</span>
-     <div class="meta"><span class="meta-right">Generated: {{ $generatedAt }}</span></div>  
+    <div class="meta"><span class="meta-right">Generated: {{ $generatedAt }}</span></div>
   </div>
 
   <h1>
@@ -46,14 +45,23 @@
       <span class="badge badge-nr">NORMAL</span>
     @endif
   </h1>
+
+  {{-- NEW: session count summary for this student --}}
+  @if(!empty($sessionCounts['all']))
+    <div class="meta" style="margin-top:2px;margin-bottom:12px;">
+      Student sessions — Total: <strong>{{ $sessionCounts['all'] }}</strong>
+      @if(!is_null($sessionCounts['d30'])) | Last 30 days: <strong>{{ $sessionCounts['d30'] }}</strong>@endif
+      @if(!is_null($sessionCounts['d7']))  | Last 7 days: <strong>{{ $sessionCounts['d7'] }}</strong>@endif
+    </div>
+  @endif
+
   @php
-    // --- Normalize emotions into counts: {"sad":3,"tired":2,...} ---
+    // normalize emotions to counts for this session
     $raw = $session->emotions ?? [];
     if (is_string($raw)) {
         $decoded = json_decode($raw, true);
         $raw = is_array($decoded) ? $decoded : [];
     }
-
     $counts = [];
     if (is_array($raw)) {
         $isList = array_keys($raw) === range(0, count($raw) - 1);
@@ -70,17 +78,17 @@
             }
         }
     }
-
-    arsort($counts);                // highest first
+    arsort($counts);
     $total = array_sum($counts);
-    $top   = array_slice($counts, 0, 6, true);  // show up to 6
+    $top   = array_slice($counts, 0, 6, true);
   @endphp
+
   <table>
     <thead>
       <tr>
         <th style="width:22%;">Session ID</th>
         <th style="width:25%;">Student</th>
-        <th style="width:34%;">Initial Result</th>
+        <th style="width:34%;">Emotions Mentioned</th>
         <th style="width:14%;">Initial Date</th>
       </tr>
     </thead>
@@ -88,7 +96,7 @@
       <tr>
         <td><strong>{{ $code }}</strong></td>
         <td>{{ $session->user->name ?? '—' }}</td>
-       <td>
+        <td>
           @if($total === 0 || empty($top))
             —
           @else
