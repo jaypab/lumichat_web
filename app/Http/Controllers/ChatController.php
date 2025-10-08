@@ -245,7 +245,7 @@ HTML;
     /* =========================================================================
      | Store a user message, call Rasa, risk/booking/crisis logic
      * =========================================================================*/
-    public function store(Request $request)
+ public function store(Request $request)
 {
     // 1) Validation (+ idempotency)
     $validated = $request->validate([
@@ -266,7 +266,7 @@ HTML;
     $userId    = Auth::id();
     $sessionId = session('chat_session_id');
 
-    // ⬅️ NEW: detect emotions from this message
+    // NEW: detect emotions for this message
     $emotions = $this->detectEmotions($text);
 
     // 2) Session ownership check
@@ -277,15 +277,21 @@ HTML;
             ->first();
     }
     if (!$session) {
+        // create WITHOUT emotions to avoid mass-assignment issues
         $session = ChatSession::create([
             'user_id'       => $userId,
             'topic_summary' => 'Starting conversation...',
             'is_anonymous'  => 0,
             'risk_level'    => 'low',
-            // ⬅️ NEW: initialize emotion COUNTS for the session
-            'emotions'      => $this->incrementEmotionCounts([], $emotions),
         ]);
         session(['chat_session_id' => $session->id]);
+
+        // now safely set initial emotion counts (no mass assignment)
+        if (!empty($emotions)) {
+            $session->emotions = $this->incrementEmotionCounts([], $emotions);
+            $session->save();
+        }
+
         $this->logActivity('chat_session_created', 'New chat session auto-created', $session->id, [
             'is_anonymous' => false,
             'reused'       => false,
@@ -314,12 +320,13 @@ HTML;
         $session->update(['topic_summary' => ucfirst($summary)]);
     }
 
-    // ⬅️ NEW: accumulate emotion COUNTS on EVERY user message
+    // NEW: accumulate emotion COUNTS on EVERY user message (safe set + save)
     if (!empty($emotions)) {
         $current = $this->emotionsAsCounts($session->emotions ?? []);
         $updated = $this->incrementEmotionCounts($current, $emotions);
         if ($updated !== $current) {
-            $session->update(['emotions' => $updated]); // stored as JSON map {label: count}
+            $session->emotions = $updated;  // set attribute
+            $session->save();               // persist
         }
     }
 
@@ -370,7 +377,7 @@ HTML;
         }
     }
 
-    // 6) Risk elevation + crisis prompt (unchanged)
+    // 6) Risk elevation + crisis prompt
     $current = $session->risk_level ?: 'low';
     $order   = ['low' => 0, 'moderate' => 1, 'high' => 2];
     $new     = ($order[$msgRisk] > $order[$current]) ? $msgRisk : $current;
@@ -388,7 +395,7 @@ HTML;
         array_unshift($botReplies, $this->crisisMessageWithLink());
     }
 
-    // 6.5) Appointment CTA (unchanged)
+    // 6.5) Inject appointment CTA when needed
     $askedForAppt = $this->wantsAppointment($text) || $this->confirmedAfterOffer($text, $sessionId);
     $hasApptPlaceholder = false;
     foreach ($botReplies as $rpl) {
@@ -406,7 +413,7 @@ HTML;
         ]);
     }
 
-    // 7) Save bot replies + response (unchanged)
+    // 7) Save bot replies + response
     $link = Route::has('features.enable_appointment')
         ? URL::signedRoute('features.enable_appointment')
         : (Route::has('appointment.index')
@@ -460,6 +467,7 @@ HTML;
         'time_human' => $nowHuman,
     ]);
 }
+
 private function detectEmotions(string $text): array
 {
     $rules = [
