@@ -118,7 +118,19 @@
               $year = $s->created_at?->format('Y') ?? now()->format('Y');
               $code = 'LMC-' . $year . '-' . str_pad($s->id, 4, '0', STR_PAD_LEFT);
             @endphp
-
+@php
+  // $s->emotions expected as map: ["sad"=>3,"tired"=>2,"anxious"=>1]
+  $counts = is_array($s->emotions) ? $s->emotions : (json_decode($s->emotions ?? '[]', true) ?: []);
+  // normalize: lowercase keys + int values
+  $norm = [];
+  foreach ($counts as $k=>$v) {
+      if (!is_string($k)) continue;
+      $norm[strtolower($k)] = max(0, (int)$v);
+  }
+  arsort($norm); // highest first
+  $total = array_sum($norm);
+  $top   = array_slice($norm, 0, 3, true);
+@endphp
             <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition {{ $showRed ? 'bg-rose-50/40' : '' }}">
               {{-- SESSION ID --}}
               <td class="px-6 py-4 font-semibold">
@@ -153,8 +165,22 @@
               </td>
 
               <td class="px-6 py-4 text-slate-700">
-                {{ $s->topic_summary ?? '—' }}
-              </td>
+  @if(empty($top))
+    —
+  @else
+    <div class="flex flex-wrap gap-1.5">
+      @foreach($top as $name => $cnt)
+        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-medium
+                     bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200">
+          {{ ucfirst($name) }}
+          @if($total > 0)
+            <span class="ml-1 text-[11px] opacity-70">({{ number_format($cnt / $total * 100, 0) }}%)</span>
+          @endif
+        </span>
+      @endforeach
+    </div>
+  @endif
+</td>
 
               <td class="px-6 py-4 whitespace-nowrap text-slate-700">
                 {{ $s->created_at?->format('M d, Y') }}

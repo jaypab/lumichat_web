@@ -85,5 +85,8 @@
       @endforelse
     </tbody>
   </table>
+   <div class="small" style="margin-top:14px;">
+    LumiCHAT • Tagoloan Community College — Confidential student support record.
+  </div>
 </body>
 </html>

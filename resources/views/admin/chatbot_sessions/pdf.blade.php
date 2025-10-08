@@ -24,6 +24,7 @@
     .small { font-size:10px; color:#6b7280; }
   </style>
 </head>
+
 <body>
 
   {{-- Brand --}}
@@ -54,18 +55,63 @@
     </thead>
     <tbody>
       @forelse($rows as $s)
-        @php $code = 'LMC-' . now()->format('Y') . '-' . str_pad($s->id, 4, '0', STR_PAD_LEFT); @endphp
+        @php
+          // Session code (year from created_at when available)
+          $codeYear = $s->created_at ? \Carbon\Carbon::parse($s->created_at)->format('Y') : now()->format('Y');
+          $code     = 'LMC-' . $codeYear . '-' . str_pad($s->id, 4, '0', STR_PAD_LEFT);
+
+          // ---- normalize emotions PER ROW ----
+          $raw = $s->emotions ?? [];
+          if (is_string($raw)) {
+              $decoded = json_decode($raw, true);
+              $raw = is_array($decoded) ? $decoded : [];
+          }
+          $counts = [];
+          if (is_array($raw)) {
+              $isList = array_keys($raw) === range(0, count($raw) - 1);
+              if ($isList) {
+                  foreach ($raw as $lbl) {
+                      if (!is_string($lbl) || $lbl === '') continue;
+                      $k = strtolower($lbl);
+                      $counts[$k] = ($counts[$k] ?? 0) + 1;
+                  }
+              } else {
+                  foreach ($raw as $k => $v) {
+                      if (!is_string($k)) continue;
+                      $counts[strtolower($k)] = max(0, (int) $v);
+                  }
+              }
+          }
+          arsort($counts);
+          $total = array_sum($counts);
+          $top   = array_slice($counts, 0, 6, true);
+        @endphp
+
         <tr>
           <td><strong>{{ $code }}</strong></td>
           <td>{{ $s->user->name ?? '—' }}</td>
-          <td>{{ $s->topic_summary ?? '—' }}</td>
+          <td>
+            @if($total === 0 || empty($top))
+              —
+            @else
+              @foreach($top as $name => $cnt)
+                @php $pct = $total ? round($cnt / $total * 100) : 0; @endphp
+                <span class="chip">{{ ucfirst($name) }} <small>({{ $pct }}%)</small></span>
+              @endforeach
+            @endif
+          </td>
           <td>{{ optional($s->created_at)->format('M d, Y') }}</td>
         </tr>
       @empty
-        <tr><td colspan="4" class="small" style="text-align:center; padding:18px 0;">No sessions found.</td></tr>
+        <tr>
+          <td colspan="4" class="small" style="text-align:center; padding:18px 0;">No sessions found.</td>
+        </tr>
       @endforelse
     </tbody>
   </table>
-
+ {{-- Footer --}}
+  <div class="small" style="margin-top:14px;">
+    LumiCHAT • Tagoloan Community College — Confidential student support record.
+  </div>
 </body>
 </html>

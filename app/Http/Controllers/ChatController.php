@@ -245,6 +245,72 @@ HTML;
     /* =========================================================================
      | Store a user message, call Rasa, risk/booking/crisis logic
      * =========================================================================*/
+ private function detectEmotions(string $text): array
+    {
+        $rules = [
+            // Core “big six”
+            'happy|joy|glad|content|cheerful|pleased|relieved|grateful|gratitude|satisfied|proud|optimistic|hopeful|excited|thrilled|ecstatic|elated|euphoric|stoked|nalipay' => 'happy',
+            'sad|down|blue|unhappy|depress(ed)?|depression|cry(ing)?|tearful|heartbroken|grief|grieving|mourning|nagool' => 'sad',
+            'angry|mad|furious|rage|irate|annoy(ed)?|irritat(ed)?|frustrat(ed)?|resentful|outraged|cross' => 'angry',
+            'anxious|anxiety|panic|panicky|afraid|fear|scared|terrified|nervous|uneasy|worried|apprehensive|kulba' => 'anxious',
+            'disgust|disgusted|gross(ed)? out|revolted|nauseated|repulsed' => 'disgust',
+            'surprise(d)?|shocked|astonished|amazed|startled|stunned' => 'surprised',
+
+            // Common nuanced states
+            'stress|stressed|pressure|overwhelm(ed)?|burnout|overloaded' => 'stressed',
+            'tired|exhausted|fatigue|fatigued|drained|worn out|kapoy' => 'tired',
+            'lonely|loneliness|alone|isolated|isolat(ed)?|left out' => 'lonely',
+            'bored|boredom|apathetic|meh|indifferent|listless' => 'bored',
+            'confus(ed)?|confusing|unsure|uncertain|lost|perplexed' => 'confused',
+            'ashamed|shame|embarrass(ed)?|mortified|humiliated' => 'ashamed',
+            'guilt(y)?|guilty' => 'guilty',
+            'jealous|jealousy|envy|envious' => 'jealous',
+            'hurt|pained|pangs|wounded feelings' => 'hurt',
+            'disappoint(ed)?|let down' => 'disappointed',
+            'hopeless|no hope|give up|pointless|worthless' => 'hopeless',
+            'insecure|not enough|inferior|self-conscious' => 'insecure',
+            'calm|peaceful|serene|at ease|relaxed|okay|fine|ok(ay)?' => 'calm',
+            'determined|motivated|driven|resolute|committed' => 'determined',
+            'regret|regretful|remorse' => 'regret',
+            'love|loved|loving|affection|caring|fond' => 'love',
+            'homesick|miss home|miss my family' => 'homesick',
+            'nervous breakdown|can’t cope|cannot cope' => 'overwhelmed',
+            'not ok(ay)?|not fine|not okey|not okay' => 'not_ok',
+
+            // local language cues (Cebuano/Bisaya commonly heard)
+            'kulba' => 'anxious',
+            'kapoy' => 'tired',
+            'nalipay' => 'happy',
+            'nagool' => 'sad',
+        ];
+
+        $labels = [];
+        foreach ($rules as $pattern => $label) {
+            if (preg_match('/\b(?:' . $pattern . ')\b/iu', $text)) {
+                $labels[] = $label;
+            }
+        }
+
+        // De-dup + stable order
+        $labels = array_values(array_unique($labels));
+
+        // Optional: ensure at least one label for UX (comment out if you prefer empty)
+        if (empty($labels)) {
+            // Try coarse bucketing:
+            if (preg_match('/\b(help|problem|struggle|issue|hard|difficult)\b/i', $text)) {
+                $labels[] = 'stressed';
+            }
+        }
+
+        return $labels;
+    }
+
+    /**
+     * Updated store(): saves first message as usual, but:
+     * - detects emotions from the message
+     * - stores them as JSON in chat_sessions.emotions
+     * - DOES NOT write "Starting conversation..." anymore
+     */
     public function store(Request $request)
     {
         // 1) Validation (+ idempotency)
@@ -258,6 +324,7 @@ HTML;
             '_idem'  => ['required','uuid','unique:chats,idempotency_key'],
         ]);
 
+        // Normalize text
         $rawInput = (string) $validated['message'];
         $text = preg_replace('/\s+/u', ' ', $rawInput);
         $text = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $text ?? '');
@@ -265,6 +332,9 @@ HTML;
 
         $userId    = Auth::id();
         $sessionId = session('chat_session_id');
+
+        // Detect emotions up front
+        $emotions = $this->detectEmotions($text);
 
         // 2) Session ownership check
         $session = null;
@@ -276,9 +346,10 @@ HTML;
         if (!$session) {
             $session = ChatSession::create([
                 'user_id'       => $userId,
-                'topic_summary' => 'Starting conversation...',
+                'topic_summary' => null,     // ⬅️ we no longer store “Starting conversation…”
                 'is_anonymous'  => 0,
                 'risk_level'    => 'low',
+                'emotions'      => $emotions, // ⬅️ store detected emotions (JSON)
             ]);
             session(['chat_session_id' => $session->id]);
             $this->logActivity('chat_session_created', 'New chat session auto-created', $session->id, [
@@ -301,16 +372,32 @@ HTML;
             'sent_at'         => now(),
             'idempotency_key' => $validated['_idem'],
         ]);
+// When creating a brand-new session
+if (!$session) {
+    $session = ChatSession::create([
+        'user_id'       => $userId,
+        'topic_summary' => null,
+        'is_anonymous'  => 0,
+        'risk_level'    => 'low',
+        // initialize as counts (if no labels yet, it will be empty)
+        'emotions'      => $this->incrementEmotionCounts([], $emotions),
+    ]);
+    session(['chat_session_id' => $session->id]);
+  
+}
 
-        $count = Chat::where('chat_session_id', $sessionId)->where('sender', 'user')->count();
-        if ($count === 1) {
-            preg_match('/\b(sad|depress|help|anxious|angry|lonely|stress|tired|happy|excited|not okay|nagool|kapoy|kulba|nalipay)\b/i', $text, $m);
-            $summary = $m[0] ?? Str::limit($text, 40, '…');
-            $session->update(['topic_summary' => ucfirst($summary)]);
-        }
+// After saving the user's message: accumulate counts on EVERY user message
+if (!empty($emotions)) {
+    $current = $this->emotionsAsCounts($session->emotions ?? []);
+    $updated = $this->incrementEmotionCounts($current, $emotions);
+    // only hit DB when something actually changed
+    if ($updated !== $current) {
+        $session->update(['emotions' => $updated]);
+    }
+}
+
 
         // 5) Call Rasa
-        // FIX: central & safe URL + timeout/SSL from env (no logic change)
         $rasaUrl  = $this->rasaWebhookUrl();
         $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk);
         $botReplies = [];
@@ -318,7 +405,7 @@ HTML;
         $timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
         $verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
 
-        $r = null; // prevent "undefined $r" in logger below
+        $r = null;
         try {
             $r = Http::timeout($timeout)
                 ->withOptions(['verify' => $verify])
@@ -423,7 +510,6 @@ HTML;
             ];
         }
 
-        // FIX: remove duplicate block; compute once
         $tz       = config('app.timezone');
         $nowHuman = now()->timezone($tz)->format('H:i');
 
@@ -448,6 +534,48 @@ HTML;
             'time_human' => $nowHuman,
         ]);
     }
+    // Normalize any stored shape (null | list | map) into a simple list of labels.
+// Decode stored JSON into a label=>count map.
+private function emotionsAsCounts(null|array|string $value): array
+{
+    if (is_string($value)) {
+        $decoded = json_decode($value, true);
+        $value = is_array($decoded) ? $decoded : [];
+    }
+    if (!is_array($value)) return [];
+
+    // If already a map of counts, normalize to int.
+    $isList = array_keys($value) === range(0, count($value) - 1);
+    if (!$isList) {
+        $out = [];
+        foreach ($value as $k => $v) {
+            if (!is_string($k)) continue;
+            $out[strtolower($k)] = max(0, (int) $v);
+        }
+        return $out;
+    }
+
+    // If it was a list (["sad","anxious"]), turn into counts.
+    $out = [];
+    foreach ($value as $label) {
+        if (!is_string($label) || $label === '') continue;
+        $k = strtolower($label);
+        $out[$k] = ($out[$k] ?? 0) + 1;
+    }
+    return $out;
+}
+
+// Increment counts for the newly detected labels.
+private function incrementEmotionCounts(array $counts, array $labels): array
+{
+    foreach ($labels as $label) {
+        if (!is_string($label) || $label === '') continue;
+        $k = strtolower($label);
+        $counts[$k] = ($counts[$k] ?? 0) + 1;
+    }
+    return $counts;
+}
+
 
     /* =========================================================================
      | History utilities

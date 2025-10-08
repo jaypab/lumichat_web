@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use App\Models\User;   // <-- import
+use App\Models\User;
 
 class ChatSession extends Model
 {
@@ -17,10 +17,12 @@ class ChatSession extends Model
         'topic_summary',
         'is_anonymous',
         'risk_level',
+        'emotions',       // ← NEW
     ];
 
     protected $casts = [
         'is_anonymous' => 'boolean',
+        'emotions'     => 'array',   // ← NEW (JSON <-> array)
         'created_at'   => 'datetime',
         'updated_at'   => 'datetime',
     ];
@@ -30,7 +32,6 @@ class ChatSession extends Model
         return $this->hasMany(Chat::class, 'chat_session_id');
     }
 
-    // 🔧 This is the relationship your admin query expects
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id');

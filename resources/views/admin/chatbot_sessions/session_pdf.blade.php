@@ -17,11 +17,7 @@
     .meta{ font-size:11px; color:#6b7280; margin:0 0 10px; }
     .meta-right{ float:right; }
 
-    /* Badge */
-    .badge{ display:inline-block; padding:3px 8px; border-radius:999px; font-weight:700; font-size:10px; margin-left:8px }
-    .badge-hr{ background:#fee2e2; color:#991b1b; border:1px solid #fecaca }
-    .badge-nr{ background:#dcfce7; color:#166534; border:1px solid #bbf7d0 }
-
+   
     /* Table */
     table{ width:100%; border-collapse:collapse }
     thead{ background:#f1f5f9; color:#334155 }
@@ -50,7 +46,35 @@
       <span class="badge badge-nr">NORMAL</span>
     @endif
   </h1>
+  @php
+    // --- Normalize emotions into counts: {"sad":3,"tired":2,...} ---
+    $raw = $session->emotions ?? [];
+    if (is_string($raw)) {
+        $decoded = json_decode($raw, true);
+        $raw = is_array($decoded) ? $decoded : [];
+    }
 
+    $counts = [];
+    if (is_array($raw)) {
+        $isList = array_keys($raw) === range(0, count($raw) - 1);
+        if ($isList) {
+            foreach ($raw as $lbl) {
+                if (!is_string($lbl) || $lbl === '') continue;
+                $k = strtolower($lbl);
+                $counts[$k] = ($counts[$k] ?? 0) + 1;
+            }
+        } else {
+            foreach ($raw as $k => $v) {
+                if (!is_string($k)) continue;
+                $counts[strtolower($k)] = max(0, (int) $v);
+            }
+        }
+    }
+
+    arsort($counts);                // highest first
+    $total = array_sum($counts);
+    $top   = array_slice($counts, 0, 6, true);  // show up to 6
+  @endphp
   <table>
     <thead>
       <tr>
@@ -64,12 +88,20 @@
       <tr>
         <td><strong>{{ $code }}</strong></td>
         <td>{{ $session->user->name ?? '—' }}</td>
-        <td>{{ $session->topic_summary ?? '—' }}</td>
+       <td>
+          @if($total === 0 || empty($top))
+            —
+          @else
+            @foreach($top as $name => $cnt)
+              @php $pct = $total ? round($cnt / $total * 100) : 0; @endphp
+              <span class="chip">{{ ucfirst($name) }} <small>({{ $pct }}%)</small></span>
+            @endforeach
+          @endif
+        </td>
         <td>{{ \Carbon\Carbon::parse($session->created_at)->format('M d, Y • h:i A') }}</td>
       </tr>
     </tbody>
   </table>
-
   {{-- Footer --}}
   <div class="small" style="margin-top:14px;">
     LumiCHAT • Tagoloan Community College — Confidential student support record.

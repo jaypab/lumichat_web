@@ -3,6 +3,38 @@
 @section('page_title', 'Chatbot Session Summary')
 
 @section('content')
+{{-- Emotions Mentioned (counts → %) --}}
+@php
+  // Normalize to counts: {"sad":3,"tired":2,"anxious":1}
+  $raw = $session->emotions ?? [];
+  if (is_string($raw)) {
+      $decoded = json_decode($raw, true);
+      $raw = is_array($decoded) ? $decoded : [];
+  }
+
+  $counts = [];
+  if (is_array($raw)) {
+      $isList = array_keys($raw) === range(0, count($raw) - 1);
+      if ($isList) {
+          // legacy list like ["sad","anxious"] -> counts
+          foreach ($raw as $lbl) {
+              if (!is_string($lbl) || $lbl==='') continue;
+              $k = strtolower($lbl);
+              $counts[$k] = ($counts[$k] ?? 0) + 1;
+          }
+      } else {
+          // already a map -> normalize
+          foreach ($raw as $k => $v) {
+              if (!is_string($k)) continue;
+              $counts[strtolower($k)] = max(0, (int) $v);
+          }
+      }
+  }
+
+  arsort($counts);                 // highest first
+  $total = array_sum($counts);
+  $top   = array_slice($counts, 0, 6, true); // show up to 6 badges here
+@endphp
 @php
   $codeYear = $session->created_at?->format('Y') ?? now()->format('Y');
   $code     = 'LMC-' . $codeYear . '-' . str_pad($session->id, 4, '0', STR_PAD_LEFT);
@@ -69,6 +101,7 @@
           </span>
         @endif
       @endif
+      
 
       {{-- Export PDF --}}
       <a href="{{ url('admin/chatbot-sessions/'.$session->id.'/pdf') }}"
@@ -119,7 +152,26 @@
 
           <div>
             <div class="text-xs text-slate-500 uppercase">Initial Result</div>
-            <div class="mt-1 font-medium text-slate-800">{{ $session->topic_summary ?? '—' }}</div>
+           <div class="md:col-span-2">
+  <div class="text-xs text-slate-500 uppercase">Emotions Mentioned</div>
+  <div class="mt-1">
+    @if($total === 0 || empty($top))
+      <div class="text-slate-500">—</div>
+    @else
+      <div class="flex flex-wrap gap-1.5">
+        @foreach($top as $name => $cnt)
+          @php $pct = $total ? round($cnt / $total * 100) : 0; @endphp
+          <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-medium
+                       bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200"
+                title="{{ $cnt }} mention{{ $cnt===1?'':'s' }}">
+            {{ ucfirst($name) }}
+            <span class="ml-1 text-[11px] opacity-70">({{ $pct }}%)</span>
+          </span>
+        @endforeach
+      </div>
+    @endif
+  </div>
+</div>
           </div>
 
           <div>

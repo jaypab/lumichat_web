@@ -41,9 +41,9 @@
   <table>
     <thead>
       <tr>
-        <th style="width:10%;">Course</th>
-        <th style="width:12%;">Year</th>
-        <th style="width:14%;">Students</th>
+        <th style="width:15%;">Course</th>
+        <th style="width:20%;">Year</th>
+        <th style="width:25%;">Students</th>
         <th style="width:42%;">Common Diagnosis</th>
       </tr>
     </thead>
@@ -67,5 +67,8 @@
       @endforelse
     </tbody>
   </table>
+   <div class="small" style="margin-top:14px;">
+    LumiCHAT • Tagoloan Community College — Confidential student support record.
+  </div>
 </body>
 </html>

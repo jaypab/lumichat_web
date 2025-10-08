@@ -51,8 +51,8 @@
       <tr>
         <th style="width:16%">ID</th>
         <th style="width:22%">Student Name</th>
-        <th style="width:22%">Counselor Name</th>
-        <th style="width:26%">Diagnosis Result</th>
+        <th style="width:25%">Counselor Name</th>
+        <th style="width:25%">Diagnosis Result</th>
         <th style="width:14%; text-align:right;">Date</th>
       </tr>
     </thead>
@@ -76,9 +76,8 @@
       @endforelse
     </tbody>
   </table>
-
-  <p class="small" style="margin-top:10px;">
-    * This PDF lists all matching records based on current filters. Action buttons are omitted intentionally.
-  </p>
+   <div class="small" style="margin-top:14px;">
+    LumiCHAT • Tagoloan Community College — Confidential student support record.
+  </div>
 </body>
 </html>

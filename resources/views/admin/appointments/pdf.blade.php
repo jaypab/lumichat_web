@@ -89,9 +89,9 @@
       @endforelse
     </tbody>
   </table>
-
-  <p class="small" style="margin-top:10px;">
-    * This PDF lists all matching records based on current filters. Action buttons are omitted intentionally.
-  </p>
+   {{-- Footer --}}
+  <div class="small" style="margin-top:14px;">
+    LumiCHAT • Tagoloan Community College — Confidential student support record.
+  </div>
 </body>
 </html>
