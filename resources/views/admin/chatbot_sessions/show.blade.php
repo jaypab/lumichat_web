@@ -88,9 +88,9 @@
             Book (High-Risk)
           </button>
         @elseif($canMoveEarlier)
-          <button type="button" id="btnAdminMove"
-            class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 shadow-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+         <button type="button" id="btnAdminMove"
+              class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700
+                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 shadow-sm">
               <path d="M13 5l7 7-7 7M4 5h7v14H4z"/>
             </svg>
             Move earlier (High-Risk)
