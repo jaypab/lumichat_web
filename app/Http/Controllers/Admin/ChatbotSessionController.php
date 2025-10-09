@@ -35,14 +35,13 @@ class ChatbotSessionController extends Controller
     ) {}
 
     /** INDEX: list chatbot sessions with “handled/cleared AFTER session” maps */
-    public function index(Request $r): View
+   public function index(Request $r): View
     {
         $q       = (string) $r->query('q', '');
         $dateKey = (string) $r->query('date', 'all');
         $sort    = (string) $r->query('sort', 'newest');
 
-        $sessions = $this->sessions->paginateWithFilters($q, $dateKey, self::PER_PAGE);
-
+        $sessions = $this->sessions->paginateWithFilters($q, $dateKey, self::PER_PAGE, $sort);
         // Build “handled/cleared after this session” maps for the page
         $pageSessions = collect($sessions->items());
         $sessionIds   = $pageSessions->pluck('id')->all();
@@ -83,7 +82,7 @@ class ChatbotSessionController extends Controller
             });
         }
 
-         return view('admin.chatbot_sessions.index', [
+          return view('admin.chatbot_sessions.index', [
             'sessions'     => $sessions,
             'q'            => $q,
             'dateKey'      => $dateKey,
@@ -398,10 +397,13 @@ class ChatbotSessionController extends Controller
         $dateReq = (string) $request->input('date', self::DATE_KEY_ALL);
         $dateKey = in_array($dateReq, self::DATE_KEYS, true) ? $dateReq : self::DATE_KEY_ALL;
 
+        // ⬇️ read and pass the sort
+        $sort    = (string) $request->input('sort', 'newest');
+
         $rows = method_exists($this->sessions, 'allWithFilters')
-            ? $this->sessions->allWithFilters($q, $dateKey)
-            : (function () use ($q, $dateKey) {
-                $p = $this->sessions->paginateWithFilters($q, $dateKey, PHP_INT_MAX);
+            ? $this->sessions->allWithFilters($q, $dateKey, $sort)
+            : (function () use ($q, $dateKey, $sort) {
+                $p = $this->sessions->paginateWithFilters($q, $dateKey, PHP_INT_MAX, $sort);
                 return method_exists($p, 'items') ? collect($p->items()) : collect($p);
             })();
 

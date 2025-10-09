@@ -5,29 +5,14 @@
 @php
   $q       = $q ?? request('q', '');
   $dateKey = $dateKey ?? request('date','all');
-  $sort    = $sort ?? request('sort','newest'); // ← make sure controller passes this
+  $sort    = $sort ?? request('sort','newest');
   $total   = method_exists($sessions,'total') ? $sessions->total() : $sessions->count();
 
-  // helper to keep query while swapping a single key
+  // keep existing query params while swapping one key
   function keepq(array $overrides = []) {
       $params = request()->query();
       foreach ($overrides as $k => $v) { $params[$k] = $v; }
       return $params;
-  }
-
-  // build a URL quickly for sort links
-  function sort_url($key){ return route('admin.chatbot-sessions.index', keepq(['sort' => $key, 'page' => null])); }
-
-  // tiny helper for column header sort toggle
-  function sort_toggle($col){
-      $cur = request('sort','newest');
-      $desc = [
-        'session' => ['session_asc','session_desc'],
-        'student' => ['student_asc','student_desc'],
-        'date'    => ['oldest','newest'],
-      ][$col] ?? ['newest','oldest'];
-      // toggle between pair based on current
-      return $cur === $desc[1] ? $desc[0] : $desc[1];
   }
 @endphp
 
@@ -56,80 +41,65 @@
   </div>
 
   {{-- Filter Bar --}}
-  <form method="GET" action="{{ route('admin.chatbot-sessions.index') }}" class="mb-4 screen-only">
-    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end animate-fadeup">
-      <div class="md:col-span-3 min-w-0">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Date Range</label>
-        <select name="date"
-          class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-          <option value="all"    @selected($dateKey==='all')>All Dates</option>
-          <option value="7d"     @selected($dateKey==='7d')>Last 7 days</option>
-          <option value="30d"    @selected($dateKey==='30d')>Last 30 days</option>
-          <option value="month"  @selected($dateKey==='month')>This month</option>
-        </select>
-      </div>
+<form method="GET" action="{{ route('admin.chatbot-sessions.index') }}" class="mb-4 screen-only" id="filterForm">
+  <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end animate-fadeup">
+    {{-- Date --}}
+    <div class="md:col-span-3 min-w-0">
+      <label class="block text-xs font-medium text-slate-600 mb-1">Date Range</label>
+      <select name="date"
+        class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+        <option value="all"    @selected($dateKey==='all')>All Dates</option>
+        <option value="7d"     @selected($dateKey==='7d')>Last 7 days</option>
+        <option value="30d"    @selected($dateKey==='30d')>Last 30 days</option>
+        <option value="month"  @selected($dateKey==='month')>This month</option>
+      </select>
+    </div>
 
-      <div class="md:col-span-3 min-w-0">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Search</label>
-        <div class="relative">
-          <input type="text" name="q" value="{{ $q }}" placeholder="Search student or session ID"
-            class="w-full h-10 bg-white border border-slate-200 rounded-xl pl-10 pr-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-          <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <circle cx="11" cy="11" r="7" stroke-width="2"/>
-            <path d="M21 21l-4.3-4.3" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-        </div>
-      </div>
-
-      {{-- Quick sort dropdown (mobile) --}}
-      <div class="md:hidden">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Sort</label>
-        <select name="sort" class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-          <option value="newest"   @selected($sort==='newest')>Newest</option>
-          <option value="oldest"   @selected($sort==='oldest')>Oldest</option>
-          <option value="risk"     @selected($sort==='risk')>High risk first</option>
-          <option value="unresolved" @selected($sort==='unresolved')>Unresolved first</option>
-          <option value="handled"  @selected($sort==='handled')>Handled/Completed first</option>
-          <option value="student_asc"  @selected($sort==='student_asc')>Student A→Z</option>
-          <option value="session_asc"  @selected($sort==='session_asc')>Session ID ↑</option>
-          <option value="session_desc" @selected($sort==='session_desc')>Session ID ↓</option>
-        </select>
-      </div>
-
-      <div class="md:col-span-6 md:col-start-7 flex items-center justify-end gap-2">
-        <a href="{{ route('admin.chatbot-sessions.index') }}"
-           class="h-11 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 hover:ring-slate-300 active:scale-[.99] transition">
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h7M4 10h16M4 16h10"/>
-          </svg>
-          Reset
-        </a>
-
-        <button class="inline-flex items-center justify-center h-10 px-5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm text-sm">
-          Apply
-        </button>
+    {{-- Search --}}
+    <div class="md:col-span-3 min-w-0">
+      <label class="block text-xs font-medium text-slate-600 mb-1">Search</label>
+      <div class="relative">
+        <input type="text" name="q" value="{{ $q }}" placeholder="Search student or session ID"
+          class="w-full h-10 bg-white border border-slate-200 rounded-xl pl-10 pr-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+        <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <circle cx="11" cy="11" r="7" stroke-width="2"/>
+          <path d="M21 21l-4.3-4.3" stroke-width="2" stroke-linecap="round"/>
+        </svg>
       </div>
     </div>
-  </form>
 
-  {{-- Sort shortcuts (chips) --}}
-  <div class="screen-only flex flex-wrap gap-2">
-    @php
-      $chip = function($key,$label) use ($sort){
-        $is = $sort===$key;
-        $cls = $is
-          ? 'bg-indigo-600 text-white ring-indigo-600 hover:bg-indigo-700'
-          : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50';
-        return '<a class="inline-flex items-center h-9 px-3 rounded-full ring-1 text-sm '.$cls.'" href="'.e(sort_url($key)).'">'.$label.'</a>';
-      };
-    @endphp
-    {!! $chip('newest','Newest') !!}
-    {!! $chip('oldest','Oldest') !!}
-    {!! $chip('risk','High risk first') !!}
-    {!! $chip('unresolved','Unresolved first') !!}
-    {!! $chip('handled','Handled/Completed first') !!}
-    {!! $chip('student_asc','Student A→Z') !!}
+    {{-- Sort by --}}
+    <div class="md:col-span-3 min-w-0">
+      <label class="block text-xs font-medium text-slate-600 mb-1">Sort by</label>
+      <select name="sort" id="sortSelect"
+              class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+        <option value="newest"        @selected($sort==='newest')>Newest</option>
+        <option value="oldest"        @selected($sort==='oldest')>Oldest</option>
+        <option value="risk"          @selected($sort==='risk')>High risk first</option>
+        <option value="unresolved"    @selected($sort==='unresolved')>Unresolved first</option>
+        <option value="handled"       @selected($sort==='handled')>Handled/Completed first</option>
+        <option value="student_asc"   @selected($sort==='student_asc')>Student A→Z</option>
+        <option value="session_asc"   @selected($sort==='session_asc')>Session ID ↑</option>
+        <option value="session_desc"  @selected($sort==='session_desc')>Session ID ↓</option>
+      </select>
+    </div>
+
+    {{-- Buttons (occupy cols 10–12) --}}
+    <div class="md:col-span-3 md:col-start-10 flex items-end justify-end gap-2 self-end">
+      <a href="{{ route('admin.chatbot-sessions.index') }}"
+         class="h-10 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 hover:ring-slate-300 active:scale-[.99] transition">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h7M4 10h16M4 16h10"/>
+        </svg>
+        Reset
+      </a>
+
+      <button class="inline-flex items-center justify-center h-10 px-5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm text-sm">
+        Apply
+      </button>
+    </div>
   </div>
+</form>
 
   {{-- Table --}}
   <div id="cb-print-root" class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden mt-3">
@@ -146,53 +116,24 @@
         <thead class="bg-slate-100 border-b border-slate-200 text-slate-700">
           <tr class="align-middle">
             <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">
-              <a href="{{ route('admin.chatbot-sessions.index', keepq(['sort'=>sort_toggle('session'),'page'=>null])) }}" class="group inline-flex items-center gap-1 hover:underline">
-                Session ID
-                @if(in_array($sort,['session_asc','session_desc']))
-                  <svg class="w-3.5 h-3.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    @if($sort==='session_desc')
-                    <path d="M7 10l5-5 5 5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    @else
-                    <path d="M7 14l5 5 5-5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    @endif
-                  </svg>
-                @endif
-              </a>
+              <span class="inline-flex items-center gap-1">Session ID</span>
             </th>
 
             <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">
-              <a href="{{ route('admin.chatbot-sessions.index', keepq(['sort'=>sort_toggle('student'),'page'=>null])) }}" class="group inline-flex items-center gap-1 hover:underline">
-                Student Name
-                @if(in_array($sort,['student_asc','student_desc']))
-                  <svg class="w-3.5 h-3.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    @if($sort==='student_desc')
-                    <path d="M7 10l5-5 5 5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    @else
-                    <path d="M7 14l5 5 5-5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    @endif
-                  </svg>
-                @endif
-              </a>
+              <span class="inline-flex items-center gap-1">Student Name</span>
             </th>
-
-            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Initial Result</th>
 
             <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">
-              <a href="{{ route('admin.chatbot-sessions.index', keepq(['sort'=>sort_toggle('date'),'page'=>null])) }}" class="group inline-flex items-center gap-1 hover:underline">
-                Initial Date
-                @if(in_array($sort,['newest','oldest']))
-                  <svg class="w-3.5 h-3.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    @if($sort==='newest')
-                    <path d="M7 10l5-5 5 5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    @else
-                    <path d="M7 14l5 5 5-5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    @endif
-                  </svg>
-                @endif
-              </a>
+              Initial Result
             </th>
 
-            <th class="px-6 py-3 text-right font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap col-action">Action</th>
+            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">
+              Initial Date
+            </th>
+
+            <th class="px-6 py-3 text-right font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap col-action">
+              Action
+            </th>
           </tr>
         </thead>
 
@@ -338,7 +279,7 @@
 
 @push('scripts')
 <style>
-  /* SweetAlert2 modal sizing/look */
+  /* SweetAlert2 modal look */
   .swal-wide.swal2-popup{
     width:min(92vw,760px)!important;
     padding:0!important;
@@ -370,8 +311,29 @@
 </style>
 
 <script>
+  // Auto-submit on Sort change & clear pagination
+  (function(){
+    const form = document.getElementById('filterForm');
+    const sortSelect = document.getElementById('sortSelect');
+    if (!form || !sortSelect) return;
+
+    sortSelect.addEventListener('change', () => {
+      let pageInput = form.querySelector('input[name="page"]');
+      if (!pageInput) {
+        pageInput = document.createElement('input');
+        pageInput.type = 'hidden';
+        pageInput.name = 'page';
+        form.appendChild(pageInput);
+      }
+      pageInput.value = ''; // clear paginator page
+      form.submit();
+    });
+  })();
+</script>
+
+<script>
 (() => {
-  // Helpers
+  // (unchanged) Fast-book JS...
   const DATE_RE=/^\d{4}-\d{2}-\d{2}$/; const TIME_RE=/^\d{2}:\d{2}$/;
   const pad=n=>String(n).padStart(2,'0');
   const isWeekday=ymd=>{const[y,m,d]=ymd.split('-').map(Number);const t=new Date(y,m-1,d).getDay();return t>=1&&t<=5;}
@@ -415,7 +377,6 @@
     }
   }
 
-  // Fast-book only on actionable (red) rows
   document.querySelectorAll('.js-fast-book').forEach(link=>{
     link.addEventListener('click', async (e)=>{
       e.preventDefault();
