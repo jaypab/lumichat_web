@@ -39,6 +39,7 @@ class ChatbotSessionController extends Controller
     {
         $q       = (string) $r->query('q', '');
         $dateKey = (string) $r->query('date', 'all');
+        $sort    = (string) $r->query('sort', 'newest');
 
         $sessions = $this->sessions->paginateWithFilters($q, $dateKey, self::PER_PAGE);
 
@@ -82,12 +83,13 @@ class ChatbotSessionController extends Controller
             });
         }
 
-        return view('admin.chatbot_sessions.index', [
+         return view('admin.chatbot_sessions.index', [
             'sessions'     => $sessions,
             'q'            => $q,
             'dateKey'      => $dateKey,
-            'handledAfter' => $handledAfter,  // session_id => bool
-            'clearedAfter' => $clearedAfter,  // session_id => bool
+            'handledAfter' => $handledAfter,
+            'clearedAfter' => $clearedAfter,
+            'sort'         => $sort,
         ]);
     }
 
@@ -121,12 +123,27 @@ class ChatbotSessionController extends Controller
             ->whereIn('status', ['pending','confirmed'])
             ->exists();
 
+        $nextAppt = DB::table('tbl_appointments as a')
+        ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
+        ->where('a.student_id', $session->user_id)
+        ->whereIn('a.status', ['pending','confirmed'])
+        ->where('a.scheduled_at', '>', now())
+        ->orderBy('a.scheduled_at')
+        ->select([
+            'a.id',
+            'a.scheduled_at',
+            'a.status',
+            'c.name as counselor_name',
+        ])
+        ->first();
+
         return view('admin.chatbot_sessions.show', [
             'session'                    => $session,
             'hasAnyActiveForStudent'     => $hasAnyActiveForStudent,
             'hasActiveAfterThisSession'  => $hasActiveAfterThisSession,
             'hasCompletedForThisSession' => $hasCompletedForThisSession,
             'wasExpedited'               => $wasExpedited,
+            'nextAppt'                   => $nextAppt,
         ]);
     }
 

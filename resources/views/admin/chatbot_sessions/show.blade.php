@@ -3,9 +3,11 @@
 @section('page_title', 'Chatbot Session Summary')
 
 @section('content')
-{{-- Emotions Mentioned (counts → %) --}}
+{{-- ─────────────────────────────────────────────────────────────────────────────
+   Prepare data (emotions, risk flags, codes)
+────────────────────────────────────────────────────────────────────────────── --}}
 @php
-  // Normalize to counts: {"sad":3,"tired":2,"anxious":1}
+  // Normalize emotions to counts: {"sad":3,"tired":2,"anxious":1}
   $raw = $session->emotions ?? [];
   if (is_string($raw)) {
       $decoded = json_decode($raw, true);
@@ -16,26 +18,23 @@
   if (is_array($raw)) {
       $isList = array_keys($raw) === range(0, count($raw) - 1);
       if ($isList) {
-          // legacy list like ["sad","anxious"] -> counts
           foreach ($raw as $lbl) {
               if (!is_string($lbl) || $lbl==='') continue;
               $k = strtolower($lbl);
               $counts[$k] = ($counts[$k] ?? 0) + 1;
           }
       } else {
-          // already a map -> normalize
           foreach ($raw as $k => $v) {
               if (!is_string($k)) continue;
               $counts[strtolower($k)] = max(0, (int) $v);
           }
       }
   }
-
   arsort($counts);                 // highest first
   $total = array_sum($counts);
   $top   = array_slice($counts, 0, 6, true); // show up to 6 badges here
-@endphp
-@php
+
+  // Code + risk flags
   $codeYear = $session->created_at?->format('Y') ?? now()->format('Y');
   $code     = 'LMC-' . $codeYear . '-' . str_pad($session->id, 4, '0', STR_PAD_LEFT);
 
@@ -53,7 +52,9 @@
 
 <div class="max-w-5xl mx-auto p-6 space-y-6">
 
-  {{-- Header row --}}
+  {{-- ───────────────────────────────────────────────────────────────────────────
+     Header row
+  ───────────────────────────────────────────────────────────────────────────── --}}
   <div class="flex items-center justify-between no-print">
     <div>
       <h2 class="text-2xl font-bold tracking-tight text-slate-800 flex items-center gap-2">
@@ -61,6 +62,19 @@
         @if($isHighRisk)
           <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-700">
             HIGH RISK
+          </span>
+        @endif
+
+        {{-- Small "upcoming appt" pill right in the title --}}
+        @if(!empty($nextAppt))
+          @php
+            $__start   = \Carbon\Carbon::parse($nextAppt->scheduled_at);
+            $__minutes = now()->diffInMinutes($__start, false);
+            $__pillClr = $__minutes <= 60*24 ? 'bg-amber-100 text-amber-800 ring-amber-200'
+                                             : 'bg-emerald-100 text-emerald-800 ring-emerald-200';
+          @endphp
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 {{ $__pillClr }}">
+            Upcoming appt: {{ $__start->format('M d, Y • h:i A') }}
           </span>
         @endif
       </h2>
@@ -75,10 +89,6 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M9 12.75 11.25 15 15 9.75"/></svg>
             Appointment Completed
           </span>
-        @elseif($wasExpedited)
-          <span class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300">
-            Already moved earlier
-          </span>
         @elseif($canBook)
           <button type="button" id="btnAdminBook"
             class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm">
@@ -87,21 +97,18 @@
             </svg>
             Book (High-Risk)
           </button>
-        @elseif($canMoveEarlier)
-         <button type="button" id="btnAdminMove"
-              class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700
-                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 shadow-sm">
+        @elseif($canMoveEarlier && empty($nextAppt))
+          {{-- If we already show the banner (nextAppt), that banner includes a Reschedule button with the same id.
+               To avoid duplicate IDs, only render this header button if we don't have a banner. --}}
+          <button type="button" id="btnAdminMove"
+            class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
               <path d="M13 5l7 7-7 7M4 5h7v14H4z"/>
             </svg>
             Move earlier (High-Risk)
           </button>
-        @else
-          <span class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-200 text-slate-700">
-            Student already has an active appointment
-          </span>
         @endif
       @endif
-      
 
       {{-- Export PDF --}}
       <a href="{{ url('admin/chatbot-sessions/'.$session->id.'/pdf') }}"
@@ -125,7 +132,56 @@
     </div>
   </div>
 
-  {{-- PRINTABLE AREA --}}
+  {{-- ───────────────────────────────────────────────────────────────────────────
+     Upcoming Appointment Banner (always visible if there is any future active appt)
+  ───────────────────────────────────────────────────────────────────────────── --}}
+  @if(!empty($nextAppt))
+    @php
+      $start   = \Carbon\Carbon::parse($nextAppt->scheduled_at);
+      $isSoon  = now()->diffInMinutes($start) <= 60*24; // within 24h
+      // Adjust this route if your show page for appointments uses a different name:
+      $viewUrl = route('admin.appointments.show', $nextAppt->id ?? 0);
+    @endphp
+    <div class="no-print">
+      <div class="mt-3 flex items-start gap-3 rounded-2xl border p-4
+                  {{ $isSoon ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50' }}">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mt-0.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zm.75 4.5a.75.75 0 00-1.5 0v5.25c0 .199.079.39.22.53l3.75 3.75a.75.75 0 101.06-1.06l-3.53-3.53V6.75z" clip-rule="evenodd"/>
+        </svg>
+
+        <div class="flex-1">
+          <div class="font-semibold text-slate-900">
+            {{ $isSoon ? 'Upcoming appointment (within 24 hours)' : 'Upcoming appointment scheduled' }}
+          </div>
+          <div class="mt-1 text-sm text-slate-700">
+            <span class="font-medium">{{ $start->format('l, F d, Y • h:i A') }}</span>
+            with <span class="font-medium">{{ $nextAppt->counselor_name ?? 'Counselor' }}</span>
+            @if(!empty($nextAppt->location)) at <span class="font-medium">{{ $nextAppt->location }}</span>@endif
+          </div>
+          @if(!empty($nextAppt->note))
+            <div class="mt-1 text-xs text-slate-600">Note: {{ $nextAppt->note }}</div>
+          @endif
+        </div>
+
+        <div class="flex items-center gap-2">
+          <a href="{{ $viewUrl }}"
+             class="inline-flex items-center px-3 py-2 rounded-lg bg-white ring-1 ring-slate-200 hover:bg-slate-50">
+            View appointment
+          </a>
+
+          {{-- Re-use the same id so the JS handler works; avoid duplicate by not showing header button when banner shows --}}
+          <button type="button" id="btnAdminMove"
+                  class="inline-flex items-center px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
+            Reschedule
+          </button>
+        </div>
+      </div>
+    </div>
+  @endif
+
+  {{-- ───────────────────────────────────────────────────────────────────────────
+     PRINTABLE AREA
+  ───────────────────────────────────────────────────────────────────────────── --}}
   <div id="sessionPrintable" class="space-y-6 print-area">
 
     {{-- Summary card --}}
@@ -152,26 +208,26 @@
 
           <div>
             <div class="text-xs text-slate-500 uppercase">Initial Result</div>
-           <div class="md:col-span-2">
-  <div class="text-xs text-slate-500 uppercase">Emotions Mentioned</div>
-  <div class="mt-1">
-    @if($total === 0 || empty($top))
-      <div class="text-slate-500">—</div>
-    @else
-      <div class="flex flex-wrap gap-1.5">
-        @foreach($top as $name => $cnt)
-          @php $pct = $total ? round($cnt / $total * 100) : 0; @endphp
-          <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-medium
-                       bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200"
-                title="{{ $cnt }} mention{{ $cnt===1?'':'s' }}">
-            {{ ucfirst($name) }}
-            <span class="ml-1 text-[11px] opacity-70">({{ $pct }}%)</span>
-          </span>
-        @endforeach
-      </div>
-    @endif
-  </div>
-</div>
+            <div class="md:col-span-2">
+              <div class="text-xs text-slate-500 uppercase">Emotions Mentioned</div>
+              <div class="mt-1">
+                @if($total === 0 || empty($top))
+                  <div class="text-slate-500">—</div>
+                @else
+                  <div class="flex flex-wrap gap-1.5">
+                    @foreach($top as $name => $cnt)
+                      @php $pct = $total ? round($cnt / $total * 100) : 0; @endphp
+                      <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-medium
+                                   bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200"
+                            title="{{ $cnt }} mention{{ $cnt===1?'':'s' }}">
+                        {{ ucfirst($name) }}
+                        <span class="ml-1 text-[11px] opacity-70">({{ $pct }}%)</span>
+                      </span>
+                    @endforeach
+                  </div>
+                @endif
+              </div>
+            </div>
           </div>
 
           <div>
@@ -254,7 +310,9 @@
   </div>
 </div>
 
-{{-- Styles --}}
+{{-- ─────────────────────────────────────────────────────────────────────────────
+   Inline styles for time-pill grid (booking/reschedule modal)
+────────────────────────────────────────────────────────────────────────────── --}}
 <style>
   .pill {
     font-weight: 600;
@@ -300,7 +358,9 @@ function printNode(selector, title = document.title) {
 }
 </script>
 
-{{-- Calendar counts --}}
+{{-- ─────────────────────────────────────────────────────────────────────────────
+   Calendar counts (header mini-calendar)
+────────────────────────────────────────────────────────────────────────────── --}}
 <script>
 (() => {
   const endpoint = @json(route('admin.chatbot-sessions.calendar', $session->id));
@@ -351,7 +411,9 @@ function printNode(selector, title = document.title) {
 })();
 </script>
 
-{{-- BOOK (High-Risk) --}}
+{{-- ─────────────────────────────────────────────────────────────────────────────
+   BOOK (High-Risk)
+────────────────────────────────────────────────────────────────────────────── --}}
 <script>
 (() => {
   if (window.__LUMI_BOOK_BOUND__) return;
@@ -554,15 +616,17 @@ function printNode(selector, title = document.title) {
       if (!resp.ok) throw new Error(data?.message || 'Booking failed.');
 
       await Swal.fire({
-        icon: 'success',
-        title: 'Appointment booked!',
-        html: `<div class="appt-compact">${data.html}</div>`,
-        customClass: { popup: 'swal-success swal-compact' },
+        icon:'success',
+        title:'Appointment booked!',
+        html:`<div class="appt-compact">${data.html}</div>`,
+        customClass:{ popup:'swal-success swal-compact' },
         width: Math.min(window.innerWidth - 32, 1200),
-        showCloseButton: true,
-        confirmButtonText: 'OK',
+        showCloseButton:true,
+        confirmButtonText:'OK',
       });
 
+      // one-shot toast after reload
+      toastOnceSet('booked');
       window.location.reload();
     } catch (e) {
       console.error(e);
@@ -574,15 +638,15 @@ function printNode(selector, title = document.title) {
 })();
 </script>
 
-{{-- MOVE EARLIER (High-Risk Reschedule) --}}
+{{-- ─────────────────────────────────────────────────────────────────────────────
+   MOVE EARLIER (High-Risk Reschedule)
+────────────────────────────────────────────────────────────────────────────── --}}
 <script>
 (() => {
   const moveBtn = document.getElementById('btnAdminMove');
   if (!moveBtn) return;
 
   const slotsEndpoint      = @json(route('admin.chatbot-sessions.slots', $session->id));
-  // IMPORTANT: ensure your route name is "admin.chatbot-sessions.reschedule"
-  // (inside the admin prefix group, use ->name('chatbot-sessions.reschedule'))
   const rescheduleEndpoint = @json(route('admin.chatbot-sessions.reschedule', $session->id));
 
   const DATE_RE=/^\d{4}-\d{2}-\d{2}$/; const TIME_RE=/^\d{2}:\d{2}$/;
@@ -728,6 +792,9 @@ function printNode(selector, title = document.title) {
         showCloseButton:true,
         confirmButtonText:'OK',
       });
+
+      // one-shot toast after reload
+      toastOnceSet('rescheduled');
       window.location.reload();
     }catch(e){
       Swal.fire({ icon:'error', title:'Unable to reschedule', text:String(e) });
@@ -736,6 +803,9 @@ function printNode(selector, title = document.title) {
 })();
 </script>
 
+{{-- ─────────────────────────────────────────────────────────────────────────────
+   Toast helpers
+────────────────────────────────────────────────────────────────────────────── --}}
 <script>
   function swalToast(icon, title, text='') {
     Swal.fire({
@@ -748,6 +818,26 @@ function printNode(selector, title = document.title) {
       showConfirmButton: false,
     });
   }
+
+  // One-shot toast across reloads
+  function toastOnceSet(key, payload = {}) {
+    try { sessionStorage.setItem('__once_toast__', JSON.stringify({ key, payload, t: Date.now() })); } catch (e) {}
+  }
+  function toastOnceConsume() {
+    try {
+      const raw = sessionStorage.getItem('__once_toast__');
+      if (!raw) return;
+      sessionStorage.removeItem('__once_toast__');
+      const { key } = JSON.parse(raw);
+
+      if (key === 'rescheduled') {
+        swalToast('success', 'Rescheduled successfully', 'Appointment moved earlier.');
+      } else if (key === 'booked') {
+        swalToast('success', 'Booked successfully', 'Appointment created.');
+      }
+    } catch (e) {}
+  }
+  document.addEventListener('DOMContentLoaded', toastOnceConsume);
 </script>
 @endpush
 @endsection

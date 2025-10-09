@@ -17,7 +17,7 @@
   .typing-dots .dot:nth-child(3){animation-delay:.30s}
 </style>
 
-<div class="px-4 sm:px-6">
+<div class="px-4 sm:px-6 animate-fadeup">
   <div class="mx-auto w-full max-w-5xl h-[80vh]">
 
     {{-- ===================== Chat Panel ===================== --}}

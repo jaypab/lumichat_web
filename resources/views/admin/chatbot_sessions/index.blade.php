@@ -5,7 +5,30 @@
 @php
   $q       = $q ?? request('q', '');
   $dateKey = $dateKey ?? request('date','all');
+  $sort    = $sort ?? request('sort','newest'); // ← make sure controller passes this
   $total   = method_exists($sessions,'total') ? $sessions->total() : $sessions->count();
+
+  // helper to keep query while swapping a single key
+  function keepq(array $overrides = []) {
+      $params = request()->query();
+      foreach ($overrides as $k => $v) { $params[$k] = $v; }
+      return $params;
+  }
+
+  // build a URL quickly for sort links
+  function sort_url($key){ return route('admin.chatbot-sessions.index', keepq(['sort' => $key, 'page' => null])); }
+
+  // tiny helper for column header sort toggle
+  function sort_toggle($col){
+      $cur = request('sort','newest');
+      $desc = [
+        'session' => ['session_asc','session_desc'],
+        'student' => ['student_asc','student_desc'],
+        'date'    => ['oldest','newest'],
+      ][$col] ?? ['newest','oldest'];
+      // toggle between pair based on current
+      return $cur === $desc[1] ? $desc[0] : $desc[1];
+  }
 @endphp
 
 @section('content')
@@ -22,7 +45,7 @@
       </p>
     </div>
 
-    <a href="{{ route('admin.chatbot-sessions.export.pdf', request()->only('date','q')) }}"
+    <a href="{{ route('admin.chatbot-sessions.export.pdf', request()->only('date','q','sort')) }}"
        class="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 h-10 rounded-xl shadow-sm hover:bg-emerald-700 active:scale-[.99] transition">
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -33,7 +56,7 @@
   </div>
 
   {{-- Filter Bar --}}
-  <form method="GET" action="{{ route('admin.chatbot-sessions.index') }}" class="mb-6 screen-only">
+  <form method="GET" action="{{ route('admin.chatbot-sessions.index') }}" class="mb-4 screen-only">
     <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end animate-fadeup">
       <div class="md:col-span-3 min-w-0">
         <label class="block text-xs font-medium text-slate-600 mb-1">Date Range</label>
@@ -58,6 +81,21 @@
         </div>
       </div>
 
+      {{-- Quick sort dropdown (mobile) --}}
+      <div class="md:hidden">
+        <label class="block text-xs font-medium text-slate-600 mb-1">Sort</label>
+        <select name="sort" class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+          <option value="newest"   @selected($sort==='newest')>Newest</option>
+          <option value="oldest"   @selected($sort==='oldest')>Oldest</option>
+          <option value="risk"     @selected($sort==='risk')>High risk first</option>
+          <option value="unresolved" @selected($sort==='unresolved')>Unresolved first</option>
+          <option value="handled"  @selected($sort==='handled')>Handled/Completed first</option>
+          <option value="student_asc"  @selected($sort==='student_asc')>Student A→Z</option>
+          <option value="session_asc"  @selected($sort==='session_asc')>Session ID ↑</option>
+          <option value="session_desc" @selected($sort==='session_desc')>Session ID ↓</option>
+        </select>
+      </div>
+
       <div class="md:col-span-6 md:col-start-7 flex items-center justify-end gap-2">
         <a href="{{ route('admin.chatbot-sessions.index') }}"
            class="h-11 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 hover:ring-slate-300 active:scale-[.99] transition">
@@ -74,8 +112,27 @@
     </div>
   </form>
 
+  {{-- Sort shortcuts (chips) --}}
+  <div class="screen-only flex flex-wrap gap-2">
+    @php
+      $chip = function($key,$label) use ($sort){
+        $is = $sort===$key;
+        $cls = $is
+          ? 'bg-indigo-600 text-white ring-indigo-600 hover:bg-indigo-700'
+          : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50';
+        return '<a class="inline-flex items-center h-9 px-3 rounded-full ring-1 text-sm '.$cls.'" href="'.e(sort_url($key)).'">'.$label.'</a>';
+      };
+    @endphp
+    {!! $chip('newest','Newest') !!}
+    {!! $chip('oldest','Oldest') !!}
+    {!! $chip('risk','High risk first') !!}
+    {!! $chip('unresolved','Unresolved first') !!}
+    {!! $chip('handled','Handled/Completed first') !!}
+    {!! $chip('student_asc','Student A→Z') !!}
+  </div>
+
   {{-- Table --}}
-  <div id="cb-print-root" class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
+  <div id="cb-print-root" class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden mt-3">
     <div class="relative overflow-x-auto">
       <table class="min-w-full text-sm leading-6 table-auto">
         <colgroup>
@@ -88,10 +145,53 @@
 
         <thead class="bg-slate-100 border-b border-slate-200 text-slate-700">
           <tr class="align-middle">
-            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Session ID</th>
-            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Student Name</th>
+            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">
+              <a href="{{ route('admin.chatbot-sessions.index', keepq(['sort'=>sort_toggle('session'),'page'=>null])) }}" class="group inline-flex items-center gap-1 hover:underline">
+                Session ID
+                @if(in_array($sort,['session_asc','session_desc']))
+                  <svg class="w-3.5 h-3.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    @if($sort==='session_desc')
+                    <path d="M7 10l5-5 5 5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    @else
+                    <path d="M7 14l5 5 5-5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    @endif
+                  </svg>
+                @endif
+              </a>
+            </th>
+
+            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">
+              <a href="{{ route('admin.chatbot-sessions.index', keepq(['sort'=>sort_toggle('student'),'page'=>null])) }}" class="group inline-flex items-center gap-1 hover:underline">
+                Student Name
+                @if(in_array($sort,['student_asc','student_desc']))
+                  <svg class="w-3.5 h-3.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    @if($sort==='student_desc')
+                    <path d="M7 10l5-5 5 5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    @else
+                    <path d="M7 14l5 5 5-5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    @endif
+                  </svg>
+                @endif
+              </a>
+            </th>
+
             <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Initial Result</th>
-            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Initial Date</th>
+
+            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">
+              <a href="{{ route('admin.chatbot-sessions.index', keepq(['sort'=>sort_toggle('date'),'page'=>null])) }}" class="group inline-flex items-center gap-1 hover:underline">
+                Initial Date
+                @if(in_array($sort,['newest','oldest']))
+                  <svg class="w-3.5 h-3.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    @if($sort==='newest')
+                    <path d="M7 10l5-5 5 5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    @else
+                    <path d="M7 14l5 5 5-5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    @endif
+                  </svg>
+                @endif
+              </a>
+            </th>
+
             <th class="px-6 py-3 text-right font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap col-action">Action</th>
           </tr>
         </thead>
@@ -102,35 +202,29 @@
               // Normalize risk fields
               $riskRaw = strtolower((string) ($s->risk_level ?? $s->risk ?? ''));
               $score   = (int) ($s->risk_score ?? 0);
-
-              // High when label says high OR score >= 80
               $isHigh  = in_array($riskRaw, ['high','high-risk','high_risk'], true) || $score >= 80;
 
               // Maps provided by controller (session_id => bool)
-              $handled = (bool) ($handledAfter[$s->id] ?? false);  // pending/confirmed AFTER this session
-              $cleared = (bool) ($clearedAfter[$s->id] ?? false);  // completed AFTER this session
+              $handled = (bool) ($handledAfter[$s->id] ?? false);
+              $cleared = (bool) ($clearedAfter[$s->id] ?? false);
 
-              // Show red only when actionable
+              // High-risk & not handled/cleared after this session
               $showRed      = $isHigh && !$handled && !$cleared;
               $canQuickBook = $showRed;
 
               // Code for display
               $year = $s->created_at?->format('Y') ?? now()->format('Y');
               $code = 'LMC-' . $year . '-' . str_pad($s->id, 4, '0', STR_PAD_LEFT);
+
+              // Emotion badges (top 3 with %)
+              $counts = is_array($s->emotions) ? $s->emotions : (json_decode($s->emotions ?? '[]', true) ?: []);
+              $norm = [];
+              foreach ($counts as $k=>$v) { if (is_string($k)) $norm[strtolower($k)] = max(0,(int)$v); }
+              arsort($norm);
+              $etotal = array_sum($norm);
+              $top    = array_slice($norm, 0, 3, true);
             @endphp
-@php
-  // $s->emotions expected as map: ["sad"=>3,"tired"=>2,"anxious"=>1]
-  $counts = is_array($s->emotions) ? $s->emotions : (json_decode($s->emotions ?? '[]', true) ?: []);
-  // normalize: lowercase keys + int values
-  $norm = [];
-  foreach ($counts as $k=>$v) {
-      if (!is_string($k)) continue;
-      $norm[strtolower($k)] = max(0, (int)$v);
-  }
-  arsort($norm); // highest first
-  $total = array_sum($norm);
-  $top   = array_slice($norm, 0, 3, true);
-@endphp
+
             <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition {{ $showRed ? 'bg-rose-50/40' : '' }}">
               {{-- SESSION ID --}}
               <td class="px-6 py-4 font-semibold">
@@ -141,7 +235,6 @@
                   @endif
 
                   @if($canQuickBook)
-                    {{-- Quick book directly from the list --}}
                     <a href="#"
                        class="js-fast-book hover:underline focus:underline
                               text-slate-900 visited:text-slate-900
@@ -160,32 +253,36 @@
                 </div>
               </td>
 
+              {{-- STUDENT --}}
               <td class="px-6 py-4 whitespace-nowrap text-slate-700">
                 {{ $s->user->name ?? '—' }}
               </td>
 
+              {{-- INITIAL RESULT (emotions) --}}
               <td class="px-6 py-4 text-slate-700">
-  @if(empty($top))
-    —
-  @else
-    <div class="flex flex-wrap gap-1.5">
-      @foreach($top as $name => $cnt)
-        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-medium
-                     bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200">
-          {{ ucfirst($name) }}
-          @if($total > 0)
-            <span class="ml-1 text-[11px] opacity-70">({{ number_format($cnt / $total * 100, 0) }}%)</span>
-          @endif
-        </span>
-      @endforeach
-    </div>
-  @endif
-</td>
+                @if(empty($top))
+                  —
+                @else
+                  <div class="flex flex-wrap gap-1.5">
+                    @foreach($top as $name => $cnt)
+                      <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-medium
+                                   bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200">
+                        {{ ucfirst($name) }}
+                        @if($etotal > 0)
+                          <span class="ml-1 text-[11px] opacity-70">({{ number_format($cnt / $etotal * 100, 0) }}%)</span>
+                        @endif
+                      </span>
+                    @endforeach
+                  </div>
+                @endif
+              </td>
 
+              {{-- DATE --}}
               <td class="px-6 py-4 whitespace-nowrap text-slate-700">
                 {{ $s->created_at?->format('M d, Y') }}
               </td>
 
+              {{-- ACTION --}}
               <td class="px-6 py-4 text-right col-action">
                 <div class="flex items-center justify-end gap-2 whitespace-nowrap">
                   <a href="{{ route('admin.chatbot-sessions.show', $s) }}"
@@ -439,7 +536,7 @@
       fd.append('counselor_id', form.counselorId);
 
       try{
-        const resp = await fetch(link.dataset.book,{ method:'POST', body: fd, headers:{'X-Requested-With':'XMLHttpRequest'} });
+        const resp = await fetch(bookEndpoint,{ method:'POST', body: fd, headers:{'X-Requested-With':'XMLHttpRequest'} });
         const data = await resp.json().catch(()=>({}));
         if (!resp.ok) throw new Error(data?.message || 'Booking failed.');
 

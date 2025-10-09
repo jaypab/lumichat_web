@@ -3,6 +3,7 @@
 namespace App\Repositories\Eloquent;
 
 use App\Models\ChatSession;
+use App\Models\User;
 use App\Repositories\Contracts\ChatbotSessionRepositoryInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -14,13 +15,16 @@ class ChatbotSessionRepository implements ChatbotSessionRepositoryInterface
 
     public function all(): Collection
     {
+        // Keep an opinionated default for generic "all()"
         return ChatSession::with('user')
             ->orderByRaw("
-                CASE LOWER(COALESCE(risk_level,'')) 
-                    WHEN 'high' THEN 0 
-                    WHEN 'moderate' THEN 1 
-                    WHEN 'low' THEN 2 
-                    ELSE 3 
+                CASE
+                  WHEN LOWER(COALESCE(risk_level,'')) IN ('high','high-risk','high_risk')
+                       OR COALESCE(risk_score,0) >= 80
+                  THEN 0
+                  WHEN LOWER(COALESCE(risk_level,'')) = 'moderate' THEN 1
+                  WHEN LOWER(COALESCE(risk_level,'')) = 'low' THEN 2
+                  ELSE 3
                 END
             ")
             ->orderByDesc('created_at')
@@ -51,39 +55,35 @@ class ChatbotSessionRepository implements ChatbotSessionRepositoryInterface
 
     /** -------- Admin index: search + date filters + pagination -------- */
 
-    public function paginateWithFilters(string $q = '', string $dateKey = 'all', int $perPage = 10): LengthAwarePaginator
-    {
+    public function paginateWithFilters(
+        string $q = '',
+        string $dateKey = 'all',
+        int $perPage = 10,
+        string $sort = 'newest'   // ✅ supports ?sort=
+    ): LengthAwarePaginator {
         $query = $this->baseFilteredQuery($q, $dateKey);
 
-        return $query
-            ->orderByRaw("
-                CASE LOWER(COALESCE(risk_level,'')) 
-                    WHEN 'high' THEN 0 
-                    WHEN 'moderate' THEN 1 
-                    WHEN 'low' THEN 2 
-                    ELSE 3 
-                END
-            ")
-            ->orderByDesc('created_at')
-            ->paginate($perPage)
-            ->withQueryString();
+        $this->applySort($query, $sort);
+
+        return $query->paginate($perPage)->appends([
+            'q'    => $q,
+            'date' => $dateKey,
+            'sort' => $sort,
+        ]);
     }
 
     /** -------- Used by PDF export (same filters, no pagination) -------- */
 
-    public function allWithFilters(string $q = '', string $dateKey = 'all'): Collection
-    {
-        return $this->baseFilteredQuery($q, $dateKey)
-            ->orderByRaw("
-                CASE LOWER(COALESCE(risk_level,'')) 
-                    WHEN 'high' THEN 0 
-                    WHEN 'moderate' THEN 1 
-                    WHEN 'low' THEN 2 
-                    ELSE 3 
-                END
-            ")
-            ->orderByDesc('created_at')
-            ->get();
+    public function allWithFilters(
+        string $q = '',
+        string $dateKey = 'all',
+        string $sort = 'newest'   // ✅ keep export consistent with UI
+    ): Collection {
+        $query = $this->baseFilteredQuery($q, $dateKey);
+
+        $this->applySort($query, $sort);
+
+        return $query->get();
     }
 
     /** -------- Admin show: one session + ordered chats -------- */
@@ -91,9 +91,9 @@ class ChatbotSessionRepository implements ChatbotSessionRepositoryInterface
     public function findWithOrderedChats(int $id): ?object
     {
         return ChatSession::with([
-                'user',
-                'chats' => fn ($q) => $q->orderBy('created_at'), // oldest → newest
-            ])->find($id);
+            'user',
+            'chats' => fn ($q) => $q->orderBy('created_at'), // oldest → newest
+        ])->find($id);
     }
 
     /** -------- Calendar heatmap: per-day counts for a user -------- */
@@ -120,14 +120,15 @@ class ChatbotSessionRepository implements ChatbotSessionRepositoryInterface
 
     private function baseFilteredQuery(string $q, string $dateKey): Builder
     {
-        $query = ChatSession::query()->with('user');
+        $table = (new ChatSession)->getTable();               // e.g. 'chat_sessions'
+        $query = ChatSession::query()->with('user')->select("{$table}.*");
 
         // free text search across id, topic_summary, user name/email
         $q = trim($q);
         if ($q !== '') {
             $like = "%{$q}%";
             $query->where(function (Builder $sub) use ($like, $q) {
-                // numeric id search (keeps your existing behavior but stricter)
+                // numeric id search
                 if (ctype_digit($q)) {
                     $sub->orWhere('id', (int) $q);
                 }
@@ -159,5 +160,108 @@ class ChatbotSessionRepository implements ChatbotSessionRepositoryInterface
             $query->whereBetween('created_at', [now()->startOfMonth(), now()->endOfMonth()]);
         }
         return $query;
+    }
+
+    /**
+     * Centralized ordering used by list + export.
+     *
+     * Supported $sort values:
+     *  - newest | oldest
+     *  - risk
+     *  - unresolved | handled
+     *  - student_asc
+     *  - session_asc | session_desc
+     */
+    private function applySort(Builder $query, string $sort): void
+    {
+        $table    = (new ChatSession)->getTable(); // 'chat_sessions'
+        $usersTbl = (new User)->getTable();        // 'users'
+        $apptTbl  = 'tbl_appointments';            // your appointments table name
+
+        switch ($sort) {
+            case 'oldest':
+                $query->orderBy("{$table}.created_at", 'asc');
+                break;
+
+            case 'student_asc':
+                // join users for alphabetical sort
+                $query->leftJoin("{$usersTbl} as u", "u.id", "=", "{$table}.user_id")
+                      ->orderBy('u.name', 'asc')
+                      ->select("{$table}.*");
+                break;
+
+            case 'session_asc':
+                $query->orderBy("{$table}.id", 'asc');
+                break;
+
+            case 'session_desc':
+                $query->orderBy("{$table}.id", 'desc');
+                break;
+
+            case 'risk':
+                // High-risk first (label high/high-risk/high_risk OR score >= 80),
+                // then higher score, then newest
+                $query->orderByRaw("
+                    CASE
+                      WHEN LOWER(COALESCE({$table}.risk_level,'')) IN ('high','high-risk','high_risk')
+                           OR COALESCE({$table}.risk_score,0) >= 80
+                      THEN 0 ELSE 1
+                    END ASC
+                ")
+                ->orderByDesc("{$table}.risk_score")
+                ->orderByDesc("{$table}.created_at");
+                break;
+
+            case 'unresolved':
+                // Unresolved first = no active/completed appointment AFTER the session
+                $query->orderByRaw("
+                    CASE
+                      WHEN (
+                        EXISTS (
+                          SELECT 1 FROM {$apptTbl} a
+                           WHERE a.student_id = {$table}.user_id
+                             AND a.status IN ('pending','confirmed')
+                             AND a.created_at >= {$table}.created_at
+                        )
+                        OR EXISTS (
+                          SELECT 1 FROM {$apptTbl} a2
+                           WHERE a2.student_id = {$table}.user_id
+                             AND a2.status = 'completed'
+                             AND a2.updated_at >= {$table}.created_at
+                        )
+                      ) THEN 1 ELSE 0
+                    END ASC
+                ")
+                ->orderByDesc("{$table}.created_at");
+                break;
+
+            case 'handled':
+                // Handled/Completed first = the opposite
+                $query->orderByRaw("
+                    CASE
+                      WHEN (
+                        EXISTS (
+                          SELECT 1 FROM {$apptTbl} a
+                           WHERE a.student_id = {$table}.user_id
+                             AND a.status IN ('pending','confirmed')
+                             AND a.created_at >= {$table}.created_at
+                        )
+                        OR EXISTS (
+                          SELECT 1 FROM {$apptTbl} a2
+                           WHERE a2.student_id = {$table}.user_id
+                             AND a2.status = 'completed'
+                             AND a2.updated_at >= {$table}.created_at
+                        )
+                      ) THEN 0 ELSE 1
+                    END ASC
+                ")
+                ->orderByDesc("{$table}.created_at");
+                break;
+
+            case 'newest':
+            default:
+                $query->orderBy("{$table}.created_at", 'desc');
+                break;
+        }
     }
 }

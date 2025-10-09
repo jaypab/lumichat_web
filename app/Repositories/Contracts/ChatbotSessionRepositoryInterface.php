@@ -15,10 +15,19 @@ interface ChatbotSessionRepositoryInterface
     public function delete(int $id): bool;
 
     /** List with search + date filters + pagination for the Admin index */
-    public function paginateWithFilters(string $q = '', string $dateKey = 'all', int $perPage = 10): LengthAwarePaginator;
+    public function paginateWithFilters(
+        string $q = '',
+        string $dateKey = 'all',
+        int $perPage = 10,
+        string $sort = 'newest'        // ✅ add this
+    ): LengthAwarePaginator;
 
     /** Same filters w/o pagination (used by PDF export) */
-    public function allWithFilters(string $q = '', string $dateKey = 'all'): Collection;
+    public function allWithFilters(
+        string $q = '',
+        string $dateKey = 'all',
+        string $sort = 'newest'        // ✅ add this
+    ): Collection;
 
     /** One session with user + chats ordered oldest→newest for the Admin show page */
     public function findWithOrderedChats(int $id): ?object;
