@@ -108,30 +108,30 @@ class CounselorLogRepository implements CounselorLogRepositoryInterface
 
         // --- Pick the TOP diagnosis per counselor x month x year ---
         $dxTop = DB::query()
-            ->fromSub($dxAgg, 't')
-            ->selectRaw("
-                t.counselor_id,
-                t.month_num,
-                t.year_num,
-                SUBSTRING_INDEX(
-                    GROUP_CONCAT(t.diagnosis_result ORDER BY t.cnt DESC SEPARATOR '||'),
-                    '||', 1
-                ) as common_dx
-            ")
-            ->groupBy('t.counselor_id','t.month_num','t.year_num');
+        ->fromSub($dxAgg, 't')
+        ->selectRaw("
+            t.counselor_id,
+            t.month_num,
+            t.year_num,
+            -- ordered list by frequency; we’ll trim to 3 in SQL
+            SUBSTRING_INDEX(
+                GROUP_CONCAT(t.diagnosis_result ORDER BY t.cnt DESC SEPARATOR '||'),
+                '||', 3
+            ) as dx_list
+        ")
+        ->groupBy('t.counselor_id','t.month_num','t.year_num');
 
         // --- Final query: base LEFT JOIN top diagnosis ---
         $q = DB::query()
-            ->fromSub($base, 'g')
-            ->leftJoinSub($dxTop, 'd', function ($j) {
-                $j->on('d.counselor_id','=','g.counselor_id')
-                  ->on('d.month_num','=','g.month_num')
-                  ->on('d.year_num','=','g.year_num');
-            })
-            ->selectRaw('g.*, d.common_dx')
-            ->orderByDesc('g.year_num')
-            ->orderByDesc('g.month_num')
-            ->orderBy('g.counselor_name');
+        ->fromSub($base, 'g')
+        ->leftJoinSub($dxTop, 'd', function ($j) {
+            $j->on('d.counselor_id','=','g.counselor_id')
+            ->on('d.month_num','=','g.month_num')
+            ->on('d.year_num','=','g.year_num');
+        })
+        ->selectRaw('g.*, d.dx_list')  
+        ->orderByDesc('g.month_num')
+        ->orderBy('g.counselor_name');
 
         return $q->paginate($per)->withQueryString();
     }

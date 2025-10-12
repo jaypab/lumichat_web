@@ -251,8 +251,8 @@
         <span class="inline-flex w-10 h-10 items-center justify-center">
           <img src="{{ asset('images/icons/graduate.png') }}" class="sidebar-icon" alt="">
         </span>
-        <span class="nav-label font-medium">Course Analytics</span>
-        <span class="rail-tip">Course Analytics</span>
+        <span class="nav-label font-medium">Course Summary</span>
+        <span class="rail-tip">Course Summary</span>
       </a>
     </div>
 

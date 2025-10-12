@@ -184,7 +184,7 @@
             <span class="absolute -top-1 right-3 h-3 w-3 rotate-45 bg-white ring-1 ring-slate-200"></span>
             <div class="font-semibold text-slate-700">Chat Sessions</div>
             <p class="leading-snug text-slate-600 mt-0.5">
-              Number of chatbot conversations started this week. Trend compares against last week.
+              Total number of chatbot conversations so far. Trend compares this week vs. last week.
             </p>
           </div>
         </details>
@@ -199,7 +199,7 @@
               Chat Sessions
             </div>
             <div class="mt-1 text-3xl font-bold text-slate-900" id="kpi-sessions">
-              {{ number_format($chatSessionsThisWeek ?? 0) }}
+              {{ number_format($chatSessionsTotal ?? $chatSessionsThisWeek ?? 0) }}
             </div>
             <div class="mt-1 text-xs text-slate-500 whitespace-nowrap" id="kpi-sessions-change">
               {{ $sessionsTrend ?? '= Same as last week' }}
@@ -475,7 +475,7 @@ details > summary::-webkit-details-marker { display: none; }
       const setNum = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = nf.format(val ?? 0); };
       setNum('kpi-appointments',      k.appointmentsTotal);
       setNum('kpi-counselors',        k.activeCounselors);
-      setNum('kpi-sessions',          k.chatSessionsThisWeek);
+      setNum('kpi-sessions',          k.chatSessionsTotal ?? k.chatSessionsThisWeek);
       setNum('kpi-critical-number',   k.criticalCasesTotal);
 
       const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text || '= Same as last week'; };
