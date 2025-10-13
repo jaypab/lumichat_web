@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Repositories\Contracts\CourseAnalyticsRepositoryInterface;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use Illuminate\Support\Facades\DB; 
 use Symfony\Component\HttpFoundation\Response; // use Symfony response (matches Dompdf::download)
 
 class CourseAnalyticsController extends Controller
@@ -19,15 +20,54 @@ class CourseAnalyticsController extends Controller
      */
     public function index(Request $request): View
     {
-        $yearKey = (string) $request->query('year', 'all');
-        $q       = trim((string) $request->query('q', ''));
+        $yearKey    = (string) $request->query('year', 'all');
+        $courseKey  = (string) $request->query('course', 'all');
+        $freeTextQ  = trim((string) $request->query('q', ''));
 
-        $courses = $this->analytics->listCourses($yearKey, $q);
+        // If a specific course is chosen, reuse it as the search text (keeps repo unchanged)
+        $effectiveQ = $courseKey !== 'all' ? $courseKey : $freeTextQ;
+
+        $courses = $this->analytics->listCourses($yearKey, $effectiveQ);
+
+        // 1) Map codes -> friendly names (adjust labels as you prefer)
+        $COURSE_LABELS = [
+            'BSIT'      => 'College of Information Technology',
+            'EDUC'      => 'College of Education',
+            'CAS'       => 'College of Arts and Sciences',
+            'CRIM'      => 'College of Criminal Justice and Public Safety',
+            'BLIS'      => 'College of Library Information Science',
+            'MIDWIFERY' => 'College of Midwifery',
+            'BSHM'      => 'College of Hospitality Management',
+            'BSBA'      => 'College of Business',
+        ];
+
+        // 2) Build dropdown options from distinct student courses
+        $rawCodes = DB::table('tbl_users')
+            ->selectRaw('DISTINCT course')
+            ->whereNotNull('course')
+            ->where('course', '<>', '')
+            ->when(DB::getSchemaBuilder()->hasColumn('tbl_users','role'), fn($q)=>$q->where('role','student'))
+            ->orderBy('course')
+            ->pluck('course');
+
+        $courseOptions = $rawCodes->map(function ($code) use ($COURSE_LABELS) {
+            $code = (string) $code;
+            return [
+                'code' => $code,
+                'name' => $COURSE_LABELS[$code] ?? $code, // fallback: show code itself
+            ];
+        })->values();
+
+        // also pass a quick lookup map for table rendering
+        $courseNameMap = $courseOptions->pluck('name', 'code');
 
         return view('admin.course-analytics.index', [
-            'courses' => $courses,
-            'yearKey' => $yearKey,
-            'q'       => $q,
+            'courses'        => $courses,
+            'yearKey'        => $yearKey,
+            'q'              => $freeTextQ,
+            'courseKey'      => $courseKey,
+            'courseOptions'  => $courseOptions,
+            'courseNameMap'  => $courseNameMap,
         ]);
     }
 
@@ -55,11 +95,13 @@ class CourseAnalyticsController extends Controller
      */
     public function exportIndexPdf(Request $request): Response
     {
-        $yearKey = (string) $request->query('year', 'all');
-        $q       = trim((string) $request->query('q', ''));
-        $courses = $this->analytics->listCourses($yearKey, $q);
+        $yearKey    = (string) $request->query('year', 'all');
+        $courseKey  = (string) $request->query('course', 'all');
+        $freeTextQ  = trim((string) $request->query('q', ''));
 
-        // Optional logo embed (base64) so dompdf sees it without external HTTP
+        $effectiveQ = $courseKey !== 'all' ? $courseKey : $freeTextQ;
+        $courses    = $this->analytics->listCourses($yearKey, $effectiveQ);
+
         $logoData = null;
         $logoPath = public_path('images/chatbot.png');
         if (is_file($logoPath)) {
@@ -78,7 +120,7 @@ class CourseAnalyticsController extends Controller
         $pdf->loadView('admin.course-analytics.index-pdf', [
             'courses'     => $courses,
             'yearKey'     => $yearKey,
-            'q'           => $q,
+            'q'           => $effectiveQ,
             'generatedAt' => now()->format('Y-m-d H:i'),
             'logoData'    => $logoData,
         ]);

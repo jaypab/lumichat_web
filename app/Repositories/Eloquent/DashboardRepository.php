@@ -59,7 +59,12 @@ class DashboardRepository implements DashboardRepositoryInterface
         /* ---------- Chat Sessions KPI (this week) ---------- */
         $sessionsThisWeek = 0;
         $sessionsLastWeek = 0;
+        $chatSessionsTotal = 0; 
         if (Schema::hasTable('chat_sessions')) {
+            // ✨ all-time total
+            $chatSessionsTotal = DB::table('chat_sessions')->count(); // 👈 add
+
+            // this week vs last week
             $sessionsThisWeek = DB::table('chat_sessions')
                 ->whereBetween('created_at', [$startOfWeek, $endOfWeek])
                 ->count();
@@ -81,12 +86,13 @@ class DashboardRepository implements DashboardRepositoryInterface
         $recentAppointments = $this->recentAppointments($apptTable);
         $recentChatSessions = $this->recentChatSessions();
 
-        return [
+         return [
             'kpis' => [
                 'appointmentsTotal'    => $appointmentsTotal,
                 'criticalCasesTotal'   => $criticalCasesTotal,
                 'activeCounselors'     => $activeCounselors,
                 'chatSessionsThisWeek' => $sessionsThisWeek,
+                'chatSessionsTotal'    => $chatSessionsTotal,   
                 'appointmentsTrend'    => $appointmentsTrend,
                 'sessionsTrend'        => $sessionsTrend,
             ],

@@ -24,13 +24,13 @@
         <span class="ml-2 text-slate-500">{{ $totalLogs }} {{ Str::plural('record', $totalLogs) }}</span>
       </p>
     </div>
-<a href="{{ route('admin.counselor-logs.export.pdf', request()->only('counselor_id','month','year')) }}"
-   class="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 h-10 rounded-xl shadow-sm hover:bg-emerald-700 active:scale-[.99] transition">
-  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
-  </svg>
-  Download PDF
-</a>
+    <a href="{{ route('admin.counselor-logs.export.pdf', request()->only('counselor_id','month','year')) }}"
+       class="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 h-10 rounded-xl shadow-sm hover:bg-emerald-700 active:scale-[.99] transition">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+      </svg>
+      Download PDF
+    </a>
   </div>
 
   {{-- ========= Filter Bar (match Appointments exactly) ========= --}}
@@ -119,7 +119,7 @@
           </tr>
         </thead>
 
-        {{-- ✅ BODY (this was incorrectly <thead> before) --}}
+        {{-- ✅ BODY --}}
         <tbody class="divide-y divide-slate-100">
           @forelse($rows as $r)
             <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition">
@@ -139,9 +139,22 @@
                 </span>
               </td>
 
+              {{-- Students handled (limit to first 10 + “+N others”) --}}
               <td class="px-6 py-4">
-                @if($r->students_list)
-                  <div class="text-slate-700">{{ str_replace(' | ', ', ', $r->students_list) }}</div>
+                @php
+                  $names = $r->students_list ? explode(' | ', $r->students_list) : [];
+                  $limit = 10;
+                  $shown = array_slice($names, 0, $limit);
+                  $extra = max(count($names) - $limit, 0);
+                @endphp
+
+                @if(count($names))
+                  <div class="text-slate-700">
+                    {{ implode(', ', $shown) }}
+                    @if($extra > 0)
+                      <span class="text-slate-500"> +{{ $extra }} others</span>
+                    @endif
+                  </div>
                   <span class="inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium mt-1
                               bg-slate-50 text-slate-600 ring-1 ring-slate-200">
                     {{ $r->students_count }} unique
@@ -151,7 +164,31 @@
                 @endif
               </td>
 
-              <td class="px-6 py-4">{{ $r->common_dx ?: '—' }}</td>
+              {{-- Common diagnosis: support multiple (dx_list) with chips; fallback to single common_dx --}}
+              <td class="px-6 py-4">
+                @php
+                  // prefer dx_list ('||' separated). If absent, fallback to common_dx.
+                  $dx = [];
+                  if (isset($r->dx_list) && $r->dx_list !== null && $r->dx_list !== '') {
+                      $dx = array_filter(array_map('trim', explode('||', $r->dx_list)));
+                  } elseif (!empty($r->common_dx)) {
+                      $dx = [trim($r->common_dx)];
+                  }
+                @endphp
+
+                @if(count($dx))
+                  <div class="flex flex-wrap gap-1.5">
+                    @foreach($dx as $label)
+                      <span class="inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium
+                                   bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+                        {{ $label }}
+                      </span>
+                    @endforeach
+                  </div>
+                @else
+                  <span class="text-slate-400">—</span>
+                @endif
+              </td>
 
               <td class="px-6 py-4 text-right col-action">
                 <a href="{{ route('admin.counselor-logs.show', ['counselor'=>$r->counselor_id, 'month'=>$r->month_num, 'year'=>$r->year_num]) }}"
@@ -177,6 +214,5 @@
   </div>
 </div>
 </div>
-
 
 @endsection

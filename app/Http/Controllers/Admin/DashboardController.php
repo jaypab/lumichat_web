@@ -47,6 +47,7 @@ class DashboardController extends Controller
             'criticalCasesTotal'    => $data['kpis']['criticalCasesTotal'],
             'activeCounselors'      => $data['kpis']['activeCounselors'],
             'chatSessionsThisWeek'  => $data['kpis']['chatSessionsThisWeek'],
+            'chatSessionsTotal'     => $data['kpis']['chatSessionsTotal'], // 👈 add
 
             // KPI trend labels
             'appointmentsTrend'     => $data['kpis']['appointmentsTrend'],

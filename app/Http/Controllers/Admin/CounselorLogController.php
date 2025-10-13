@@ -15,9 +15,10 @@ class CounselorLogController extends Controller
     /** List view with filters (by counselor / month / year) */
     public function index(Request $request)
     {
-        $month = (int) $request->integer('month') ?: null; // 1..12
-        $year  = (int) $request->integer('year')  ?: null; // e.g., 2025
+        $month = (int) $request->integer('month') ?: (int) now()->format('n');
+        $year  = (int) $request->integer('year')  ?: (int) now()->year;
         $cid   = (int) $request->integer('counselor_id') ?: null;
+        $mode  = $request->query('mode', 'monthly'); // 'monthly' or 'ytd'
 
         $counselors = $this->logs->listCounselors();
 
@@ -26,11 +27,12 @@ class CounselorLogController extends Controller
             'year'         => $year,
             'counselor_id' => $cid,
             'per_page'     => 12,
+            'mode'         => $mode,
         ]);
 
         $years = $this->logs->availableYears();
 
-        return view('admin.counselor-logs.index', compact('rows','counselors','years','month','year','cid'));
+        return view('admin.counselor-logs.index', compact('rows','counselors','years','month','year','cid','mode'));
     }
 
     /** Drilldown page: one counselor + selected month/year */
