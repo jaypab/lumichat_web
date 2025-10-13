@@ -160,10 +160,12 @@
                 </div>
                 <div class="grow">
                   <div class="h-2 rounded-full bg-slate-100 overflow-hidden">
-                    <div class="h-2 rounded-full bar {{ $sty['bar'] }}"
-                         data-width="{{ $pct }}"></div>
+                    <div
+                      class="h-2 rounded-full bar {{ $sty['bar'] }}"
+                      data-width="{{ $pct }}"
+                      style="width: {{ $pct }}%;" 
+                    ></div>
                   </div>
-                </div>
                 <div class="w-10 text-right text-slate-700 font-medium">{{ $count }}</div>
               </div>
             @endforeach
@@ -262,10 +264,7 @@
   }
 
   /* Bars */
-  .bar{
-    width: var(--w, 0%);
-    transition: width .9s cubic-bezier(.22,1,.36,1);
-  }
+  .bar{ width: var(--w, 0%); transition: width .9s cubic-bezier(.22,1,.36,1); }
 
   /* Respect reduced motion */
   @media (prefers-reduced-motion: reduce){

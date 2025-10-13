@@ -488,3 +488,9 @@ html[data-app="student"].compact .h-11{ height:2.5rem !important; }
 .stagger-80 > *:nth-child(6){ animation-delay:400ms; }
 .stagger-80 > *:nth-child(7){ animation-delay:480ms; }
 .stagger-80 > *:nth-child(8){ animation-delay:560ms; }
+
+@layer components {
+  .card { @apply bg-white rounded-2xl shadow-sm border border-slate-200/70; }
+  .kpi-label { @apply text-[11px] uppercase tracking-wide text-slate-500; }
+  .chip { @apply inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium; }
+}
