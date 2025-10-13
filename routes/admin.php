@@ -137,10 +137,18 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
 
 
     /* DIAGNOSIS REPORTS */
-    Route::resource('diagnosis-reports', DiagnosisReportController::class)->only(['index','show'])
+    Route::resource('diagnosis-reports', DiagnosisReportController::class)
+        ->only(['index','show'])
         ->parameters(['diagnosis-reports' => 'report']);
-    Route::get('/diagnosis-reports/export/pdf', [DiagnosisReportController::class, 'exportPdf'])
-        ->name('diagnosis-reports.export.pdf');
+
+    Route::get('/diagnosis-reports/export/pdf',
+        [DiagnosisReportController::class, 'exportPdf']
+    )->name('diagnosis-reports.export.pdf');
+
+    /* ✅ single report direct download for the show page */
+    Route::get('/diagnosis-reports/{report}/export/pdf',
+        [DiagnosisReportController::class, 'exportOne']
+    )->whereNumber('report')->name('diagnosis-reports.show.export.pdf');
 
     /* COURSE ANALYTICS */
     Route::get('course-analytics', [CourseAnalyticsController::class, 'index'])->name('course-analytics.index');

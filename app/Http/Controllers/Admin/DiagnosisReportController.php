@@ -52,10 +52,10 @@ public function exportPdf(Request $request)
     $pdf = app('dompdf.wrapper');
     $pdf->setPaper('a4', 'portrait');
     $pdf->setOptions([
-        'defaultFont'          => 'DejaVu Sans',
+        'defaultFont'          => 'dejavu sans',  // ✅ single, exact name
         'isHtml5ParserEnabled' => true,
         'isRemoteEnabled'      => true,
-        'chroot'               => public_path(),
+        'chroot'               => base_path(),
     ]);
 
     $pdf->loadView('admin.diagnosis-reports.pdf', [
@@ -67,5 +67,47 @@ public function exportPdf(Request $request)
     ]);
 
     return $pdf->download('Diagnosis_Reports_'.now()->format('Ymd_His').'.pdf');
+}
+
+public function exportOne(int $reportId)
+{
+    $report = $this->reportsRepo->findWithRelations($reportId, ['student:id,name,email', 'counselor']);
+    abort_unless($report, 404);
+
+    $code        = 'DRP-'.now()->format('Y').'-'.str_pad($report->id, 4, '0', STR_PAD_LEFT);
+    $generatedAt = now()->format('Y-m-d H:i');
+
+    // inline logo (optional)
+    $logoData = null;
+    $logoPath = public_path('images/chatbot.png');
+    if (is_file($logoPath)) {
+        $logoData = 'data:image/png;base64,'.base64_encode(@file_get_contents($logoPath));
+    }
+
+    // ✅ embed DejaVu Sans (ship with dompdf)
+    $dejavuTtf = base_path('vendor/dompdf/dompdf/lib/fonts/DejaVuSans.ttf');
+    $dejavuBtt = base_path('vendor/dompdf/dompdf/lib/fonts/DejaVuSans-Bold.ttf');
+    $dejavuData  = is_file($dejavuTtf) ? base64_encode(@file_get_contents($dejavuTtf)) : null;
+    $dejavuBold  = is_file($dejavuBtt) ? base64_encode(@file_get_contents($dejavuBtt)) : null;
+
+    $pdf = app('dompdf.wrapper');
+    $pdf->setPaper('a4', 'portrait');
+    $pdf->setOptions([
+        'isHtml5ParserEnabled' => true,
+        'isRemoteEnabled'      => true,
+        'chroot'               => public_path(), // safe root
+    ]);
+
+    $pdf->loadView('admin.diagnosis-reports.pdf-single', [
+        'report'      => $report,
+        'code'        => $code,
+        'generatedAt' => $generatedAt,
+        'logoData'    => $logoData,
+        // pass embedded font
+        'dejavuData'  => $dejavuData,
+        'dejavuBold'  => $dejavuBold,
+    ]);
+
+    return $pdf->download('Diagnosis-Report-'.$code.'.pdf');
 }
 }

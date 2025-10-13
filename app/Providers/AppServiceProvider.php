@@ -21,12 +21,15 @@ use Illuminate\Support\Facades\Schema;
 use App\Repositories\Contracts\DashboardRepositoryInterface;
 use App\Repositories\Eloquent\DashboardRepository;
 
+use App\Repositories\Contracts\CounselorLogRepositoryInterface;
+use App\Repositories\Eloquent\CounselorLogRepository;
+
 class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        // Put bindings here (inside the class)
         $this->app->bind(DashboardRepositoryInterface::class, DashboardRepository::class);
+        $this->app->bind(CounselorLogRepositoryInterface::class, CounselorLogRepository::class);
     }
 
     public function boot(): void

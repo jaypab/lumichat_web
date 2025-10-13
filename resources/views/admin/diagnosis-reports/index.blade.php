@@ -13,6 +13,35 @@
   $total = ($reports instanceof \Illuminate\Pagination\LengthAwarePaginator)
           ? $reports->total()
           : $reports->count();
+
+  // —— pill palette (kept consistent with other pages) ——
+  $palette = [
+    'Stress'              => ['bg'=>'bg-amber-50','text'=>'text-amber-700','ring'=>'ring-amber-200'],
+    'Depression'          => ['bg'=>'bg-rose-50','text'=>'text-rose-700','ring'=>'ring-rose-200'],
+    'Anxiety'             => ['bg'=>'bg-sky-50','text'=>'text-sky-700','ring'=>'ring-sky-200'],
+    'Family Problems'     => ['bg'=>'bg-yellow-50','text'=>'text-yellow-800','ring'=>'ring-yellow-200'],
+    'Relationship Issues' => ['bg'=>'bg-orange-50','text'=>'text-orange-700','ring'=>'ring-orange-200'],
+    'Low Self-Esteem'     => ['bg'=>'bg-fuchsia-50','text'=>'text-fuchsia-700','ring'=>'ring-fuchsia-200'],
+    'Sleep Problems'      => ['bg'=>'bg-indigo-50','text'=>'text-indigo-700','ring'=>'ring-indigo-200'],
+    'Time Management'     => ['bg'=>'bg-violet-50','text'=>'text-violet-700','ring'=>'ring-violet-200'],
+    'Academic Pressure'   => ['bg'=>'bg-blue-50','text'=>'text-blue-700','ring'=>'ring-blue-200'],
+    'Financial Stress'    => ['bg'=>'bg-teal-50','text'=>'text-teal-700','ring'=>'ring-teal-200'],
+    'Bullying'            => ['bg'=>'bg-lime-50','text'=>'text-lime-700','ring'=>'ring-lime-200'],
+    'Burnout'             => ['bg'=>'bg-rose-50','text'=>'text-rose-700','ring'=>'ring-rose-200'],
+    'Grief / Loss'        => ['bg'=>'bg-stone-50','text'=>'text-stone-700','ring'=>'ring-stone-200'],
+    'Loneliness'          => ['bg'=>'bg-cyan-50','text'=>'text-cyan-700','ring'=>'ring-cyan-200'],
+    'Substance Abuse'     => ['bg'=>'bg-red-50','text'=>'text-red-700','ring'=>'ring-red-200'],
+  ];
+  $fallback = ['bg'=>'bg-slate-50','text'=>'text-slate-700','ring'=>'ring-slate-200'];
+
+  // helper to render a pill safely
+  $pill = function (?string $label) use ($palette, $fallback) {
+      $label = trim((string)($label ?? '—'));
+      if ($label === '') $label = '—';
+      $sty = $palette[$label] ?? $fallback;
+      return '<span class="inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium '
+           . $sty['bg'].' '.$sty['text'].' ring-1 '.$sty['ring'].'">'.e($label).'</span>';
+  };
 @endphp
 
 <div class="max-w-7xl mx-auto p-6 space-y-6">
@@ -103,44 +132,50 @@
             <col class="col-action" style="width:4%">
           </colgroup>
 
-          <thead class="bg-slate-100 border-b border-slate-200 text-slate-700">
-            <tr class="align-middle">
-              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">ID</th>
-              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Student Name</th>
-              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Counselor Name</th>
-              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Diagnosis Result</th>
-              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Date</th>
-              <th class="px-6 py-3 text-right font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap col-action">Action</th>
-            </tr>
-          </thead>
+        <thead class="bg-slate-100 border-b border-slate-200 text-slate-700">
+          <tr class="align-middle">
+            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">ID</th>
+            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Student Name</th>
+            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Counselor Name</th>
+            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Diagnosis Result</th>
+            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Date</th>
+            <th class="px-6 py-3 text-right font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap col-action">Action</th>
+          </tr>
+        </thead>
 
-          <tbody class="divide-y divide-slate-100">
-            @forelse ($reports as $r)
-              @php
-                $code          = 'DRP-' . now()->format('Y') . '-' . str_pad($r->id, 4, '0', STR_PAD_LEFT);
-                $studentName   = $r->student->name ?? '—';
-                $counselorName = $r->counselor->name ?? ('Counselor #' . ($r->counselor_id ?? '—'));
-                $date          = $r->created_at?->format('M d, Y') ?? '—';
-              @endphp
-              <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition">
-                <td class="px-6 py-4 font-semibold text-slate-900 whitespace-nowrap">{{ $code }}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $studentName }}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $counselorName }}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $r->diagnosis_result }}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $date }}</td>
-                <td class="px-6 py-4 text-right">
-                  <a href="{{ route('admin.diagnosis-reports.show', $r->id) }}"
-                     class="inline-flex items-center px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm">
-                    View
-                  </a>
-                </td>
-              </tr>
-            @empty
-              <tr>
-                <td colspan="6" class="px-6 py-10 text-center text-slate-500">No diagnosis reports found.</td>
-              </tr>
-            @endforelse
-          </tbody>
+        <tbody class="divide-y divide-slate-100">
+          @forelse ($reports as $r)
+            @php
+              $code          = 'DRP-' . now()->format('Y') . '-' . str_pad($r->id, 4, '0', STR_PAD_LEFT);
+              $studentName   = $r->student->name ?? '—';
+              $counselorName = $r->counselor->name ?? ('Counselor #' . ($r->counselor_id ?? '—'));
+              $date          = $r->created_at?->format('M d, Y') ?? '—';
+              $diagLabel     = (string) ($r->diagnosis_result ?? '—');
+            @endphp
+            <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition">
+              <td class="px-6 py-4 font-semibold text-slate-900 whitespace-nowrap">{{ $code }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $studentName }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $counselorName }}</td>
+
+              {{-- 🔹 colored pill --}}
+              <td class="px-6 py-4 whitespace-nowrap">
+                {!! $pill($diagLabel) !!}
+              </td>
+
+              <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $date }}</td>
+              <td class="px-6 py-4 text-right">
+                <a href="{{ route('admin.diagnosis-reports.show', $r->id) }}"
+                   class="inline-flex items-center px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm">
+                  View
+                </a>
+              </td>
+            </tr>
+          @empty
+            <tr>
+              <td colspan="6" class="px-6 py-10 text-center text-slate-500">No diagnosis reports found.</td>
+            </tr>
+          @endforelse
+        </tbody>
         </table>
       </div>
 

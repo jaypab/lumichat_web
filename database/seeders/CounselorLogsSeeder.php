@@ -5,134 +5,108 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Arr;
 use Carbon\Carbon;
 
 class CounselorLogsSeeder extends Seeder
 {
+    private const LOGS_TBL     = 'tbl_counselor_logs';
+    private const APPTS_TBL    = 'tbl_appointments';
+    private const REPORTS_TBL  = 'tbl_diagnosis_reports';
+    private const USERS_TBL    = 'tbl_users';
+
     public function run(): void
     {
-        $this->command->info('Backfilling Counselor Logs from diagnosis reports…');
-
-        $reports = 'tbl_diagnosis_reports';
-        if (!Schema::hasTable($reports)) {
-            $this->command->warn("❗ {$reports} table not found. Skipping.");
+        if (!Schema::hasTable(self::APPTS_TBL) || !Schema::hasTable(self::LOGS_TBL)) {
+            $this->command?->warn('Missing tables: tbl_appointments / tbl_counselor_logs. Skipping.');
             return;
         }
 
-        // Pick the real diagnosis column
-        $dxCol = Schema::hasColumn($reports, 'diagnosis_result')
-            ? 'diagnosis_result'
-            : (Schema::hasColumn($reports, 'diagnosis') ? 'diagnosis' : null);
+        $groups = DB::table(self::APPTS_TBL)
+            ->selectRaw('counselor_id, MONTH(scheduled_at) as m, YEAR(scheduled_at) as y')
+            ->groupBy('counselor_id', DB::raw('MONTH(scheduled_at)'), DB::raw('YEAR(scheduled_at)'))
+            ->get();
 
-        if (!$dxCol) {
-            $this->command->warn("❗ {$reports} has no diagnosis column (diagnosis_result/diagnosis). Skipping.");
-            return;
-        }
-        if (!Schema::hasColumn($reports, 'student_id') || !Schema::hasColumn($reports, 'counselor_id')) {
-            $this->command->warn("❗ {$reports} is missing student_id/counselor_id. Skipping.");
-            return;
+        $n = 0;
+        foreach ($groups as $g) {
+            $this->refreshOne((int) $g->counselor_id, (int) $g->m, (int) $g->y);
+            $n++;
         }
 
-        // --------------------------------------------------------------------------------
-        // 1) CLEAN-UP: remove bad rows we accidentally inserted with "Session completed…"
-        //    (or any obvious auto-seed note text). This keeps “Common diagnosis” correct.
-        // --------------------------------------------------------------------------------
-        $badPatterns = [
-            'Session completed%',         // our earlier note text
-            'Auto-seeded:%',              // any auto-seed markers
-        ];
+        $this->command?->info("Backfilled {$n} counselor log group(s).");
+    }
 
-        $deleted = 0;
-        foreach ($badPatterns as $pat) {
-            $deleted += DB::table($reports)->where($dxCol, 'like', $pat)->delete();
+    /** Build a safe COALESCE for user names based on columns that exist. */
+    private function userNameExpr(string $u = 'u', string $a = 'a'): string
+    {
+        $parts = [];
+        if (Schema::hasColumn(self::USERS_TBL, 'name'))         $parts[] = "NULLIF({$u}.name,'')";
+        if (Schema::hasColumn(self::USERS_TBL, 'full_name'))    $parts[] = "NULLIF({$u}.full_name,'')";
+        if (Schema::hasColumn(self::USERS_TBL, 'display_name')) $parts[] = "NULLIF({$u}.display_name,'')";
+        if (Schema::hasColumn(self::USERS_TBL, 'email'))        $parts[] = "NULLIF({$u}.email,'')";
+        // final fallback to ID label
+        $parts[] = "CONCAT('Student #', {$a}.student_id)";
+        return 'COALESCE('.implode(', ', $parts).')';
+    }
+
+    /** Recompute and upsert one (counselor, month, year) row. */
+    private function refreshOne(int $counselorId, int $month, int $year): void
+    {
+        $start = Carbon::create($year, $month, 1)->startOfMonth();
+        $end   = (clone $start)->endOfMonth();
+
+        $nameExpr = $this->userNameExpr('u', 'a');
+
+        // Distinct student names for the month
+        $students = DB::table(self::APPTS_TBL.' as a')
+            ->leftJoin(self::USERS_TBL.' as u', 'u.id', '=', 'a.student_id')
+            ->where('a.counselor_id', $counselorId)
+            ->whereBetween('a.scheduled_at', [$start, $end])
+            ->selectRaw("DISTINCT {$nameExpr} as sname")
+            ->orderBy('sname')
+            ->pluck('sname')
+            ->map(fn($v) => (string) $v)
+            ->all();
+
+        $studentsCount = count($students);
+        $studentsList  = $studentsCount ? implode(' | ', array_slice($students, 0, 200)) : null;
+
+        // Top 3 diagnoses
+        $dxCol = null;
+        if (Schema::hasTable(self::REPORTS_TBL)) {
+            if (Schema::hasColumn(self::REPORTS_TBL, 'diagnosis_result')) $dxCol = 'diagnosis_result';
+            elseif (Schema::hasColumn(self::REPORTS_TBL, 'diagnosis'))    $dxCol = 'diagnosis';
         }
-        if ($deleted) {
-            $this->command->info("🧹 Removed {$deleted} bad report row(s) that looked like notes.");
-        }
 
-        // --------------------------------------------------------------------------------
-        // 2) OPTIONAL BACKFILL: when appointment_id is present, make sure
-        //    counselor_id / student_id / created_at are filled using the appointment.
-        // --------------------------------------------------------------------------------
-        $hasApptId = Schema::hasColumn($reports, 'appointment_id')
-            && Schema::hasTable('tbl_appointments');
-
-        if ($hasApptId) {
-            // Pull reports that still miss counselor or student or have a NULL created_at
-            $needs = DB::table($reports.' as r')
-                ->leftJoin('tbl_appointments as a','a.id','=','r.appointment_id')
-                ->where(function($q){
-                    $q->whereNull('r.counselor_id')
-                      ->orWhereNull('r.student_id')
-                      ->orWhereNull('r.created_at');
+        $dxLabels = [];
+        if ($dxCol) {
+            $dxLabels = DB::table(self::APPTS_TBL.' as a')
+                ->join(self::REPORTS_TBL.' as dr', function ($j) {
+                    $j->on('dr.student_id','=','a.student_id')
+                      ->on('dr.counselor_id','=','a.counselor_id');
                 })
-                ->select([
-                    'r.id as rid',
-                    'r.counselor_id as rcid',
-                    'r.student_id as rsid',
-                    'r.created_at as rcreated',
-                    'a.counselor_id as acid',
-                    'a.student_id as asid',
-                    'a.finalized_at',
-                    'a.scheduled_at',
-                ])
-                ->get();
-
-            $fixed = 0;
-            foreach ($needs as $row) {
-                // choose best timestamp (finalized_at -> scheduled_at -> existing created_at -> now)
-                $when = $row->finalized_at ?: $row->scheduled_at ?: $row->rcreated ?: now();
-
-                $update = [];
-                if (empty($row->rcid) && !empty($row->acid)) $update['counselor_id'] = (int)$row->acid;
-                if (empty($row->rsid) && !empty($row->asid)) $update['student_id']   = (int)$row->asid;
-                if (empty($row->rcreated))                   $update['created_at']   = $when;
-                if (!empty($update)) {
-                    $update['updated_at'] = now();
-                    DB::table($reports)->where('id', $row->rid)->update($update);
-                    $fixed++;
-                }
-            }
-            if ($fixed) {
-                $this->command->info("🔧 Backfilled {$fixed} report row(s) from appointments (links/timestamps).");
-            }
+                ->where('a.counselor_id', $counselorId)
+                ->whereBetween('a.scheduled_at', [$start, $end])
+                ->whereNotNull("dr.{$dxCol}")
+                ->where("dr.{$dxCol}", '<>', '')
+                ->selectRaw("dr.{$dxCol} as label, COUNT(*) as c")
+                ->groupBy("dr.{$dxCol}")
+                ->orderByDesc('c')
+                ->limit(3)
+                ->pluck('label')
+                ->map(fn($v) => (string) $v)
+                ->all();
         }
 
-        // --------------------------------------------------------------------------------
-        // 3) FINAL PASS: ensure we have *only* diagnosis text in diagnosis column.
-        //    If any report row has empty diagnosis, set a readable fallback label.
-        // --------------------------------------------------------------------------------
-        $fallbacks = [
-            'Academic Pressure','Anxiety','Bullying','Burnout','Depression',
-            'Family Problems','Financial Stress','Grief / Loss','Loneliness',
-            'Low Self-Esteem','Relationship Issues','Sleep Problems','Stress',
-            'Substance Abuse','Time Management',
-        ];
-
-        $empties = DB::table($reports)->whereNull($dxCol)->orWhere($dxCol,'=','')->pluck('id')->all();
-        if ($empties) {
-            $chunked = array_chunk($empties, 500);
-            $relabel = 0;
-            foreach ($chunked as $ids) {
-                $values = [];
-                // one query per chunk: map each id -> random fallback
-                foreach ($ids as $id) {
-                    $values[$id] = Arr::random($fallbacks);
-                }
-                // update row-by-row (safe and simple)
-                foreach ($values as $id => $label) {
-                    DB::table($reports)->where('id',$id)->update([
-                        $dxCol       => $label,
-                        'updated_at' => now(),
-                    ]);
-                    $relabel++;
-                }
-            }
-            $this->command->info("🏷️ Labeled {$relabel} empty diagnosis report(s) with readable fallbacks.");
-        }
-
-        $count = DB::table($reports)->count();
-        $this->command->info("Done. {$count} report row(s) present. Counselor Logs will now use real diagnoses.");
+        DB::table(self::LOGS_TBL)->updateOrInsert(
+            ['counselor_id' => $counselorId, 'month' => $month, 'year' => $year],
+            [
+                'students_count' => $studentsCount,
+                'students_list'  => $studentsList,
+                'common_dx'      => json_encode(array_values($dxLabels), JSON_UNESCAPED_UNICODE),
+                'generated_at'   => now(),
+                'updated_at'     => now(),
+                'created_at'     => now(),
+            ]
+        );
     }
 }

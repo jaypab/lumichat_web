@@ -4,10 +4,47 @@
 
 @section('content')
 @php
-  $yearKey   = request('year','all');
+  use Illuminate\Support\Str;
+
+  $yearKey       = request('year','all');
   $courseOptions = $courseOptions ?? collect();
   $courseKey     = $courseKey     ?? 'all';
-  $total     = is_countable($courses) ? count($courses) : ($courses?->count() ?? 0);
+  $total         = is_countable($courses) ? count($courses) : ($courses?->count() ?? 0);
+
+  // palette for diagnosis chips
+  $palette = [
+    'Stress'              => ['bg'=>'bg-amber-50','text'=>'text-amber-700','ring'=>'ring-amber-200'],
+    'Depression'          => ['bg'=>'bg-rose-50','text'=>'text-rose-700','ring'=>'ring-rose-200'],
+    'Anxiety'             => ['bg'=>'bg-sky-50','text'=>'text-sky-700','ring'=>'ring-sky-200'],
+    'Family Problems'     => ['bg'=>'bg-yellow-50','text'=>'text-yellow-800','ring'=>'ring-yellow-200'],
+    'Relationship Issues' => ['bg'=>'bg-orange-50','text'=>'text-orange-700','ring'=>'ring-orange-200'],
+    'Low Self-Esteem'     => ['bg'=>'bg-fuchsia-50','text'=>'text-fuchsia-700','ring'=>'ring-fuchsia-200'],
+    'Sleep Problems'      => ['bg'=>'bg-indigo-50','text'=>'text-indigo-700','ring'=>'ring-indigo-200'],
+    'Time Management'     => ['bg'=>'bg-violet-50','text'=>'text-violet-700','ring'=>'ring-violet-200'],
+    'Academic Pressure'   => ['bg'=>'bg-blue-50','text'=>'text-blue-700','ring'=>'ring-blue-200'],
+    'Financial Stress'    => ['bg'=>'bg-teal-50','text'=>'text-teal-700','ring'=>'ring-teal-200'],
+    'Bullying'            => ['bg'=>'bg-lime-50','text'=>'text-lime-700','ring'=>'ring-lime-200'],
+    'Burnout'             => ['bg'=>'bg-rose-50','text'=>'text-rose-700','ring'=>'ring-rose-200'],
+    'Grief / Loss'        => ['bg'=>'bg-stone-50','text'=>'text-stone-700','ring'=>'ring-stone-200'],
+    'Loneliness'          => ['bg'=>'bg-cyan-50','text'=>'text-cyan-700','ring'=>'ring-cyan-200'],
+    'Substance Abuse'     => ['bg'=>'bg-red-50','text'=>'text-red-700','ring'=>'ring-red-200'],
+  ];
+  $defaultPill = ['bg'=>'bg-slate-50','text'=>'text-slate-700','ring'=>'ring-slate-200'];
+
+  $pill = function(string $label) use ($palette, $defaultPill) {
+    $s = $palette[$label] ?? $defaultPill;
+    return '<span class="inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium '.$s['bg'].' '.$s['text'].' ring-1 '.$s['ring'].'">'.e($label).'</span>';
+  };
+
+  // normalize diagnoses from row -> array
+  $toDxArray = function($raw) {
+    if (is_array($raw)) return array_values(array_filter(array_map('trim',$raw)));
+    $str = (string) $raw;
+    if ($str === '') return [];
+    if (Str::contains($str, '||')) return array_values(array_filter(array_map('trim', explode('||',$str))));
+    if (Str::contains($str, ',' )) return array_values(array_filter(array_map('trim', explode(',',$str))));
+    return [$str];
+  };
 @endphp
 
 <div class="max-w-7xl mx-auto p-6 space-y-6">
@@ -25,7 +62,7 @@
 
     <a href="{{ route('admin.course-analytics.export.pdf', request()->only('year','course')) }}"
        class="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 h-10 rounded-xl shadow-sm hover:bg-emerald-700 active:scale-[.99] transition">
-      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
       </svg>
       Download PDF
@@ -38,9 +75,10 @@
 
       {{-- Year Level --}}
       <div class="md:col-span-3 min-w-0">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Year Level</label>
-        <select name="year"
-                class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+        <label for="year" class="block text-xs font-medium text-slate-600 mb-1">Year Level</label>
+        <select id="year" name="year"
+                class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                aria-label="Filter by year level">
           <option value="all" {{ $yearKey==='all' ? 'selected' : '' }}>All</option>
           <option value="1"   {{ $yearKey==='1' ? 'selected' : '' }}>1st year</option>
           <option value="2"   {{ $yearKey==='2' ? 'selected' : '' }}>2nd year</option>
@@ -51,14 +89,14 @@
 
       {{-- Course (dropdown) --}}
       <div class="md:col-span-5 min-w-0">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Course</label>
+        <label for="course" class="block text-xs font-medium text-slate-600 mb-1">Course</label>
         <div class="relative">
-          <select name="course"
-                  class="w-full h-10 bg-white border border-slate-200 rounded-xl pl-3 pr-8 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 appearance-none">
+          <select id="course" name="course"
+                  class="w-full h-10 bg-white border border-slate-200 rounded-xl pl-3 pr-8 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 appearance-none"
+                  aria-label="Filter by course">
             <option value="all" {{ $courseKey==='all' ? 'selected' : '' }}>All courses</option>
             @foreach($courseOptions as $opt)
               @php
-                // $opt can be ['code'=>'BSIT','name'=>'College of Information Technology']
                 $code = is_array($opt) ? ($opt['code'] ?? $opt['value'] ?? $opt[0] ?? '') : ($opt->code ?? (string)$opt);
                 $name = is_array($opt) ? ($opt['name'] ?? $opt['label'] ?? $code) : ($opt->name ?? $code);
               @endphp
@@ -67,7 +105,7 @@
               </option>
             @endforeach
           </select>
-          <svg class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <svg class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
             <path d="M6 9l6 6 6-6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </div>
@@ -77,8 +115,8 @@
       <div class="md:col-span-4 flex items-center justify-end gap-2">
         <a href="{{ route('admin.course-analytics.index') }}"
            class="h-11 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200
-                  shadow-sm hover:bg-slate-50 hover:ring-slate-300 active:scale-[.99] transition">
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  shadow-sm hover:bg-slate-50 hover:ring-slate-300 active:scale-[.99] transition" aria-label="Reset filters">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h7M4 10h16M4 16h10"/>
           </svg>
           Reset
@@ -111,43 +149,44 @@
           <tbody class="divide-y divide-slate-100 text-slate-800">
             @forelse ($courses as $c)
               @php
-                $id        = $c->id;
-                $course    = $c->course ?? '—';
+                $id        = $c->id ?? null;
+                $course    = $c->course ?? ($c->course_code ?? '—');
                 $year      = $c->year_level ?? '—';
-                $count     = $c->student_count ?? 0;
+                $count     = (int) ($c->student_count ?? 0);
 
-                // Expect array like ['Stress','Depression','Financial Stress', ...]
-                $dxList    = is_array($c->common_diagnoses ?? null) ? $c->common_diagnoses : [];
-                // Limit to 3 chips, then show “+N more”
-                $chips     = array_slice($dxList, 0, 3);
-                $moreN     = max(0, count($dxList) - count($chips));
+                $dxArr     = $toDxArray($c->common_diagnoses ?? []);
+                $dxArr     = array_values(array_unique(array_filter(array_map('trim',$dxArr))));
+                $chips     = array_slice($dxArr, 0, 6);   // show up to 6 pills on index
+                $moreN     = max(0, count($dxArr) - count($chips));
+                $moreTxt   = $moreN > 0 ? implode(', ', array_slice($dxArr, 6)) : '';
               @endphp
 
               <tr class="hover:bg-slate-50 transition align-top">
                 <td class="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">{{ $course }}</td>
                 <td class="px-6 py-4 whitespace-nowrap">{{ $year }}</td>
-                <td class="px-6 py-4 whitespace-nowrap">{{ $count }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span class="inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium bg-slate-50 text-slate-700 ring-1 ring-slate-200" aria-label="Students">{{ $count }}</span>
+                </td>
                 <td class="px-6 py-4">
                   <div class="flex flex-wrap gap-1.5">
                     @forelse($chips as $dx)
-                      <span class="inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 ring-1 ring-amber-200">
-                        {{ $dx }}
-                      </span>
+                      {!! $pill($dx) !!}
                     @empty
                       <span class="text-slate-400">—</span>
                     @endforelse
                     @if($moreN > 0)
-                      <span class="inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200">
-                        +{{ $moreN }} more
-                      </span>
+                      <span class="inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200"
+                            title="{{ $moreTxt }}">+{{ $moreN }} more</span>
                     @endif
                   </div>
                 </td>
                 <td class="px-6 py-4 text-right screen-only">
-                  <a href="{{ route('admin.course-analytics.show', $id) }}"
-                     class="inline-flex items-center px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm">
-                    View
-                  </a>
+                  @if($id)
+                    <a href="{{ route('admin.course-analytics.show', $id) }}"
+                       class="inline-flex items-center px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm">
+                      View
+                    </a>
+                  @endif
                 </td>
               </tr>
             @empty
@@ -166,6 +205,13 @@
           </tbody>
         </table>
       </div>
+
+      {{-- pagination (if your controller returns a paginator) --}}
+      @if(method_exists($courses,'hasPages') && $courses->hasPages())
+        <div class="px-6 py-4 bg-slate-50 border-t border-slate-200/70 screen-only">
+          {{ $courses->withQueryString()->links() }}
+        </div>
+      @endif
     </div>
   </div>
 </div>

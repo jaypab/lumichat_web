@@ -93,9 +93,6 @@
   </table>
 
   {{-- Footer --}}
-  <div class="small" style="margin-top:14px;">
-    LumiCHAT • Tagoloan Community College — Analytics summary.
-  </div>
    <div class="small" style="margin-top:14px;">
     LumiCHAT • Tagoloan Community College — Confidential student support record.
   </div>
