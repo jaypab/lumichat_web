@@ -30,7 +30,9 @@
       </svg>
       Book New
     </a>
-    <a href="{{ route('appointment.history.export.pdf', request()->only('status','period','q')) }}"
+{{-- History list -> PDF --}}
+<a href="{{ route('appointment.history.export.pdf', request()->only('status','period','q')) }}"
+   target="_blank" rel="noopener"
    class="inline-flex items-center gap-2 bg-green-600 text-white px-4 py-2 h-10 rounded-xl shadow-sm hover:bg-green-700 active:scale-[.99] transition">
   <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -38,6 +40,7 @@
   </svg>
   Download PDF
 </a>
+
 
   </div>
   </div>

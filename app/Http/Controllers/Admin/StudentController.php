@@ -99,9 +99,8 @@ public function exportPdf(Request $request)
 
     $generatedAt = now()->format('Y-m-d H:i');
 
-    // Read logo from public/images/chatbot.png and encode as data URI
     $logoData = null;
-    $logoPath = public_path('images/chatbot.png');   // C:\xampp\htdocs\...\public\images\chatbot.png
+    $logoPath = public_path('images/chatbot.png');
     if (is_file($logoPath)) {
         $logoData = 'data:image/png;base64,' . base64_encode(file_get_contents($logoPath));
     }
@@ -112,9 +111,9 @@ public function exportPdf(Request $request)
         'defaultFont'          => 'DejaVu Sans',
         'isHtml5ParserEnabled' => true,
         'isRemoteEnabled'      => true,
-        // Optional: let DomPDF access /public just in case you later use file paths
         'chroot'               => public_path(),
         'dpi'                  => 96,
+        'isPhpEnabled'         => true,   // ← REQUIRED for <script type="text/php">
     ]);
 
     $pdf->loadView('admin.students.pdf', [
@@ -122,12 +121,17 @@ public function exportPdf(Request $request)
         'q'           => $q,
         'year'        => $year,
         'generatedAt' => $generatedAt,
-        'logoData'    => $logoData,   // <-- pass Base64 to Blade
+        'logoData'    => $logoData,
     ]);
 
-    return $pdf->download('Student_Records_' . now()->format('Ymd_His') . '.pdf');
-}
+    $filename = 'Student_Records_' . now()->format('Ymd_His') . '.pdf';
 
+    if ($request->boolean('download')) {
+        return $pdf->download($filename); // force download
+    }
+
+    return $pdf->stream($filename); // inline view (opens in new tab from the Blade link)
+}
 
 
     // ==== Private helpers ====
@@ -156,46 +160,49 @@ public function exportPdf(Request $request)
         return [$labels, $series];
     }
     
-    public function exportShowPdf(int $student, \Illuminate\Http\Request $request): Response
-    {
-        $year = (int) $request->query('year', now()->year);
+    public function exportShowPdf(int $student, Request $request): Response
+{
+    $year = (int) $request->query('year', now()->year);
 
-        // Load the same data you use on the HTML show()
-        $studentModel = \App\Models\User::query()
-            ->where('role', 'student')->findOrFail($student);
+    $studentModel = \App\Models\User::query()
+        ->where('role', 'student')->findOrFail($student);
 
-        // If you compute $labels/$series/$total in show(), replicate here (no charts in PDF).
-        [$labels, $series, $total] = $this->buildMonthlySeriesForStudent($studentModel->id, $year);
+    [$labels, $series, $total] = $this->buildMonthlySeriesForStudent($studentModel->id, $year);
 
-        // Optional logo (base64) so Dompdf doesn’t need HTTP
-        $logoData = null;
-        $logoPath = public_path('images/chatbot.png');
-        if (is_file($logoPath)) {
-            $logoData = 'data:image/png;base64,'.base64_encode(@file_get_contents($logoPath));
-        }
-
-        $pdf = app('dompdf.wrapper');
-        $pdf->setPaper('a4', 'portrait');
-        $pdf->setOptions([
-            'defaultFont'          => 'DejaVu Sans',
-            'isHtml5ParserEnabled' => true,
-            'isRemoteEnabled'      => true,
-            'chroot'               => public_path(),
-        ]);
-
-        $pdf->loadView('admin.students.show_pdf', [
-            'student'     => $studentModel,
-            'year'        => $year,
-            'labels'      => $labels,
-            'series'      => $series,
-            'total'       => $total,
-            'generatedAt' => now()->format('Y-m-d H:i'),
-            'logoData'    => $logoData,
-        ]);
-
-        return $pdf->download('Student_'.$studentModel->id.'_'.$year.'_'.now()->format('Ymd_His').'.pdf');
+    $logoData = null;
+    $logoPath = public_path('images/chatbot.png');
+    if (is_file($logoPath)) {
+        $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
     }
 
+    $pdf = app('dompdf.wrapper');
+    $pdf->setPaper('a4', 'portrait');
+    $pdf->setOptions([
+        'defaultFont'          => 'DejaVu Sans',
+        'isHtml5ParserEnabled' => true,
+        'isRemoteEnabled'      => true,
+        'chroot'               => public_path(),
+        'dpi'                  => 96,
+        'isPhpEnabled'         => true, // needed if your Blade uses <script type="text/php"> (page numbers)
+    ]);
+
+    $pdf->loadView('admin.students.show_pdf', [
+        'student'     => $studentModel,
+        'year'        => $year,
+        'labels'      => $labels,
+        'series'      => $series,
+        'total'       => $total,
+        'generatedAt' => now()->format('Y-m-d H:i'),
+        'logoData'    => $logoData,
+    ]);
+
+    $filename = 'Student_' . $studentModel->id . '_' . $year . '_' . now()->format('Ymd_His') . '.pdf';
+
+    if ($request->boolean('download')) {
+        return $pdf->download($filename); // force download
+    }
+    return $pdf->stream($filename); // inline view (opens in the new tab)
+}
     /**
      * Example helper so the PDF has the same numbers as the HTML page.
      * Return: [$labels, $series, $total]

@@ -210,63 +210,81 @@ class AppointmentController extends Controller
             $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
         }
 
-        $pdf = app('dompdf.wrapper');
-        $pdf->setPaper('a4', 'portrait');
-        $pdf->setOptions([
-            'defaultFont'          => 'DejaVu Sans',
-            'isHtml5ParserEnabled' => true,
-            'isRemoteEnabled'      => true,
-            'chroot'               => public_path(), // safe FS root
-        ]);
+    $pdf = app('dompdf.wrapper');
+    $pdf->setPaper('a4', 'portrait');
+    $pdf->setOptions([
+        'defaultFont'          => 'DejaVu Sans',
+        'isHtml5ParserEnabled' => true,
+        'isRemoteEnabled'      => true,
+        'chroot'               => public_path(),
+        'dpi'                  => 96,
+        'isPhpEnabled'         => true,   // ← REQUIRED for <script type="text/php">
+    ]);
 
         $pdf->loadView('admin.appointments.pdf', [
-            'appointments' => $appointments,
-            'status'       => $status,
-            'period'       => $period,
-            'q'            => $q,
-            'generatedAt'  => now()->format('Y-m-d H:i'),
-            'logoData'     => $logoData,   // ← pass to Blade
-        ]);
+    'appointments' => $appointments,
+    'status'       => $status,
+    'period'       => $period,
+    'q'            => $q,
+    'generatedAt'  => now()->format('Y-m-d H:i'),
+    'logoData'     => $logoData,
+]);
 
-        return $pdf->download('Appointments_'.now()->format('Ymd_His').'.pdf');
+$filename = 'Appointments_'.now()->format('Ymd_His').'.pdf';
+
+if ($request->boolean('download')) {
+    // force download (when you add ?download=1 to the URL)
+    return $pdf->download($filename);
+}
+
+// default: view in browser
+return $pdf->stream($filename);  // Content-Disposition: inline
+}
+
+public function exportShowPdf(Request $request, int $id)
+{
+    $appointment = $this->appointments->findDetailedById($id);
+    abort_unless($appointment, 404);
+
+    $latestReport = \DB::table('tbl_diagnosis_reports')
+        ->where('student_id', $appointment->student_id)
+        ->where('counselor_id', $appointment->counselor_id)
+        ->orderByDesc('id')
+        ->first();
+
+    $logoPath = public_path('images/chatbot.png');
+    $logoData = null;
+    if (is_file($logoPath)) {
+        $mime = \Illuminate\Support\Str::endsWith(strtolower($logoPath), '.svg')
+            ? 'image/svg+xml' : 'image/png';
+        $logoData = 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($logoPath));
     }
-
-    public function exportShowPdf(int $id)
-    {
-        $appointment = $this->appointments->findDetailedById($id);
-        abort_unless($appointment, 404);
-
-        // latest report (optional)
-        $latestReport = \DB::table('tbl_diagnosis_reports')
-            ->where('student_id', $appointment->student_id)
-            ->where('counselor_id', $appointment->counselor_id)
-            ->orderByDesc('id')
-            ->first();
-
-        // --- brand logo (embed as base64) ---
-        $logoPath = public_path('images/chatbot.png'); // your path
-        $logoData = null;
-        if (is_file($logoPath)) {
-            $mime = \Illuminate\Support\Str::endsWith(strtolower($logoPath), '.svg') ? 'image/svg+xml' : 'image/png';
-            $logoData = 'data:'.$mime.';base64,'.base64_encode(file_get_contents($logoPath));
-        }
 
     $pdf = app('dompdf.wrapper');
     $pdf->setPaper('a4', 'portrait');
     $pdf->setOptions([
+        'defaultFont'          => 'DejaVu Sans',
         'isHtml5ParserEnabled' => true,
         'isRemoteEnabled'      => true,
-        'defaultFont'          => 'DejaVu Sans',   // ✅ important
+        'chroot'               => public_path(),
+        'dpi'                  => 96,
+        'isPhpEnabled'         => true,   // ← REQUIRED for <script type="text/php">
     ]);
 
-        $pdf->loadView('admin.appointments.pdf-show', [
-            'appointment'  => $appointment,
-            'latestReport' => $latestReport,
-            'logoData'     => $logoData,      // <<<
-        ]);
+    $pdf->loadView('admin.appointments.pdf-show', [
+        'appointment'  => $appointment,
+        'latestReport' => $latestReport,
+        'logoData'     => $logoData,
+    ]);
 
-        return $pdf->download('Appointment_'.$appointment->id.'.pdf');
+    $filename = 'Appointment_' . $appointment->id . '.pdf';
+
+    if ($request->boolean('download')) {
+        return $pdf->download($filename); // force download
     }
+
+    return $pdf->stream($filename); // inline view (opens in new tab from the Blade link)
+}
 
 
     public function assignForm(int $id)

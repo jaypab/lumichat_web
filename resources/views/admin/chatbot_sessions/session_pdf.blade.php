@@ -6,7 +6,7 @@
   <title>Chatbot Session</title>
   <style>
     *{ box-sizing:border-box }
-    body{ font-family: DejaVu Sans, sans-serif; margin:14mm 14mm; font-size:12.5px; color:#111827; line-height:1.45 }
+    body{ font-family: DejaVu Sans, sans-serif; margin:14mm 14mm 22mm; font-size:12.5px; color:#111827; line-height:1.45 }
 
     /* Brand */
     .brandbar{ margin:0 0 6px }
@@ -114,5 +114,17 @@
   <div class="small" style="margin-top:14px;">
     LumiCHAT • Tagoloan Community College — Confidential student support record.
   </div>
+   <script type="text/php">
+if (isset($pdf)) {
+    $font  = $fontMetrics->get_font("DejaVu Sans", "normal");
+    $size  = 9;
+    $w     = $pdf->get_width();
+    $h     = $pdf->get_height();
+    $text  = "Page {PAGE_NUM} of {PAGE_COUNT}";
+    $x     = $w - 72;   // ~1 inch from right
+    $y     = $h - 28;   // ~28pt from bottom
+    $pdf->page_text($x, $y, $text, $font, $size, [0,0,0]);
+}
+</script>
 </body>
 </html>

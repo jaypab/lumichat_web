@@ -121,6 +121,8 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
     Route::get('/appointments/export/pdf', [AdminAppointmentController::class, 'exportPdf'])
         ->name('appointments.export.pdf');
 
+        
+
     /* COUNSELOR LOGS */
     Route::get('/counselor-logs', [CounselorLogController::class, 'index'])->name('counselor-logs.index');
     Route::get('/counselor-logs/{counselor}', [CounselorLogController::class, 'show'])

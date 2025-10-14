@@ -58,11 +58,14 @@
       </p>
     </div>
 
-    <a href="{{ route('admin.course-analytics.export.pdf', request()->only('year','course')) }}"
-       class="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 h-10 rounded-xl shadow-sm hover:bg-emerald-700">
-      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/></svg>
-      Download PDF
-    </a>
+{{-- Index: Course Analytics -> PDF --}}
+<a href="{{ route('admin.course-analytics.export.pdf', request()->only('year','course')) }}"
+   target="_blank" rel="noopener"
+   class="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 h-10 rounded-xl shadow-sm hover:bg-emerald-700">
+  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/></svg>
+  Download PDF
+</a>
+
   </div>
 
   {{-- Filters --}}

@@ -5,7 +5,7 @@
   <title>Appointment #{{ $appointment->id }}</title>
   <style>
     * { box-sizing: border-box; font-family: DejaVu Sans, sans-serif; }
-    body { margin: 16mm 14mm; font-size: 12px; color: #111827; }
+    body { margin: 16mm 14mm 22mm; font-size: 12px; color: #111827; }
 
     /* brand */
     .brandbar { margin:0 0 10px; text-align:left; }
@@ -98,6 +98,17 @@
       @endif
     </div>
   @endif
-
+   <script type="text/php">
+if (isset($pdf)) {
+    $font  = $fontMetrics->get_font("DejaVu Sans", "normal");
+    $size  = 9;
+    $w     = $pdf->get_width();
+    $h     = $pdf->get_height();
+    $text  = "Page {PAGE_NUM} of {PAGE_COUNT}";
+    $x     = $w - 72;   // ~1 inch from right
+    $y     = $h - 28;   // ~28pt from bottom
+    $pdf->page_text($x, $y, $text, $font, $size, [0,0,0]);
+}
+</script>
 </body>
 </html>

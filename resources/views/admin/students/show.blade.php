@@ -26,15 +26,17 @@
         Back to list
       </a>
 
-      <a href="{{ route('admin.students.show.export.pdf', ['student'=>$student->id, 'year'=>$year]) }}"
-         class="h-11 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-white shadow-sm
-                hover:bg-emerald-700 active:scale-[.99] transition">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
-        </svg>
-        Download PDF
-      </a>
+     <a href="{{ route('admin.students.show.export.pdf', ['student'=>$student->id, 'year'=>$year]) }}"
+   target="_blank" rel="noopener"
+   class="h-11 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-white shadow-sm
+          hover:bg-emerald-700 active:scale-[.99] transition">
+  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+  </svg>
+  Download PDF
+</a>
+
     </div>
   </div>
 

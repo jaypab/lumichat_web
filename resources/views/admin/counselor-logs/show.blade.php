@@ -61,14 +61,16 @@
     </div>
 
     <div class="flex items-center gap-2">
-      <a href="{{ route('admin.counselor-logs.show.export', ['counselor'=>$counselor->id, 'month'=>$month, 'year'=>$year]) }}"
-         class="inline-flex items-center h-10 px-4 rounded-xl text-sm font-medium bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 active:scale-[.99] transition">
-        <svg class="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
-        </svg>
-        Download PDF
-      </a>
+<a href="{{ route('admin.counselor-logs.show.export', ['counselor'=>$counselor->id, 'month'=>$month, 'year'=>$year]) }}"
+   target="_blank" rel="noopener"
+   class="inline-flex items-center h-10 px-4 rounded-xl text-sm font-medium bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 active:scale-[.99] transition">
+  <svg class="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+  </svg>
+  Download PDF
+</a>
+
 
       <a href="{{ route('admin.counselor-logs.index', request()->only('month','year','counselor_id')) }}"
          class="inline-flex items-center h-10 px-4 rounded-xl text-sm font-medium bg-white border border-slate-200 text-slate-700 shadow-sm hover:bg-slate-50 active:scale-[.99] transition">

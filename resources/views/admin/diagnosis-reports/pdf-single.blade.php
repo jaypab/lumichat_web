@@ -25,7 +25,7 @@
   <style>
     /* ---------- Type & base ---------- */
     * { box-sizing:border-box; font-family:DejaVu Sans, sans-serif; }
-    body { margin:16mm 14mm; color:#111827; font-size:12px; line-height:1.45; }
+    body { margin:16mm 14mm 22mm; color:#111827; font-size:12px; line-height:1.45; }
 
     /* spacing scale: 4 / 8 / 12 / 16 */
     .mt-4{margin-top:4px}.mt-8{margin-top:8px}.mt-12{margin-top:12px}.mt-16{margin-top:16px}
@@ -115,6 +115,17 @@
   <div class="foot mt-12">
     LumiCHAT • Tagoloan Community College — Confidential student support record.
   </div>
-
+   <script type="text/php">
+if (isset($pdf)) {
+    $font  = $fontMetrics->get_font("DejaVu Sans", "normal");
+    $size  = 9;
+    $w     = $pdf->get_width();
+    $h     = $pdf->get_height();
+    $text  = "Page {PAGE_NUM} of {PAGE_COUNT}";
+    $x     = $w - 72;   // ~1 inch from right
+    $y     = $h - 28;   // ~28pt from bottom
+    $pdf->page_text($x, $y, $text, $font, $size, [0,0,0]);
+}
+</script>
 </body>
 </html>

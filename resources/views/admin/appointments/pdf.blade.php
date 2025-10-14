@@ -11,7 +11,7 @@
   <title>Appointments (PDF)</title>
   <style>
     * { box-sizing: border-box; font-family: DejaVu Sans, sans-serif; }
-    body { margin: 18mm 14mm; font-size: 12px; color: #111827; }
+    body { margin: 18mm 14mm 22mm;  font-size: 12px; color: #111827; }
     .brandbar { margin:0 0 8px; text-align:left; }
   .brand { display:inline-block; }
   .brand-logo { width:50px; height:50px; border-radius:50%; vertical-align:middle; }
@@ -93,5 +93,19 @@
   <div class="small" style="margin-top:14px;">
     LumiCHAT • Tagoloan Community College — Confidential student support record.
   </div>
+  {{-- Footer page numbers --}}
+<script type="text/php">
+if (isset($pdf)) {
+    $font  = $fontMetrics->get_font("DejaVu Sans", "normal");
+    $size  = 9;
+    $w     = $pdf->get_width();
+    $h     = $pdf->get_height();
+    $text  = "Page {PAGE_NUM} of {PAGE_COUNT}";
+    $x     = $w - 72;   // ~1 inch from right
+    $y     = $h - 28;   // ~28pt from bottom
+    $pdf->page_text($x, $y, $text, $font, $size, [0,0,0]);
+}
+</script>
+
 </body>
 </html>

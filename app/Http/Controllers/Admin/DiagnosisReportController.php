@@ -47,15 +47,17 @@ public function exportPdf(Request $request)
 
     $logoData = null;
     $logoPath = public_path('images/chatbot.png');
-    if (is_file($logoPath)) $logoData = 'data:image/png;base64,'.base64_encode(@file_get_contents($logoPath));
+    if (is_file($logoPath)) $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
 
     $pdf = app('dompdf.wrapper');
     $pdf->setPaper('a4', 'portrait');
     $pdf->setOptions([
-        'defaultFont'          => 'dejavu sans',  // ✅ single, exact name
+        'defaultFont'          => 'DejaVu Sans',
         'isHtml5ParserEnabled' => true,
         'isRemoteEnabled'      => true,
         'chroot'               => base_path(),
+        'dpi'                  => 96,
+        'isPhpEnabled'         => true, // if your Blade adds page numbers
     ]);
 
     $pdf->loadView('admin.diagnosis-reports.pdf', [
@@ -66,36 +68,35 @@ public function exportPdf(Request $request)
         'logoData'    => $logoData,
     ]);
 
-    return $pdf->download('Diagnosis_Reports_'.now()->format('Ymd_His').'.pdf');
+    $filename = 'Diagnosis_Reports_' . now()->format('Ymd_His') . '.pdf';
+
+    if ($request->boolean('download')) {
+        return $pdf->download($filename);
+    }
+    return $pdf->stream($filename); // opens inline in the new tab
 }
 
-public function exportOne(int $reportId)
+public function exportOne(Request $request, int $reportId)
 {
     $report = $this->reportsRepo->findWithRelations($reportId, ['student:id,name,email', 'counselor']);
     abort_unless($report, 404);
 
-    $code        = 'DRP-'.now()->format('Y').'-'.str_pad($report->id, 4, '0', STR_PAD_LEFT);
+    $code        = 'DRP-' . now()->format('Y') . '-' . str_pad($report->id, 4, '0', STR_PAD_LEFT);
     $generatedAt = now()->format('Y-m-d H:i');
 
-    // inline logo (optional)
     $logoData = null;
     $logoPath = public_path('images/chatbot.png');
-    if (is_file($logoPath)) {
-        $logoData = 'data:image/png;base64,'.base64_encode(@file_get_contents($logoPath));
-    }
-
-    // ✅ embed DejaVu Sans (ship with dompdf)
-    $dejavuTtf = base_path('vendor/dompdf/dompdf/lib/fonts/DejaVuSans.ttf');
-    $dejavuBtt = base_path('vendor/dompdf/dompdf/lib/fonts/DejaVuSans-Bold.ttf');
-    $dejavuData  = is_file($dejavuTtf) ? base64_encode(@file_get_contents($dejavuTtf)) : null;
-    $dejavuBold  = is_file($dejavuBtt) ? base64_encode(@file_get_contents($dejavuBtt)) : null;
+    if (is_file($logoPath)) $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
 
     $pdf = app('dompdf.wrapper');
     $pdf->setPaper('a4', 'portrait');
     $pdf->setOptions([
+        'defaultFont'          => 'DejaVu Sans',
         'isHtml5ParserEnabled' => true,
         'isRemoteEnabled'      => true,
-        'chroot'               => public_path(), // safe root
+        'chroot'               => public_path(),
+        'dpi'                  => 96,
+        'isPhpEnabled'         => true, // if your single view prints page numbers
     ]);
 
     $pdf->loadView('admin.diagnosis-reports.pdf-single', [
@@ -103,11 +104,17 @@ public function exportOne(int $reportId)
         'code'        => $code,
         'generatedAt' => $generatedAt,
         'logoData'    => $logoData,
-        // pass embedded font
-        'dejavuData'  => $dejavuData,
-        'dejavuBold'  => $dejavuBold,
+        // keep your embedded font vars if you use them in the view
+        'dejavuData'  => null,
+        'dejavuBold'  => null,
     ]);
 
-    return $pdf->download('Diagnosis-Report-'.$code.'.pdf');
+    $filename = 'Diagnosis-Report-' . $code . '.pdf';
+
+    if ($request->boolean('download')) {
+        return $pdf->download($filename);
+    }
+    return $pdf->stream($filename); // inline in a new tab
 }
+
 }

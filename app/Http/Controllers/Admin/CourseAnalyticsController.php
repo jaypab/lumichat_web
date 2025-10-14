@@ -93,85 +93,95 @@ class CourseAnalyticsController extends Controller
      * Export the INDEX list to PDF
      * Route name suggestion: admin.course-analytics.export.pdf
      */
-    public function exportIndexPdf(Request $request): Response
-    {
-        $yearKey    = (string) $request->query('year', 'all');
-        $courseKey  = (string) $request->query('course', 'all');
-        $freeTextQ  = trim((string) $request->query('q', ''));
+public function exportIndexPdf(Request $request): Response
+{
+    $yearKey    = (string) $request->query('year', 'all');
+    $courseKey  = (string) $request->query('course', 'all');
+    $freeTextQ  = trim((string) $request->query('q', ''));
 
-        $effectiveQ = $courseKey !== 'all' ? $courseKey : $freeTextQ;
-        $courses    = $this->analytics->listCourses($yearKey, $effectiveQ);
+    $effectiveQ = $courseKey !== 'all' ? $courseKey : $freeTextQ;
+    $courses    = $this->analytics->listCourses($yearKey, $effectiveQ);
 
-        $logoData = null;
-        $logoPath = public_path('images/chatbot.png');
-        if (is_file($logoPath)) {
-            $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
-        }
-
-        $pdf = app('dompdf.wrapper');
-        $pdf->setPaper('a4', 'portrait');
-        $pdf->setOptions([
-            'defaultFont'          => 'DejaVu Sans',
-            'isHtml5ParserEnabled' => true,
-            'isRemoteEnabled'      => true,
-            'chroot'               => public_path(),
-        ]);
-
-        $pdf->loadView('admin.course-analytics.index-pdf', [
-            'courses'     => $courses,
-            'yearKey'     => $yearKey,
-            'q'           => $effectiveQ,
-            'generatedAt' => now()->format('Y-m-d H:i'),
-            'logoData'    => $logoData,
-        ]);
-
-        return $pdf->download('Course_Analytics_' . now()->format('Ymd_His') . '.pdf');
+    $logoData = null;
+    $logoPath = public_path('images/chatbot.png');
+    if (is_file($logoPath)) {
+        $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
     }
 
-    /**
-     * Export the SHOW view to PDF
-     * Route name suggestion: admin.course-analytics.show.export.pdf
-     */
-    public function exportShowPdf(int $course): Response
-    {
-        $courseObj = $this->analytics->findCourseWithBreakdown($course);
-        abort_unless($courseObj, 404);
+    $pdf = app('dompdf.wrapper');
+    $pdf->setPaper('a4', 'portrait');
+    $pdf->setOptions([
+        'defaultFont'          => 'DejaVu Sans',
+        'isHtml5ParserEnabled' => true,
+        'isRemoteEnabled'      => true,
+        'chroot'               => public_path(),
+        'dpi'                  => 96,
+        'isPhpEnabled'         => true, // if your Blade adds page numbers
+    ]);
 
-        $title       = "{$courseObj->course} • {$courseObj->year_level}";
-        $generatedAt = now()->format('Y-m-d H:i');
+    $pdf->loadView('admin.course-analytics.index-pdf', [
+        'courses'     => $courses,
+        'yearKey'     => $yearKey,
+        'q'           => $effectiveQ,
+        'generatedAt' => now()->format('Y-m-d H:i'),
+        'logoData'    => $logoData,
+    ]);
 
-        // Optional logo embed (base64)
-        $logoData = null;
-        $logoPath = public_path('images/chatbot.png');
-        if (is_file($logoPath)) {
-            $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
-        }
+    $filename = 'Course_Analytics_' . now()->format('Ymd_His') . '.pdf';
 
-        $pdf = app('dompdf.wrapper');
-        $pdf->setPaper('a4', 'portrait');
-        $pdf->setOptions([
-            'defaultFont'          => 'DejaVu Sans',
-            'isHtml5ParserEnabled' => true,
-            'isRemoteEnabled'      => true,
-            'chroot'               => public_path(),
-        ]);
+    if ($request->boolean('download')) {
+        return $pdf->download($filename);   // force download
+    }
+    return $pdf->stream($filename);         // inline view (opens in the new tab)
+}
 
-        // View file: resources/views/admin/course-analytics/show_pdf.blade.php
-        $pdf->loadView('admin.course-analytics.show_pdf', [
-            'course'      => $courseObj,
-            'title'       => $title,
-            'generatedAt' => $generatedAt,
-            'logoData'    => $logoData,
-        ]);
+/**
+ * Export the SHOW view to PDF
+ * Route name: admin.course-analytics.show.export.pdf
+ */
+public function exportShowPdf(Request $request, int $course): Response
+{
+    $courseObj = $this->analytics->findCourseWithBreakdown($course);
+    abort_unless($courseObj, 404);
 
-        return $pdf->download('Course_Analytics_' . now()->format('Ymd_His') . '.pdf');
+    $title       = "{$courseObj->course} • {$courseObj->year_level}";
+    $generatedAt = now()->format('Y-m-d H:i');
+
+    $logoData = null;
+    $logoPath = public_path('images/chatbot.png');
+    if (is_file($logoPath)) {
+        $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
     }
 
-    /**
-     * Back-compat alias if you still call exportPdf for the index.
-     */
-    public function exportPdf(Request $request): Response
-    {
-        return $this->exportIndexPdf($request);
+    $pdf = app('dompdf.wrapper');
+    $pdf->setPaper('a4', 'portrait');
+    $pdf->setOptions([
+        'defaultFont'          => 'DejaVu Sans',
+        'isHtml5ParserEnabled' => true,
+        'isRemoteEnabled'      => true,
+        'chroot'               => public_path(),
+        'dpi'                  => 96,
+        'isPhpEnabled'         => true,
+    ]);
+
+    $pdf->loadView('admin.course-analytics.show_pdf', [
+        'course'      => $courseObj,
+        'title'       => $title,
+        'generatedAt' => $generatedAt,
+        'logoData'    => $logoData,
+    ]);
+
+    $filename = 'Course_Analytics_' . now()->format('Ymd_His') . '.pdf';
+
+    if ($request->boolean('download')) {
+        return $pdf->download($filename);
     }
+    return $pdf->stream($filename); // inline in a new tab
+}
+
+/** Back-compat alias if you still call exportPdf for the index. */
+public function exportPdf(Request $request): Response
+{
+    return $this->exportIndexPdf($request);
+}
 }

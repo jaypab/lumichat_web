@@ -153,17 +153,19 @@
     </button>
   @endif
 
-  {{-- NEW: Download PDF (replaces Print) --}}
-  <a href="{{ route('appointment.show.export.pdf', $appointment->id) }}"
-     class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-white shadow-sm
-            hover:bg-emerald-700 active:scale-[.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-     title="Download appointment as PDF" aria-label="Download appointment as PDF">
-    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/>
-    </svg>
-    Download PDF
-  </a>
+ {{-- Single appointment -> PDF --}}
+<a href="{{ route('appointment.show.export.pdf', $appointment->id) }}"
+   target="_blank" rel="noopener"
+   class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-white shadow-sm
+          hover:bg-emerald-700 active:scale-[.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+   title="Download appointment as PDF" aria-label="Download appointment as PDF">
+  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/>
+  </svg>
+  Download PDF
+</a>
+
 </div>
 
 @endsection
@@ -218,4 +220,5 @@ function printAppointmentCard() {
   w.document.open(); w.document.write(docHtml); w.document.close();
 }
 </script>
+
 @endpush

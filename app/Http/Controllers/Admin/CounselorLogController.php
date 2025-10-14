@@ -53,7 +53,7 @@ class CounselorLogController extends Controller
         ]);
     }
 
-   public function exportPdf(Request $request)
+public function exportPdf(Request $request)
 {
     $month = (int) $request->integer('month') ?: null;
     $year  = (int) $request->integer('year')  ?: null;
@@ -81,7 +81,7 @@ class CounselorLogController extends Controller
     $yName = $year ?: 'All';
     $generatedAt = now()->format('Y-m-d H:i');
 
-    // Build base64 logo (public/images/chatbot.png – adjust if needed)
+    // Base64 logo
     $logoData = null;
     $logoPath = public_path('images/chatbot.png');
     if (is_file($logoPath)) {
@@ -95,6 +95,8 @@ class CounselorLogController extends Controller
         'isHtml5ParserEnabled' => true,
         'isRemoteEnabled'      => true,
         'chroot'               => public_path(),
+        'dpi'                  => 96,
+        'isPhpEnabled'         => true, // if your Blade adds page numbers via <script type="text/php">
     ]);
 
     $pdf->loadView('admin.counselor-logs.pdf', [
@@ -103,10 +105,15 @@ class CounselorLogController extends Controller
         'mName'       => $mName,
         'yName'       => $yName,
         'generatedAt' => $generatedAt,
-        'logoData'    => $logoData,  // ← pass to Blade
+        'logoData'    => $logoData,
     ]);
 
-    return $pdf->download('Counselor_Logs_'.now()->format('Ymd_His').'.pdf');
+    $filename = 'Counselor_Logs_'.now()->format('Ymd_His').'.pdf';
+
+    if ($request->boolean('download')) {
+        return $pdf->download($filename);   // force a download
+    }
+    return $pdf->stream($filename);         // inline view (opens in the new tab)
 }
 // app/Http/Controllers/Admin/CounselorLogController.php
 
@@ -121,9 +128,8 @@ public function exportShowPdf(Request $request, int $counselor)
     $label       = \Carbon\Carbon::create($year, $month, 1)->format('F Y');
     $generatedAt = now()->format('Y-m-d H:i');
 
-    // Inline (base64) logo so Dompdf shows it reliably
     $logoData = null;
-    $logoPath = public_path('images/chatbot.png'); // adjust if your logo lives elsewhere
+    $logoPath = public_path('images/chatbot.png');
     if (is_file($logoPath)) {
         $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
     }
@@ -135,20 +141,27 @@ public function exportShowPdf(Request $request, int $counselor)
         'isHtml5ParserEnabled' => true,
         'isRemoteEnabled'      => true,
         'chroot'               => public_path(),
+        'dpi'                  => 96,
+        'isPhpEnabled'         => true, // if your Blade uses <script type="text/php"> for page numbers
     ]);
 
     $pdf->loadView('admin.counselor-logs.pdf-show', [
-        'counselor'  => $data['counselor'],
-        'students'   => $data['students'],
-        'dxCounts'   => $data['dxCounts'],
-        'month'      => $month,
-        'year'       => $year,
-        'label'      => $label,
-        'generatedAt'=> $generatedAt,
-        'logoData'   => $logoData,
+        'counselor'   => $data['counselor'],
+        'students'    => $data['students'],
+        'dxCounts'    => $data['dxCounts'],
+        'month'       => $month,
+        'year'        => $year,
+        'label'       => $label,
+        'generatedAt' => $generatedAt,
+        'logoData'    => $logoData,
     ]);
 
-    return $pdf->download('Counselor_Log_'.$data['counselor']->full_name.'_'.$year.'-'.$month.'_'.now()->format('Ymd_His').'.pdf');
-}
+    $safeName = Str::slug($data['counselor']->full_name, '_');
+    $filename = "Counselor_Log_{$safeName}_{$year}-{$month}_" . now()->format('Ymd_His') . ".pdf";
 
+    if ($request->boolean('download')) {
+        return $pdf->download($filename);   // force download
+    }
+    return $pdf->stream($filename);         // inline view (opens in the new tab)
+}
 }

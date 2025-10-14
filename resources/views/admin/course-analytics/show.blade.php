@@ -60,14 +60,17 @@
     </div>
 
     <div class="flex gap-2">
-      <a href="{{ route('admin.course-analytics.show.export.pdf', ['course' => $courseId]) }}"
-         class="inline-flex items-center h-9 px-3 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700">
-        <svg class="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
-        </svg>
-        Download PDF
-      </a>
+      {{-- Show: Single Course -> PDF --}}
+<a href="{{ route('admin.course-analytics.show.export.pdf', ['course' => $courseId]) }}"
+   target="_blank" rel="noopener"
+   class="inline-flex items-center h-9 px-3 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700">
+  <svg class="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+  </svg>
+  Download PDF
+</a>
+
       <a href="{{ route('admin.course-analytics.index') }}"
          class="inline-flex items-center h-9 px-3 rounded-lg text-sm font-medium bg-white border border-slate-200 shadow-sm hover:bg-slate-50">
         ← Back to list

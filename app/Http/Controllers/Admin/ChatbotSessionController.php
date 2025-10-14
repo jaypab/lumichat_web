@@ -391,52 +391,57 @@ class ChatbotSessionController extends Controller
     }
 
     /** EXPORT: list */
-    public function exportPdf(Request $request)
-    {
-        $q       = trim((string) $request->input('q', ''));
-        $dateReq = (string) $request->input('date', self::DATE_KEY_ALL);
-        $dateKey = in_array($dateReq, self::DATE_KEYS, true) ? $dateReq : self::DATE_KEY_ALL;
-
-        // ⬇️ read and pass the sort
-        $sort    = (string) $request->input('sort', 'newest');
-
-        $rows = method_exists($this->sessions, 'allWithFilters')
-            ? $this->sessions->allWithFilters($q, $dateKey, $sort)
-            : (function () use ($q, $dateKey, $sort) {
-                $p = $this->sessions->paginateWithFilters($q, $dateKey, PHP_INT_MAX, $sort);
-                return method_exists($p, 'items') ? collect($p->items()) : collect($p);
-            })();
-
-        $logoData = null;
-        $logoPath = public_path('images/chatbot.png');
-        if (is_file($logoPath)) {
-            $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
-        }
-
-        $pdf = app('dompdf.wrapper');
-        $pdf->setPaper('a4', 'portrait');
-        $pdf->setOptions(['isHtml5ParserEnabled' => true, 'isRemoteEnabled' => true]);
-
-        $pdf->loadView('admin.chatbot_sessions.pdf', [
-            'rows'        => $rows,
-            'q'           => $q,
-            'dateKey'     => $dateKey,
-            'generatedAt' => now()->format('Y-m-d H:i'),
-            'logoData'    => $logoData,
-        ]);
-
-        return $pdf->download('Chatbot_Sessions_'.now()->format('Ymd_His').'.pdf');
-    }
-
-    /** EXPORT: one session */
-  public function exportOne(int $session)
+   public function exportPdf(Request $request)
 {
-    $row = $this->sessions->findWithOrderedChats($session);
-    if (!$row) {
-        if ($table = $this->sessionsTable()) {
-            $row = DB::table($table)->where('id', $session)->first();
-        }
+    $q       = trim((string) $request->input('q', ''));
+    $dateReq = (string) $request->input('date', self::DATE_KEY_ALL);
+    $dateKey = in_array($dateReq, self::DATE_KEYS, true) ? $dateReq : self::DATE_KEY_ALL;
+    $sort    = (string) $request->input('sort', 'newest');
+
+    $rows = method_exists($this->sessions, 'allWithFilters')
+        ? $this->sessions->allWithFilters($q, $dateKey, $sort)
+        : (function () use ($q, $dateKey, $sort) {
+            $p = $this->sessions->paginateWithFilters($q, $dateKey, PHP_INT_MAX, $sort);
+            return method_exists($p, 'items') ? collect($p->items()) : collect($p);
+        })();
+
+    $logoData = null;
+    $logoPath = public_path('images/chatbot.png');
+    if (is_file($logoPath)) {
+        $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
     }
+
+    $pdf = app('dompdf.wrapper');
+    $pdf->setPaper('a4', 'portrait');
+    $pdf->setOptions([
+        'isHtml5ParserEnabled' => true,
+        'isRemoteEnabled'      => true,
+        'dpi'                  => 96,
+        'isPhpEnabled'         => true, // if your Blade uses <script type="text/php"> for page numbers
+    ]);
+
+    $pdf->loadView('admin.chatbot_sessions.pdf', [
+        'rows'        => $rows,
+        'q'           => $q,
+        'dateKey'     => $dateKey,
+        'generatedAt' => now()->format('Y-m-d H:i'),
+        'logoData'    => $logoData,
+    ]);
+
+    $filename = 'Chatbot_Sessions_' . now()->format('Ymd_His') . '.pdf';
+
+    if ($request->boolean('download')) {
+        return $pdf->download($filename); // force download
+    }
+    return $pdf->stream($filename); // inline view (opens in the new tab)
+}
+
+
+public function exportOne(Request $request, int $session)
+{
+    $row = $this->sessions->findWithOrderedChats($session)
+        ?? (optional($this->sessionsTable()) ? DB::table($this->sessionsTable())->where('id', $session)->first() : null);
+
     abort_unless($row, 404);
 
     $logoData = null;
@@ -452,33 +457,39 @@ class ChatbotSessionController extends Controller
     $year = $row->created_at ? \Carbon\Carbon::parse($row->created_at)->format('Y') : now()->format('Y');
     $code = 'LMC-' . $year . '-' . str_pad((string)$session, 4, '0', STR_PAD_LEFT);
 
-    // NEW: session counts for this student
     $sessionCounts = ['all' => null, 'd30' => null, 'd7' => null];
     if (!empty($row->user_id)) {
         $uid = (int) $row->user_id;
         $sessionCounts['all'] = DB::table('chat_sessions')->where('user_id', $uid)->count();
-        $sessionCounts['d30'] = DB::table('chat_sessions')->where('user_id', $uid)
-                                ->where('created_at', '>=', now()->subDays(30))->count();
-        $sessionCounts['d7']  = DB::table('chat_sessions')->where('user_id', $uid)
-                                ->where('created_at', '>=', now()->subDays(7))->count();
+        $sessionCounts['d30'] = DB::table('chat_sessions')->where('user_id', $uid)->where('created_at', '>=', now()->subDays(30))->count();
+        $sessionCounts['d7']  = DB::table('chat_sessions')->where('user_id', $uid)->where('created_at', '>=', now()->subDays(7))->count();
     }
 
     $pdf = app('dompdf.wrapper');
     $pdf->setPaper('a4', 'portrait');
-    $pdf->setOptions(['isHtml5ParserEnabled' => true, 'isRemoteEnabled' => true]);
-
-    $pdf->loadView('admin.chatbot_sessions.session_pdf', [
-        'session'        => $row,
-        'code'           => $code,
-        'logoData'       => $logoData,
-        'isHighRisk'     => $isHigh,
-        'generatedAt'    => now()->format('Y-m-d H:i'),
-        'sessionCounts'  => $sessionCounts,   // ← pass to view
+    $pdf->setOptions([
+        'isHtml5ParserEnabled' => true,
+        'isRemoteEnabled'      => true,
+        'dpi'                  => 96,
+        'isPhpEnabled'         => true, // if your PDF view uses <script type="text/php"> for page numbers
     ]);
 
-    return $pdf->download('Chatbot_Session_'.$session.'_'.now()->format('Ymd_His').'.pdf');
-}
+    $pdf->loadView('admin.chatbot_sessions.session_pdf', [
+        'session'       => $row,
+        'code'          => $code,
+        'logoData'      => $logoData,
+        'isHighRisk'    => $isHigh,
+        'generatedAt'   => now()->format('Y-m-d H:i'),
+        'sessionCounts' => $sessionCounts,
+    ]);
 
+    $filename = 'Chatbot_Session_' . $session . '_' . now()->format('Ymd_His') . '.pdf';
+
+    if ($request->boolean('download')) {
+        return $pdf->download($filename);     // force download
+    }
+    return $pdf->stream($filename);           // inline view (opens in the new tab)
+}
     public function reschedule(int $id, Request $request): JsonResponse
     {
         $session = $this->sessions->findWithOrderedChats($id);
