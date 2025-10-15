@@ -117,30 +117,6 @@ class ChatController extends Controller
         ];
     }
 
-    private function crisisMessageWithLink(): string
-    {
-        $c   = config('services.crisis');
-        $emg = e($c['emergency_number'] ?? '911');
-        $hn  = e($c['hotline_name'] ?? 'Hopeline PH (24/7)');
-        $hp  = e($c['hotline_phone'] ?? '0917-558-4673 / (02) 804-4673');
-        $ht  = e($c['hotline_text'] ?? 'Text 0917-558-4673');
-        $url = e($c['hotline_url'] ?? 'https://www.facebook.com/HopelinePH/');
-
-        return <<<HTML
-<div class="space-y-2 leading-relaxed">
-  <p class="font-semibold">We’re here to help. / Ania mi para motabang.</p>
-  <ul class="list-disc pl-5 text-sm">
-    <li>If you’re in immediate danger, call <strong>{$emg}</strong>. / Kung emerhensya, tawag sa <strong>{$emg}</strong>.</li>
-    <li>24/7 support: <strong>{$hn}</strong> — call <strong>{$hp}</strong>, {$ht}, or visit
-      <a href="{$url}" target="_blank" rel="noopener" class="underline">{$url}</a>.
-    </li>
-  </ul>
-  <p class="text-sm">You can also book a time with a school counselor: / Pwede pud ka magpa-book sa counselor:</p>
-  <div class="pt-1">{APPOINTMENT_LINK}</div>
-</div>
-HTML;
-    }
-
     private function wantsAppointment(string $text): bool
     {
         $t = mb_strtolower($text);
