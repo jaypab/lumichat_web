@@ -4,8 +4,6 @@
 @section('page_title', 'Chat')
 
 @section('content')
-
-@section('content')
 <meta name="csrf-token" content="{{ csrf_token() }}">
 
 {{-- tiny CSS just for typing dots --}}
@@ -18,14 +16,15 @@
 </style>
 
 <style>
-  /* Quick-reply buttons */
+  /* Quick-reply buttons (with hover) */
   .lumi-qr{
     font-size:12px; padding:6px 10px; border-radius:12px;
     border:1px solid rgba(99,102,241,.35); background:rgba(99,102,241,.06);
     transition: background .15s ease, box-shadow .15s ease, transform .06s ease;
     cursor:pointer;
   }
-  .lumi-qr:hover{ background:rgba(99,102,241,.12); transform:translateY(-1px);
+  .lumi-qr:hover{
+    background:rgba(99,102,241,.12); transform:translateY(-1px);
     box-shadow:0 2px 10px rgba(99,102,241,.18);
   }
   .lumi-qr--primary{
@@ -40,7 +39,6 @@
   }
   .lumi-qr--link{ text-decoration:none; display:inline-block; }
 </style>
-
 
 <div class="px-4 sm:px-6 animate-fadeup">
   <div class="mx-auto w-full max-w-5xl h-[80vh]">
@@ -106,7 +104,6 @@
                 @if (!$mine) data-msg-id="{{ $chat->id }}" @endif
                 style="{{ $mine ? $user : $bot }}"
               >{!! $mine ? e($chat->message) : $msg !!}</div>
-
 
               <div style="{{ $timeStyle }}">
                 {{ \Carbon\Carbon::parse($chat->sent_at ?? $chat->created_at)->format('g:i:s A') }}
@@ -189,7 +186,7 @@
       'border-radius:14px!important'
     ].join(';') + ';';
 
-    // Base bubble style (make sure this is one single string)
+    // Base bubble style
     const BASE = [
       'display:inline-block!important',
       'box-sizing:border-box!important',
@@ -323,17 +320,65 @@
       });
     }
 
-    /* ---------- NEW: show-friendly + send-payload helpers ---------- */
+    /* ---------- Send queue (defined BEFORE send) ---------- */
+    let Q = Promise.resolve();
+    const runQ = (task) => (Q = Q.then(task).catch(()=>{}));
+
+    /* ---------- Helpers: time, sendAction, send ---------- */
+
+    // time like "5:47:28 PM"
+    const now12h = () =>
+      new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+
+    let _pendingDisplayText = null;
+
     function sendAction(displayText, payloadText){
-
-      const now12h = () =>
-      new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
-
-      appendUserBubble(displayText, now12h());// pretty label
-      send(payloadText ?? displayText);                                // actual payload to backend
+      appendUserBubble(displayText, now12h());   // show the nice label + time
+      _pendingDisplayText = displayText;         // remember label so backend gets display_text
+      send(payloadText ?? displayText);          // send actual payload
     }
-    // Back-compat for any old calls:
+
     function sendQuick(text){ sendAction(text, text); }
+
+    async function send(message){
+      try{
+        if (sendBtn) sendBtn.disabled = true;
+        const idem = (crypto?.randomUUID?.() ?? (Date.now() + '-' + Math.random().toString(16).slice(2)));
+        if (idemEl) idemEl.value = idem;
+
+        const body = { message, _idem: idem };
+        if (_pendingDisplayText) body.display_text = _pendingDisplayText;
+
+        const res = await fetch(STORE_URL, {
+          method:'POST',
+          headers:{
+            'Content-Type':'application/json',
+            'Accept':'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+          },
+          body: JSON.stringify(body)
+        });
+
+        _pendingDisplayText = null;
+
+        if (!res.ok){ await runQ(()=>appendBotBubble('No reply from LumiCHAT Assistant.', '')); return; }
+        const data = await res.json();
+
+        let replies = data?.bot_reply;
+        if (!Array.isArray(replies)) replies = [replies];
+
+        for (const r of (replies || [])){
+          await runQ(() => appendBotBubble(r, data?.time_human || ''));
+          await runQ(() => new Promise(done => setTimeout(done, 220)));
+        }
+      } catch {
+        _pendingDisplayText = null;
+        await runQ(()=>appendBotBubble('Sorry, I’m having trouble right now.', ''));
+      } finally {
+        if (sendBtn) sendBtn.disabled = false;
+        input?.focus();
+      }
+    }
 
     /* Rasa/structured buttons from backend */
     function renderButtons(buttons, bubble){
@@ -375,7 +420,6 @@
 
     /* Quick actions (tips / referral) */
     function addQuickActions(bubble){
-      // Avoid duplicates
       if (bubble.querySelector('[data-qa="qr"]')) return;
 
       const raw = (bubble.textContent || '').trim();
@@ -393,8 +437,8 @@
       box.setAttribute('data-qa','qr');
       box.style.cssText = 'margin-top:8px;display:flex;flex-wrap:wrap;gap:8px';
 
-     const pill = 'lumi-qr';
-     const pillPrimary = 'lumi-qr lumi-qr--primary';
+      const pill = 'lumi-qr';
+      const pillPrimary = 'lumi-qr lumi-qr--primary';
 
       if (asksForTips){
         const noBtn = document.createElement('button');
@@ -423,85 +467,6 @@
 
       bubble.appendChild(box);
     }
-// add this near the other top-level const/lets
-let _pendingDisplayText = null;
-
-// replace sendAction to set the display text buffer
-function sendAction(displayText, payloadText){
-  appendUserBubble(cleaned, now12h()); // pretty text
-  _pendingDisplayText = displayText;  // <-- remember what to save
-  send(payloadText ?? displayText);   // send real payload to backend
-}
-
-// keep back-compat
-function sendQuick(text){ sendAction(text, text); }
-
-// in send(), include display_text in the POST body when present
-async function send(message){
-  try{
-    if (sendBtn) sendBtn.disabled = true;
-    const idem = (crypto?.randomUUID?.() ?? (Date.now() + '-' + Math.random().toString(16).slice(2)));
-    if (idemEl) idemEl.value = idem;
-
-    const body = { message, _idem: idem };
-    if (_pendingDisplayText) body.display_text = _pendingDisplayText;   // <-- NEW
-
-    const res = await fetch(STORE_URL, {
-      method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'Accept':'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-      },
-      body: JSON.stringify(body)
-    });
-
-    // clear the buffer regardless of outcome so it doesn't leak to next send
-    _pendingDisplayText = null;
-
-    if (!res.ok){ await runQ(()=>appendBotBubble('No reply from LumiCHAT Assistant.', '')); return; }
-    const data = await res.json();
-
-    let replies = data?.bot_reply;
-    if (!Array.isArray(replies)) replies = [replies];
-
-    for (const r of (replies || [])){
-      await runQ(() => appendBotBubble(r, data?.time_human || ''));
-      await runQ(() => new Promise(done => setTimeout(done, 220)));
-    }
-  } catch {
-    _pendingDisplayText = null;
-    await runQ(()=>appendBotBubble('Sorry, I’m having trouble right now.', ''));
-  } finally {
-    if (sendBtn) sendBtn.disabled = false;
-    input?.focus();
-  }
-}
-
-    function rehydrateQuickActions(){
-      try {
-        const bots = Array.from(messages.querySelectorAll('.bubble-ai[data-sender="bot"]'));
-        bots.slice(-12).forEach(bubble => {
-          if (bubble.querySelector('[data-qa="qr"]') || bubble.querySelector('button')) return;
-
-          const id = bubble.getAttribute('data-msg-id');
-          if (id) {
-            const raw = sessionStorage.getItem(`lumi_btn_${id}`);
-            if (raw != null) {
-              try {
-                const btns = JSON.parse(raw);
-                if (Array.isArray(btns) && btns.length) {
-                  renderButtons(btns, bubble);
-                  return;
-                }
-              } catch(_) {}
-            }
-          }
-          // if no stored buttons, try adding the fallback quick actions
-          addQuickActions(bubble);
-        });
-      } catch(_) {}
-    }
 
     async function appendBotBubble(payload, time=''){
       const bubble = appendBotBubbleShell(time);
@@ -520,7 +485,6 @@ async function send(message){
         addQuickActions(bubble); // fallback UI only if no Rasa buttons
       }
 
-      // tag & persist for refresh
       if (obj?.id) {
         bubble.setAttribute('data-msg-id', String(obj.id));
         try {
@@ -535,63 +499,24 @@ async function send(message){
       messages.scrollTop = messages.scrollHeight;
     }
 
-    /* Send queue */
-    let Q = Promise.resolve();
-    const runQ = (task) => (Q = Q.then(task).catch(()=>{}));
-
-    async function send(message){
-      try{
-        if (sendBtn) sendBtn.disabled = true;
-        const idem = (crypto?.randomUUID?.() ?? (Date.now() + '-' + Math.random().toString(16).slice(2)));
-        if (idemEl) idemEl.value = idem;
-
-        const res = await fetch(STORE_URL, {
-          method:'POST',
-          headers:{
-            'Content-Type':'application/json',
-            'Accept':'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-          },
-          body: JSON.stringify({ message, _idem: idem })
-        });
-
-        if (!res.ok){ await runQ(()=>appendBotBubble('No reply from LumiCHAT Assistant.', '')); return; }
-        const data = await res.json();
-
-        let replies = data?.bot_reply;
-        if (!Array.isArray(replies)) replies = [replies];
-
-        for (const r of (replies || [])){
-          await runQ(() => appendBotBubble(r, data?.time_human || ''));
-          await runQ(() => new Promise(done => setTimeout(done, 220)));
-        }
-      } catch {
-        await runQ(()=>appendBotBubble('Sorry, I’m having trouble right now.', ''));
-      } finally {
-        if (sendBtn) sendBtn.disabled = false;
-        input?.focus();
-      }
-    }
-
-    /* Enter to send + Submit */
+    /* Enter to send + Submit — use sendAction so display_text + timestamp match quick-replies */
     input.addEventListener('keydown', (e) => {
       if (e.isComposing) return;
       if (e.key === 'Enter' && !e.shiftKey){
         e.preventDefault();
         const raw = input.value; input.value = ''; updateCounter();
         const cleaned = sanitizeClient(raw); if (!cleaned) return;
-        appendUserBubble(cleaned, new Date().toLocaleTimeString());
-        send(cleaned);
+        sendAction(cleaned, cleaned);
       }
     });
+
     if (!form.dataset.bound){
       form.dataset.bound = '1';
       form.addEventListener('submit', (e)=>{
         e.preventDefault();
         const raw = input.value; input.value = ''; updateCounter();
         const cleaned = sanitizeClient(raw); if (!cleaned) return;
-        appendUserBubble(cleaned, new Date().toLocaleTimeString());
-        send(cleaned);
+        sendAction(cleaned, cleaned);
       });
     }
 
@@ -599,7 +524,30 @@ async function send(message){
     input.dispatchEvent(new Event('input'));
     updateCounter();
     messages && (messages.scrollTop = messages.scrollHeight);
-    rehydrateQuickActions();
+
+    // try to rehydrate buttons/quick actions for the last few messages
+    (function rehydrateQuickActions(){
+      try {
+        const bots = Array.from(messages.querySelectorAll('.bubble-ai[data-sender="bot"]'));
+        bots.slice(-12).forEach(bubble => {
+          if (bubble.querySelector('[data-qa="qr"]') || bubble.querySelector('button')) return;
+          const id = bubble.getAttribute('data-msg-id');
+          if (id) {
+            const raw = sessionStorage.getItem(`lumi_btn_${id}`);
+            if (raw != null) {
+              try {
+                const btns = JSON.parse(raw);
+                if (Array.isArray(btns) && btns.length) {
+                  renderButtons(btns, bubble);
+                  return;
+                }
+              } catch(_) {}
+            }
+          }
+          addQuickActions(bubble);
+        });
+      } catch(_) {}
+    })();
 
     // One-time auto welcome (per thread, 60 min)
     try {
@@ -619,3 +567,4 @@ async function send(message){
   });
 })();
 </script>
+@endpush
