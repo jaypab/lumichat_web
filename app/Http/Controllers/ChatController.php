@@ -117,6 +117,11 @@ class ChatController extends Controller
         ];
     }
 
+    private function crisisMessageWithLink(): string
+    {
+    
+    }
+
     private function wantsAppointment(string $text): bool
     {
         $t = mb_strtolower($text);
@@ -455,8 +460,8 @@ if (empty($botReplies)) {
     $crisisAlreadyShown = session('crisis_prompted_for_session_' . $sessionId, false);
     if (!$crisisAlreadyShown && $msgRisk === 'high') {
         session(['crisis_prompted_for_session_' . $sessionId => true]);
-        $this->logActivity('crisis_prompt', 'Crisis resources displayed', $sessionId, null);
-        array_unshift($botReplies, $this->crisisMessageWithLink());
+        $this->logActivity('crisis_prompt', 'Crisis context sent to Rasa', $sessionId, null);
+        // No message injected here — rely on Rasa using metadata.risk === 'high'
     }
 
     // 6.5) Appointment CTA — unchanged
