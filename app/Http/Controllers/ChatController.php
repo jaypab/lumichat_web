@@ -311,23 +311,36 @@ HTML;
      * - stores them as JSON in chat_sessions.emotions
      * - DOES NOT write "Starting conversation..." anymore
      */
+
 public function store(Request $request)
 {
     // 1) Validation (+ idempotency) — unchanged
     $validated = $request->validate([
-        'message' => ['required', 'string', 'max:2000', function ($attr, $val, $fail) {
+        'message' => ['required','string','max:2000', function ($attr, $val, $fail) {
             $s = is_string($val) ? preg_replace('/\s+/u', ' ', $val) : '';
             $s = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $s ?? '');
             if (trim($s) === '') return $fail('Message cannot be empty.');
             if ($s !== strip_tags($s)) return $fail('HTML is not allowed in messages.');
         }],
-        '_idem'  => ['required','uuid','unique:chats,idempotency_key'],
+        '_idem'        => ['required','uuid','unique:chats,idempotency_key'],
+        'display_text' => ['nullable','string','max:2000'],   // <-- NEW
     ]);
 
-    $rawInput = (string) $validated['message'];
+
+    $rawInput = (string) $validated['message'];       // payload (could be /intent...)
     $text = preg_replace('/\s+/u', ' ', $rawInput);
     $text = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $text ?? '');
     $text = trim($text);
+
+    // Optional human label for storage/rendering
+    $rawDisplay = (string)($request->input('display_text', ''));
+    $display = preg_replace('/\s+/u', ' ', $rawDisplay);
+    $display = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $display ?? '');
+    $display = trim($display);
+
+// For risk/lang heuristics, prefer the human text when present
+$analysisText = $display !== '' ? $display : $text;
+
 
     $userId    = Auth::id();
     $sessionId = session('chat_session_id');
@@ -406,52 +419,51 @@ public function store(Request $request)
         // swallow
     }
 
-    // 5) Call Rasa — unchanged
-    $rasaUrl  = $this->rasaWebhookUrl();
-    $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk);
-    $botReplies = [];
+ // 5) Call Rasa — PRESERVE buttons
+$rasaUrl  = $this->rasaWebhookUrl();
+$metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk);
+$botReplies = []; // each item: ['text'=>string, 'buttons'=>array]
 
-    $timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
-    $verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
+$timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
+$verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
 
-    $r = null; // for logging body on empty reply
-    try {
-        $r = Http::timeout($timeout)
-            ->withOptions(['verify' => $verify])
-            ->withHeaders(['Accept' => 'application/json'])
-            ->post($rasaUrl, [
-                'sender'   => 'u_' . $userId . '_s_' . $sessionId,
-                'message'  => $text,
-                'metadata' => $metadata,
-            ]);
+$r = null;
+try {
+    $r = Http::timeout($timeout)
+        ->withOptions(['verify' => $verify])
+        ->withHeaders(['Accept' => 'application/json'])
+        ->post($rasaUrl, [
+            'sender'   => 'u_' . $userId . '_s_' . $sessionId,
+            'message'  => $text,
+            'metadata' => $metadata,
+        ]);
 
-        if ($r->ok()) {
-            $payload = $r->json() ?? [];
-            foreach ($payload as $piece) {
-                if (!empty($piece['text'])) $botReplies[] = $piece['text'];
+    if ($r->ok()) {
+        $payload = $r->json() ?? [];
+        foreach ($payload as $piece) {
+            if (is_array($piece)) {
+                $txt = isset($piece['text']) ? (string) $piece['text'] : '';
+                $btn = (isset($piece['buttons']) && is_array($piece['buttons'])) ? $piece['buttons'] : [];
+                if ($txt !== '' || !empty($btn)) {
+                    $botReplies[] = ['text' => $txt, 'buttons' => $btn];
+                }
+            } else {
+                $txt = trim((string) $piece);
+                if ($txt !== '') $botReplies[] = ['text' => $txt, 'buttons' => []];
             }
         }
-    } catch (\Throwable $e) {
-        $botReplies = [
-            "It’s okay to feel that way. I’m here to listen. Would you like to share more? / Sige ra na, ania ko maminaw. Gusto nimo isulti pa ug dugang?"
-        ];
     }
+} catch (\Throwable $e) {
+    $botReplies = [
+        ['text' => "It’s okay to feel that way. I’m here to listen. Would you like to share more? / Sige ra na, ania ko maminaw. Gusto nimo isulti pa ug dugang?", 'buttons' => []]
+    ];
+}
 
-    if (empty($botReplies)) {
-        $botReplies = [
-            "I’m here to support you. Would you like to share more about how you’re feeling? / Ania ko para motabang. Gusto nimo isulti pa ug dugang kung unsa imong gibati?"
-        ];
-        $this->logActivity('rasa_no_reply', 'Rasa returned no replies', $sessionId, [
-            'response' => is_object($r) ? $r->body() : null,
-        ]);
-    } else {
-        if (count($botReplies) > 3) {
-            $this->logActivity('rasa_multiple_replies', count($botReplies) . ' replies from Rasa', $sessionId, [
-                'sample'   => array_slice($botReplies, 0, 3),
-                'full'     => $botReplies,
-            ]);
-        }
-    }
+if (empty($botReplies)) {
+    $botReplies = [
+        ['text' => "I’m here to support you. Would you like to share more about how you’re feeling? / Ania ko para motabang. Gusto nimo isulti pa ug dugang kung unsa imong gibati?", 'buttons' => []]
+    ];
+}
 
     // 6) Risk elevation + crisis prompt — unchanged
     $current = $session->risk_level ?: 'low';
@@ -488,61 +500,74 @@ public function store(Request $request)
             'preview' => Str::limit($text, 120),
         ]);
     }
+// 7) Build appointment link + response payload (no schema change)
+$link = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
+    ? \Illuminate\Support\Facades\URL::signedRoute('features.enable_appointment')
+    : (\Illuminate\Support\Facades\Route::has('appointment.index')
+        ? route('appointment.index')
+        : url('/appointment'));
 
-    // 7) Build appointment link safely + render replies — unchanged
-    $link = Route::has('features.enable_appointment')
-        ? URL::signedRoute('features.enable_appointment')
-        : (Route::has('appointment.index')
-            ? route('appointment.index')
-            : url('/appointment'));
+$ctaHtml = '<a href="'.e($link).'">Book an appointment</a>';
 
-    $ctaHtml = '<a href="'.e($link).'">Book an appointment</a>';
+$botPayload = [];
+foreach ($botReplies as $replyObj) {
+    $replyText = (string) ($replyObj['text'] ?? '');
+    $replyBtns = (isset($replyObj['buttons']) && is_array($replyObj['buttons'])) ? $replyObj['buttons'] : [];
 
-    $botPayload = [];
-    foreach ($botReplies as $reply) {
-        $reply = $this->pickLanguageVariant($reply, $lang);
-        if (is_string($reply) && str_contains($reply, '{APPOINTMENT_LINK}')) {
-            $reply = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $reply);
-        }
-        $bot = Chat::create([
-            'user_id'         => $userId,
-            'chat_session_id' => $sessionId,
-            'sender'          => 'bot',
-            'message'         => Crypt::encryptString($reply),
-            'sent_at'         => now(),
-        ]);
-
-        $botPayload[] = [
-            'text'       => $reply,
-            'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('H:i'),
-            'sent_at'    => $bot->sent_at->toIso8601String(),
-        ];
+    // language pick + inline link replace
+    $replyText = $this->pickLanguageVariant($replyText, $lang);
+    if (str_contains($replyText, '{APPOINTMENT_LINK}')) {
+        $replyText = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $replyText);
     }
 
-    $tz       = config('app.timezone');
-    $nowHuman = now()->timezone($tz)->format('H:i');
+    // buttons: turn payload "{APPOINTMENT_LINK}" into url $link
+    $normalizedBtns = [];
+    foreach ($replyBtns as $b) {
+        $title   = (string)($b['title'] ?? 'Open');
+        $payload = $b['payload'] ?? null;
+        $url     = $b['url'] ?? null;
 
-    $rawReplies = is_array($botPayload) ? $botPayload : [$botPayload];
-    $replies    = array_values(array_filter(array_map(function ($r) {
-        if (is_array($r)) {
-            if (isset($r['text']))      return trim((string) $r['text']);
-            if (isset($r['message']))   return trim((string) $r['message']);
-            if (isset($r['bot_reply'])) return trim((string) $r['bot_reply']);
-            return trim((string) json_encode($r));
+        if (is_string($payload) && trim($payload) === '{APPOINTMENT_LINK}') {
+            $normalizedBtns[] = ['title' => $title, 'url' => $link];
+        } else {
+            $one = ['title' => $title];
+            if ($url)     $one['url'] = $url;
+            if ($payload) $one['payload'] = $payload;
+            $normalizedBtns[] = $one;
         }
-        return trim((string) $r);
-    }, $rawReplies), fn ($s) => $s !== ''));
+    }
 
-    return response()->json([
-        'user_message' => [
-            'text'       => $text,
-            'time_human' => $userMsg->sent_at->timezone($tz)->format('H:i'),
-            'sent_at'    => $userMsg->sent_at->toIso8601String(),
-        ],
-        'bot_reply'  => $replies,
-        'time_human' => $nowHuman,
+    // save bot message (encrypted) like before
+    $bot = Chat::create([
+        'user_id'         => $userId,
+        'chat_session_id' => $sessionId,
+        'sender'          => 'bot',
+        'message'         => Crypt::encryptString($replyText),
+        'sent_at'         => now(),
     ]);
+
+    // respond with id + buttons so the UI can render & rehydrate
+    $botPayload[] = [
+        'id'         => $bot->id,
+        'text'       => $replyText,
+        'buttons'    => $normalizedBtns,
+        'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('H:i'),
+        'sent_at'    => $bot->sent_at->toIso8601String(),
+    ];
 }
+
+// return JSON with structured replies
+return response()->json([
+    'user_message' => [
+        'text'       => $text,
+        'time_human' => now()->timezone(config('app.timezone'))->format('H:i'),
+        'sent_at'    => now()->toIso8601String(),
+    ],
+    'bot_reply'  => $botPayload,
+    'time_human' => now()->timezone(config('app.timezone'))->format('H:i'),
+]);
+}
+
 
     // Normalize any stored shape (null | list | map) into a simple list of labels.
 // Decode stored JSON into a label=>count map.

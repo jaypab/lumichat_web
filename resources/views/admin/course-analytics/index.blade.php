@@ -194,7 +194,6 @@
 }
 /* fallback if tailwind utilities fail to load on live */
 .min-w-\[980px]{min-width:980px}
-.ring-1{outline:1px solid rgba(148,163,184,.35); outline-offset:-1px}
 .rounded-2xl{border-radius:1rem}
 </style>
 @endsection

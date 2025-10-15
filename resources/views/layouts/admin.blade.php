@@ -244,8 +244,8 @@
 
       {{-- Course Analytics --}}
       <a href="{{ route('admin.course-analytics.index') }}"
-         aria-current="{{ request()->routeIs('admin.course-analytics.*') ? 'page' : 'false' }}"
-         class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
+        aria-current="{{ request()->routeIs('admin.course-analytics.*') ? 'page' : 'false' }}"
+        class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
                 hover:bg-white/10 hover:ring-white/10
                 {{ request()->routeIs('admin.course-analytics.*') ? 'is-active bg-white/15 ring-white/10' : '' }}">
         <span class="inline-flex w-10 h-10 items-center justify-center">

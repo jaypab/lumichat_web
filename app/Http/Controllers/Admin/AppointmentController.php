@@ -327,7 +327,14 @@ public function exportShowPdf(Request $request, int $id)
                 ->whereIn('status', ['pending','confirmed','completed'])
                 ->exists();
 
-            $c->available = ($fits && !$booked) ? 1 : 0;
+            $c->available   = ($fits && !$booked) ? 1 : 0;
+            $c->busy_reason = null;
+
+            if (!$fits) {
+                $c->busy_reason = 'Off-hours';
+            } elseif ($booked) {
+                $c->busy_reason = 'Has an appointment at this time';
+            }
         }
 
         return view('admin.appointments.assign', compact('appointment', 'counselors'));

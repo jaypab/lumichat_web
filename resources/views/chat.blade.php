@@ -78,8 +78,10 @@
               <div
                 class="bubble {{ $mine ? 'bubble-user' : 'bubble-ai' }}"
                 data-sender="{{ $mine ? 'user' : 'bot' }}"
+                @if (!$mine) data-msg-id="{{ $chat->id }}" @endif
                 style="{{ $mine ? $user : $bot }}"
               >{!! $mine ? e($chat->message) : $msg !!}</div>
+
 
               <div style="{{ $timeStyle }}">
                 {{ \Carbon\Carbon::parse($chat->sent_at ?? $chat->created_at)->format('H:i') }}
@@ -148,7 +150,7 @@
     const APPT_URL  = @json(\Illuminate\Support\Facades\Route::has('appointment.index')
                       ? route('appointment.index')
                       : url('/appointment/book'));
-        
+
     // Compact style only while the dots are showing
     const TYPING_TWEAKS = [
       'display:inline-flex!important',
@@ -180,7 +182,7 @@
       'text-align:left!important'
     ].join(';') + ';';
 
-    // User & bot bubble styles (explicit rounding kept)
+    // User & bot bubble styles
     const userStyle = `${BASE}background:#4f46e5!important;color:#ffffff!important;align-self:flex-end!important;margin-left:auto!important;border-radius:16px!important;`;
     const botStyle  = () => {
       const dark = document.documentElement.classList.contains('dark');
@@ -269,9 +271,8 @@
       const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
       return new Promise((resolve)=>{
         const finish = () => {
-          bubble.style.cssText = botStyle();           // ← revert size & style
+          bubble.style.cssText = botStyle();
           bubble.innerHTML = finalHTML;
-          addQuickActions(bubble);
           messages.scrollTop = messages.scrollHeight;
           resolve();
         };
@@ -297,23 +298,46 @@
       });
     }
 
+    /* ---------- NEW: show-friendly + send-payload helpers ---------- */
+    function sendAction(displayText, payloadText){
+      appendUserBubble(displayText, new Date().toLocaleTimeString()); // pretty label
+      send(payloadText ?? displayText);                                // actual payload to backend
+    }
+    // Back-compat for any old calls:
+    function sendQuick(text){ sendAction(text, text); }
+
+    /* Rasa/structured buttons from backend */
     function renderButtons(buttons, bubble){
       if (!Array.isArray(buttons) || !buttons.length) return;
       const wrap = document.createElement('div');
       wrap.style.cssText = 'margin-top:8px;display:flex;flex-wrap:wrap;gap:8px';
+      wrap.setAttribute('data-qa','qr');
+
+      const tame = 'font-size:12px;padding:6px 10px;border-radius:12px;border:1px solid rgba(99,102,241,.35);background:rgba(99,102,241,.06)';
+      const afterClick = () => {
+        wrap.querySelectorAll('button').forEach(b=>{
+          b.disabled = true; b.style.opacity = '.55'; b.style.cursor = 'default';
+        });
+      };
+
       buttons.forEach(b => {
         if (b?.url){
           const a = document.createElement('a');
           a.textContent = b.title || 'Open';
           a.href = b.url; a.rel = 'noopener';
-          a.style.cssText = 'font-size:12px;padding:6px 10px;border-radius:12px;border:1px solid rgba(99,102,241,.35);background:rgba(99,102,241,.06)';
+          a.style.cssText = tame;
           wrap.appendChild(a);
-        }else{
+        } else {
           const btn = document.createElement('button');
           btn.type = 'button';
-          btn.textContent = b.title || 'Select';
-          btn.style.cssText = 'font-size:12px;padding:6px 10px;border-radius:12px;border:1px solid rgba(99,102,241,.35);background:rgba(99,102,241,.06)';
-          btn.addEventListener('click', ()=> sendQuick(String(b.payload || b.title || '')));
+          const label   = b.title || 'Okay';
+          const payload = String(b.payload ?? label);
+          btn.textContent = label;
+          btn.style.cssText = tame + ';cursor:pointer';
+          btn.addEventListener('click', ()=>{
+            sendAction(label, payload); // show label, send payload
+            afterClick();               // prevent double clicks
+          });
           wrap.appendChild(btn);
         }
       });
@@ -346,13 +370,14 @@
       if (asksForTips){
         const noBtn = document.createElement('button');
         noBtn.style.cssText = pill; noBtn.textContent = 'No, thanks';
-        noBtn.addEventListener('click', ()=> sendQuick('/deny{"confirm_topic":"coping"}'));
+        noBtn.addEventListener('click', ()=> sendAction('No, thanks', '/deny{"confirm_topic":"coping"}'));
         box.appendChild(noBtn);
 
         const yesBtn = document.createElement('button');
         yesBtn.style.cssText = pillPrimary; yesBtn.textContent = 'Yes, show tips';
-        yesBtn.addEventListener('click', ()=> sendQuick('/affirm{"confirm_topic":"coping"}'));
+        yesBtn.addEventListener('click', ()=> sendAction('Yes, show tips', '/affirm{"confirm_topic":"coping"}'));
         box.appendChild(yesBtn);
+
       } else if (mentionsReferral){
         const a = document.createElement('a');
         a.style.cssText = pillPrimary; a.textContent = 'Book counselor';
@@ -361,7 +386,7 @@
 
         const laterBtn = document.createElement('button');
         laterBtn.style.cssText = pill; laterBtn.textContent = 'Not now';
-        laterBtn.addEventListener('click', ()=> sendQuick('/deny{"confirm_topic":"referral"}'));
+        laterBtn.addEventListener('click', ()=> sendAction('Not now', '/deny{"confirm_topic":"referral"}'));
         box.appendChild(laterBtn);
       } else {
         return;
@@ -369,18 +394,89 @@
 
       bubble.appendChild(box);
     }
+// add this near the other top-level const/lets
+let _pendingDisplayText = null;
 
-    // Rehydrate quick actions for server-rendered history (on refresh)
+// replace sendAction to set the display text buffer
+function sendAction(displayText, payloadText){
+  appendUserBubble(displayText, new Date().toLocaleTimeString()); // pretty text
+  _pendingDisplayText = displayText;  // <-- remember what to save
+  send(payloadText ?? displayText);   // send real payload to backend
+}
+
+// keep back-compat
+function sendQuick(text){ sendAction(text, text); }
+
+// in send(), include display_text in the POST body when present
+async function send(message){
+  try{
+    if (sendBtn) sendBtn.disabled = true;
+    const idem = (crypto?.randomUUID?.() ?? (Date.now() + '-' + Math.random().toString(16).slice(2)));
+    if (idemEl) idemEl.value = idem;
+
+    const body = { message, _idem: idem };
+    if (_pendingDisplayText) body.display_text = _pendingDisplayText;   // <-- NEW
+
+    const res = await fetch(STORE_URL, {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'Accept':'application/json',
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+      },
+      body: JSON.stringify(body)
+    });
+
+    // clear the buffer regardless of outcome so it doesn't leak to next send
+    _pendingDisplayText = null;
+
+    if (!res.ok){ await runQ(()=>appendBotBubble('No reply from LumiCHAT Assistant.', '')); return; }
+    const data = await res.json();
+
+    let replies = data?.bot_reply;
+    if (!Array.isArray(replies)) replies = [replies];
+
+    for (const r of (replies || [])){
+      await runQ(() => appendBotBubble(r, data?.time_human || ''));
+      await runQ(() => new Promise(done => setTimeout(done, 220)));
+    }
+  } catch {
+    _pendingDisplayText = null;
+    await runQ(()=>appendBotBubble('Sorry, I’m having trouble right now.', ''));
+  } finally {
+    if (sendBtn) sendBtn.disabled = false;
+    input?.focus();
+  }
+}
+
     function rehydrateQuickActions(){
-      try{
+      try {
         const bots = Array.from(messages.querySelectorAll('.bubble-ai[data-sender="bot"]'));
-        bots.slice(-6).forEach(addQuickActions);
-      }catch(_){}
+        bots.slice(-12).forEach(bubble => {
+          if (bubble.querySelector('[data-qa="qr"]') || bubble.querySelector('button')) return;
+
+          const id = bubble.getAttribute('data-msg-id');
+          if (id) {
+            const raw = sessionStorage.getItem(`lumi_btn_${id}`);
+            if (raw != null) {
+              try {
+                const btns = JSON.parse(raw);
+                if (Array.isArray(btns) && btns.length) {
+                  renderButtons(btns, bubble);
+                  return;
+                }
+              } catch(_) {}
+            }
+          }
+          // if no stored buttons, try adding the fallback quick actions
+          addQuickActions(bubble);
+        });
+      } catch(_) {}
     }
 
     async function appendBotBubble(payload, time=''){
       const bubble = appendBotBubbleShell(time);
-      await new Promise(r => setTimeout(r, 300 + Math.floor(Math.random()*420))); // typing dots pause
+      await new Promise(r => setTimeout(r, 300 + Math.floor(Math.random()*420)));
 
       const obj  = (payload && typeof payload === 'object') ? payload : { text: payload };
       const text = obj.text ?? obj.bot_reply ?? obj.message ?? '';
@@ -388,20 +484,31 @@
 
       await typewriter(bubble, html, 24, 650);
 
-      if (Array.isArray(obj.buttons) && obj.buttons.length) renderButtons(obj.buttons, bubble);
-      if (obj?.custom?.open_url) window.open(obj.custom.open_url, '_blank');
+      const hasRasaButtons = Array.isArray(obj.buttons) && obj.buttons.length > 0;
+      if (hasRasaButtons) {
+        renderButtons(obj.buttons, bubble);
+      } else {
+        addQuickActions(bubble); // fallback UI only if no Rasa buttons
+      }
 
+      // tag & persist for refresh
+      if (obj?.id) {
+        bubble.setAttribute('data-msg-id', String(obj.id));
+        try {
+          sessionStorage.setItem(
+            `lumi_btn_${obj.id}`,
+            JSON.stringify(hasRasaButtons ? obj.buttons : [])
+          );
+        } catch (_) {}
+      }
+
+      if (obj?.custom?.open_url) window.open(obj.custom.open_url, '_blank');
       messages.scrollTop = messages.scrollHeight;
     }
 
     /* Send queue */
     let Q = Promise.resolve();
     const runQ = (task) => (Q = Q.then(task).catch(()=>{}));
-
-    function sendQuick(text){
-      appendUserBubble(text, new Date().toLocaleTimeString());
-      send(text);
-    }
 
     async function send(message){
       try{
@@ -483,4 +590,3 @@
   });
 })();
 </script>
-@endpush
