@@ -16,28 +16,103 @@
 </style>
 
 <style>
-  /* Quick-reply buttons (with hover) */
+  /* ---------- Lumi quick-reply buttons: delightful + accessible ---------- */
   .lumi-qr{
-    font-size:12px; padding:6px 10px; border-radius:12px;
-    border:1px solid rgba(99,102,241,.35); background:rgba(99,102,241,.06);
-    transition: background .15s ease, box-shadow .15s ease, transform .06s ease;
+    --qr-bg: rgba(99,102,241,.06);
+    --qr-brd: rgba(99,102,241,.35);
+    --qr-txt: inherit;
+    --qr-sd: 0 0 #0000;
+    font-size:12px;
+    padding:8px 12px;                 /* a bit more touch target */
+    border-radius:12px;
+    border:1px solid var(--qr-brd);
+    background: var(--qr-bg);
+    color: var(--qr-txt);
+    display:inline-flex;
+    align-items:center;
+    gap:.4rem;
+    line-height:1;
     cursor:pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      background .18s ease,
+      border-color .18s ease,
+      transform .12s ease,
+      box-shadow .18s ease,
+      color .18s ease;
+    box-shadow: var(--qr-sd);
   }
+
+  /* hover: subtle lift + tint */
   .lumi-qr:hover{
-    background:rgba(99,102,241,.12); transform:translateY(-1px);
-    box-shadow:0 2px 10px rgba(99,102,241,.18);
+    background: rgba(99,102,241,.14);
+    border-color: rgba(99,102,241,.55);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(79,70,229,.18);
   }
+
+  /* press */
+  .lumi-qr:active{
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(79,70,229,.18);
+  }
+
+  /* keyboard focus (WCAG AA) */
+  .lumi-qr:focus-visible{
+    outline: none;
+    box-shadow:
+      0 0 0 3px rgba(255,255,255,.9),
+      0 0 0 5px rgba(79,70,229,.55);
+    transform: translateY(-1px);
+  }
+
+  /* primary variant */
   .lumi-qr--primary{
-    border-color:#4f46e5; background:#4f46e5; color:#fff;
+    --qr-bg: #4f46e5;
+    --qr-brd: #4f46e5;
+    --qr-txt: #fff;
+    background: linear-gradient(180deg,#645cff 0%,#4f46e5 100%);
+    color:#fff;
+    border-color:#4f46e5;
+    box-shadow: 0 3px 10px rgba(79,70,229,.22);
   }
   .lumi-qr--primary:hover{
-    filter:brightness(.95); transform:translateY(-1px);
-    box-shadow:0 2px 12px rgba(79,70,229,.30);
+    filter: brightness(.98);
+    box-shadow: 0 10px 22px rgba(79,70,229,.28);
   }
+  .lumi-qr--primary:active{
+    filter: brightness(.96);
+    box-shadow: 0 4px 12px rgba(79,70,229,.24);
+  }
+
+  /* link-style anchors rendered as pills */
+  .lumi-qr--link{ text-decoration:none; }
+
+  /* disabled */
   .lumi-qr:disabled, .lumi-qr[disabled]{
-    opacity:.55; cursor:default; transform:none; box-shadow:none;
+    opacity:.6; cursor:default; transform:none; box-shadow:none;
   }
-  .lumi-qr--link{ text-decoration:none; display:inline-block; }
+
+  /* dark mode tune (Tailwind sets .dark on <html>) */
+  .dark .lumi-qr{
+    --qr-bg: rgba(99,102,241,.10);
+    --qr-brd: rgba(99,102,241,.45);
+    --qr-txt: #e5e7eb;
+    background: var(--qr-bg);
+    color: var(--qr-txt);
+    border-color: var(--qr-brd);
+  }
+  .dark .lumi-qr:hover{
+    background: rgba(99,102,241,.18);
+    border-color: rgba(99,102,241,.65);
+    box-shadow: 0 8px 20px rgba(79,70,229,.30);
+  }
+
+  /* respect reduced motion */
+  @media (prefers-reduced-motion: reduce){
+    .lumi-qr{ transition: background .18s ease, border-color .18s ease, box-shadow .18s ease; }
+    .lumi-qr:hover, .lumi-qr:active, .lumi-qr:focus-visible{ transform:none; }
+  }
 </style>
 
 <div class="px-4 sm:px-6 animate-fadeup">
