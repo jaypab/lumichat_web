@@ -84,7 +84,7 @@
 
 
               <div style="{{ $timeStyle }}">
-                {{ \Carbon\Carbon::parse($chat->sent_at ?? $chat->created_at)->format('H:i') }}
+                {{ \Carbon\Carbon::parse($chat->sent_at ?? $chat->created_at)->format('g:i:s A') }}
               </div>
             </div>
           @endforeach
@@ -300,7 +300,11 @@
 
     /* ---------- NEW: show-friendly + send-payload helpers ---------- */
     function sendAction(displayText, payloadText){
-      appendUserBubble(displayText, new Date().toLocaleTimeString()); // pretty label
+
+      const now12h = () =>
+      new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+
+      appendUserBubble(displayText, now12h());// pretty label
       send(payloadText ?? displayText);                                // actual payload to backend
     }
     // Back-compat for any old calls:
@@ -399,7 +403,7 @@ let _pendingDisplayText = null;
 
 // replace sendAction to set the display text buffer
 function sendAction(displayText, payloadText){
-  appendUserBubble(displayText, new Date().toLocaleTimeString()); // pretty text
+  appendUserBubble(cleaned, now12h()); // pretty text
   _pendingDisplayText = displayText;  // <-- remember what to save
   send(payloadText ?? displayText);   // send real payload to backend
 }

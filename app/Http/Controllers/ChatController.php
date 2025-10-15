@@ -532,7 +532,7 @@ foreach ($botReplies as $replyObj) {
         'id'         => $bot->id,
         'text'       => $replyText,
         'buttons'    => $normalizedBtns,
-        'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('H:i'),
+        'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
         'sent_at'    => $bot->sent_at->toIso8601String(),
     ];
 }
@@ -541,11 +541,11 @@ foreach ($botReplies as $replyObj) {
 return response()->json([
     'user_message' => [
         'text'       => $text,
-        'time_human' => now()->timezone(config('app.timezone'))->format('H:i'),
+        'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
         'sent_at'    => now()->toIso8601String(),
     ],
     'bot_reply'  => $botPayload,
-    'time_human' => now()->timezone(config('app.timezone'))->format('H:i'),
+    'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
 ]);
 }
 
