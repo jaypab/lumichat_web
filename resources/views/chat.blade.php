@@ -17,6 +17,31 @@
   .typing-dots .dot:nth-child(3){animation-delay:.30s}
 </style>
 
+<style>
+  /* Quick-reply buttons */
+  .lumi-qr{
+    font-size:12px; padding:6px 10px; border-radius:12px;
+    border:1px solid rgba(99,102,241,.35); background:rgba(99,102,241,.06);
+    transition: background .15s ease, box-shadow .15s ease, transform .06s ease;
+    cursor:pointer;
+  }
+  .lumi-qr:hover{ background:rgba(99,102,241,.12); transform:translateY(-1px);
+    box-shadow:0 2px 10px rgba(99,102,241,.18);
+  }
+  .lumi-qr--primary{
+    border-color:#4f46e5; background:#4f46e5; color:#fff;
+  }
+  .lumi-qr--primary:hover{
+    filter:brightness(.95); transform:translateY(-1px);
+    box-shadow:0 2px 12px rgba(79,70,229,.30);
+  }
+  .lumi-qr:disabled, .lumi-qr[disabled]{
+    opacity:.55; cursor:default; transform:none; box-shadow:none;
+  }
+  .lumi-qr--link{ text-decoration:none; display:inline-block; }
+</style>
+
+
 <div class="px-4 sm:px-6 animate-fadeup">
   <div class="mx-auto w-full max-w-5xl h-[80vh]">
 
@@ -317,7 +342,7 @@
       wrap.style.cssText = 'margin-top:8px;display:flex;flex-wrap:wrap;gap:8px';
       wrap.setAttribute('data-qa','qr');
 
-      const tame = 'font-size:12px;padding:6px 10px;border-radius:12px;border:1px solid rgba(99,102,241,.35);background:rgba(99,102,241,.06)';
+      const btnClass = 'lumi-qr';
       const afterClick = () => {
         wrap.querySelectorAll('button').forEach(b=>{
           b.disabled = true; b.style.opacity = '.55'; b.style.cursor = 'default';
@@ -329,7 +354,7 @@
           const a = document.createElement('a');
           a.textContent = b.title || 'Open';
           a.href = b.url; a.rel = 'noopener';
-          a.style.cssText = tame;
+          a.className = btnClass + ' lumi-qr--link';
           wrap.appendChild(a);
         } else {
           const btn = document.createElement('button');
@@ -337,7 +362,7 @@
           const label   = b.title || 'Okay';
           const payload = String(b.payload ?? label);
           btn.textContent = label;
-          btn.style.cssText = tame + ';cursor:pointer';
+          btn.className = btnClass;
           btn.addEventListener('click', ()=>{
             sendAction(label, payload); // show label, send payload
             afterClick();               // prevent double clicks
@@ -368,28 +393,28 @@
       box.setAttribute('data-qa','qr');
       box.style.cssText = 'margin-top:8px;display:flex;flex-wrap:wrap;gap:8px';
 
-      const pill = 'font-size:12px;padding:6px 10px;border-radius:12px;border:1px solid rgba(99,102,241,.35);background:rgba(99,102,241,.06);cursor:pointer';
-      const pillPrimary = 'font-size:12px;padding:6px 10px;border-radius:12px;border:1px solid #4f46e5;background:#4f46e5;color:#fff;cursor:pointer;text-decoration:none;display:inline-block';
+     const pill = 'lumi-qr';
+     const pillPrimary = 'lumi-qr lumi-qr--primary';
 
       if (asksForTips){
         const noBtn = document.createElement('button');
-        noBtn.style.cssText = pill; noBtn.textContent = 'No, thanks';
+        noBtn.className = pill; noBtn.textContent = 'No, thanks';
         noBtn.addEventListener('click', ()=> sendAction('No, thanks', '/deny{"confirm_topic":"coping"}'));
         box.appendChild(noBtn);
 
         const yesBtn = document.createElement('button');
-        yesBtn.style.cssText = pillPrimary; yesBtn.textContent = 'Yes, show tips';
+        yesBtn.className = pillPrimary; yesBtn.textContent = 'Yes, show tips';
         yesBtn.addEventListener('click', ()=> sendAction('Yes, show tips', '/affirm{"confirm_topic":"coping"}'));
         box.appendChild(yesBtn);
 
       } else if (mentionsReferral){
         const a = document.createElement('a');
-        a.style.cssText = pillPrimary; a.textContent = 'Book counselor';
+        a.className = pillPrimary + ' lumi-qr--link'; a.textContent = 'Book counselor';
         a.href = APPT_URL; a.rel = 'noopener';
         box.appendChild(a);
 
         const laterBtn = document.createElement('button');
-        laterBtn.style.cssText = pill; laterBtn.textContent = 'Not now';
+        laterBtn.className = pill; laterBtn.textContent = 'Not now';
         laterBtn.addEventListener('click', ()=> sendAction('Not now', '/deny{"confirm_topic":"referral"}'));
         box.appendChild(laterBtn);
       } else {
