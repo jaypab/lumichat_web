@@ -50,18 +50,19 @@
     .driver-highlighted-element{ box-shadow:0 0 0 5px var(--lumi-ring)!important; border-radius:14px!important; transition:box-shadow .2s ease; }
     .driver-stage-no-animation{ box-shadow:0 26px 60px -22px rgba(2,6,23,.38), 0 0 0 1px rgba(2,6,23,.06)!important; border-radius:16px!important; }
 
-    /* Help/Restart FAB (always shown) */
+    /* Help/Restart FAB ("?" - always shown) */
     #lumi-tour-fab{
       position:fixed; right:var(--fab-pad); bottom:var(--fab-pad); z-index:2147483000;
       width:var(--fab-size); height:var(--fab-size); border-radius:12px; display:grid; place-items:center;
       background:linear-gradient(90deg,#7c3aed,#6366f1); color:#fff; border:0; cursor:pointer;
       box-shadow:0 12px 28px rgba(99,102,241,.35); transition:transform .15s, box-shadow .15s;
+      font-weight:800; font-size:18px; line-height:1;
     }
     #lumi-tour-fab:hover{ transform:translateY(-1px); box-shadow:0 16px 34px rgba(99,102,241,.42); }
     html.dark #lumi-tour-fab{ box-shadow:0 12px 28px rgba(129,140,248,.35); }
     @media (max-width:640px){ :root{ --fab-pad:12px; } }
 
-    /* SweetAlert2 modal polish */
+    /* SweetAlert2 modal polish (optional if Swal is present) */
     .swal2-popup.lumi-tour-modal{
       border-radius:22px!important; box-shadow:0 22px 60px rgba(2,6,23,.32)!important;
       padding:1.2rem 1.3rem 1.5rem!important; background:var(--lumi-bg)!important;
@@ -85,31 +86,87 @@
 
   <script>
   (function(){
+    /* ----------------------- Constants ----------------------- */
     const USER_ID   = @json(Auth::id());
     const ROUTE_KEY = @json(Route::currentRouteName() ?? 'unknown');
-    const SHOULD_RUN_SERVER = @json($shouldRunTour ?? false);
+    const SHOULD_RUN_SERVER = @json($shouldRunTour ?? false); // optional server toggle
+
+    // Storage keys (per-user, per-browser)
+    const GLOBAL_DONE  = `lumi_tour_done_v1_${USER_ID}`;      // has the user ever completed/started a tour?
+    const WELCOME_SEEN = `lumi_tour_welcome_seen_v1_${USER_ID}`; // has the welcome been shown at least once?
+    const PAGE_FLAG    = (pageKey)=> `lumi_tour_page_v1_${pageKey}_${USER_ID}`;
 
     const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
-    const GLOBAL_DONE = `lumi_tour_done_v1_${USER_ID}`;
-    const PAGE_FLAG   = (page)=> `lumi_tour_page_v1_${page}_${USER_ID}`;
-    const FORCE_ALL   = `lumi_tour_force_all_v1_${USER_ID}`;  // force every page to run once
+    const $ = (s)=>document.querySelector(s);
 
-    const runWhenReady = fn => {
-      if (document.readyState === 'complete' || document.readyState === 'interactive') fn();
-      else document.addEventListener('DOMContentLoaded', fn, { once:true });
-    };
+    /* ----------------------- Page grouping ----------------------- */
+    function normalizePageKey(route){
+    if (!route) return 'unknown';
+    if (route.startsWith('chat.')) return 'chat';
+    if (route === 'home' || route === 'dashboard') return 'chat';
+    if (route.startsWith('appointment.')) return 'appointment';
+    // NEW: group these
+    if (route.startsWith('profile.')) return 'profile';
+    if (route.startsWith('about.')) return 'about';
+    return route;
+    }
+    const PAGE_KEY = normalizePageKey(ROUTE_KEY);
 
-    // Poll for Driver.js so we don't miss it if the CDN is slow
+    /* ----------------------- Driver.js helpers ----------------------- */
     async function ensureDriver(maxWait = 4000){
       const start = Date.now();
       while (!window.driver && Date.now() - start < maxWait) { await sleep(100); }
       return window.driver || null;
     }
 
-    const $ = s => document.querySelector(s);
+    let drv;
+    function getDriver(){
+    if (drv) return drv;
+    const isDark = document.documentElement.classList.contains('dark');
+    drv = window.driver({
+        showProgress:true, animate:true, allowClose:true, smoothScroll:true, stagePadding:6,
+        overlayOpacity: isDark ? 0.50 : 0.32,
+        nextBtnText:'Next →', prevBtnText:'← Previous', doneBtnText:'Done',
+        popoverClass:'lumi-tour'
+    });
+
+    // ✅ Ensure page is marked done even if user hits "Done" or closes the tour
+    try {
+        drv.on?.('destroyed', () => markPageDone());
+        drv.on?.('reset',     () => markPageDone());
+    } catch(_) {}
+
+    return drv;
+    }
+
+
+    async function markGlobalDone(){
+      localStorage.setItem(GLOBAL_DONE,'1');
+      try{
+        const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        // Optional: ping backend that user completed/started the tour
+        await fetch(@json(route('tour.complete')), { method:'POST', headers:{ 'X-CSRF-TOKEN':token, 'Accept':'application/json' } });
+      }catch(_){}
+    }
+
+    function markPageDone(){
+        localStorage.setItem(PAGE_FLAG(PAGE_KEY),'1');
+    }
+
+    /* ---- Ensure last step marks page as done ---- */
+    function ensureTerminalMark(steps){
+      if (!steps?.length) return steps;
+      const last = steps[steps.length-1];
+      if (last.onNextClick) {
+        const prev = last.onNextClick;
+        last.onNextClick = async (...a)=>{ try{ await prev(...a); } finally { markPageDone(); } };
+      } else {
+        last.onNextClick = markPageDone;
+      }
+      return steps;
+    }
 
     /* ----------------------- STEP BUILDERS ----------------------- */
-
     function chatSteps(){
       const newChatBtn = $('.nav-pill[data-new-chat="1"]');
       const navHistory = $('#nav-chat-history');
@@ -122,7 +179,7 @@
       if (navHistory) steps.push({ element:navHistory, popover:{ title:'Chat History', description:'Review and revisit your previous conversations here.', side:'right', align:'center' }});
       if (navSettings) steps.push({ element:navSettings, popover:{ title:'Settings', description:'Adjust theme, text size, and accessibility preferences.', side:'right', align:'center' }});
       if (chatArea)   steps.push({ element:chatArea, popover:{ title:'Messages', description:'Your conversation appears here. Lumi won’t diagnose, but will guide & refer when needed.', side:'left', align:'start' }});
-      if (chatInput)  steps.push({ element:chatInput, popover:{ title:'Type & Send', description:'Type your message then press Enter. Use “New Chat” to change the topic.', side:'top', align:'start' }, onNextClick: markPageDone });
+      if (chatInput)  steps.push({ element:chatInput, popover:{ title:'Type & Send', description:'Type your message then press Enter. Use “New Chat” to change the topic.', side:'top', align:'start' }});
       return steps;
     }
 
@@ -139,9 +196,9 @@
       if (editBtn) steps.push({ element:editBtn, popover:{ title:'Edit Profile', description:'Update your profile information here.', side:'bottom', align:'start' }});
       if (editForm && nameFld) steps.push({ element:nameFld, popover:{ title:'Your Name', description:'Update your display name, then save.', side:'top', align:'start' }});
       if (editForm && emailFld) steps.push({ element:emailFld, popover:{ title:'Email', description:'Make sure this is correct so we can reach you.', side:'top', align:'start' }});
-      if (pwdSection) steps.push({ element:pwdSection, popover:{ title:'Update Password', description:'Use strong passwords. The strength meter and checklist help you meet requirements.', side:'left', align:'start' }});
-      if (delBtn) steps.push({ element:delBtn, popover:{ title:'Delete Account', description:'Danger zone — this permanently removes your account.', side:'top', align:'start' }, onNextClick: markPageDone });
-      if (!steps.length && readView) steps.push({ element:readView, popover:{ title:'Profile', description:'View your account details here.', side:'left', align:'start' }, onNextClick: markPageDone });
+      if (pwdSection) steps.push({ element:pwdSection, popover:{ title:'Update Password', description:'Use strong passwords. The strength meter and checklist help.', side:'left', align:'start' }});
+      if (delBtn) steps.push({ element:delBtn, popover:{ title:'Delete Account', description:'Danger zone — this permanently removes your account.', side:'top', align:'start' }});
+      if (!steps.length && readView) steps.push({ element:readView, popover:{ title:'Profile', description:'View your account details here.', side:'left', align:'start' }});
       return steps;
     }
 
@@ -155,24 +212,12 @@
 
       const steps = [];
       if (searchBox) steps.push({ element:searchBox, popover:{ title:'Search conversations', description:'Filter by keywords (e.g., “sad”, “depress”, or “anonymous”).', side:'bottom', align:'start' }});
-
-      if (manageBtn) steps.push({
-        element: manageBtn,
-        popover: { title:'Manage mode', description:'Bulk-select multiple chats to delete. Click to open the toolbar.', side:'left', align:'center' },
-        onNextClick: () => { if (manageBtn && bulkBar?.classList.contains('hidden')) manageBtn.click(); }
-      });
-
-      if (bulkBar) steps.push({
-        element: bulkBar,
-        popover: { title:'Bulk actions', description:'Select all, clear selection, or delete selected conversations.', side:'bottom', align:'start' },
-        onPrevClick: () => document.getElementById('doneManageBtn')?.click()
-      });
-
-      if (firstCard)   steps.push({ element:firstCard, popover:{ title:'Session card', description:'Shows title, risk level, and last interaction details.', side:'top', align:'start' }});
-      if (firstLink)   steps.push({ element:firstLink, popover:{ title:'Continue in Chat', description:'Resume this conversation in the main chat.', side:'top', align:'start' }});
-      if (firstDelete) steps.push({ element:firstDelete, popover:{ title:'Delete (single)', description:'Removes this conversation permanently (with a confirmation).', side:'left', align:'center' }, onNextClick: markPageDone });
-
-      if (!steps.length && document.body) steps.push({ element:document.body, popover:{ title:'Chat History', description:'Review and manage your past conversations here.', side:'top', align:'start' }, onNextClick: markPageDone });
+      if (manageBtn) steps.push({ element: manageBtn, popover:{ title:'Manage mode', description:'Bulk-select multiple chats to delete. Click to open the toolbar.', side:'left', align:'center' }, onNextClick: () => { if (manageBtn && bulkBar?.classList.contains('hidden')) manageBtn.click(); }});
+      if (bulkBar)   steps.push({ element: bulkBar, popover:{ title:'Bulk actions', description:'Select all, clear selection, or delete selected conversations.', side:'bottom', align:'start' }});
+      if (firstCard) steps.push({ element:firstCard, popover:{ title:'Session card', description:'Shows title, risk level, and last interaction.', side:'top', align:'start' }});
+      if (firstLink) steps.push({ element:firstLink, popover:{ title:'Continue in Chat', description:'Resume this conversation in the main chat.', side:'top', align:'start' }});
+      if (firstDelete) steps.push({ element:firstDelete, popover:{ title:'Delete (single)', description:'Removes this conversation permanently (with a confirmation).', side:'left', align:'center' }});
+      if (!steps.length && document.body) steps.push({ element:document.body, popover:{ title:'Chat History', description:'Review and manage your past conversations here.', side:'top', align:'start' }});
       return steps;
     }
 
@@ -188,7 +233,7 @@
       if (fontSelect) steps.push({ element:fontSelect, popover:{ title:'Text Size', description:'Adjust overall reading size.', side:'top', align:'start' }});
       if (reduceTgl)  steps.push({ element:reduceTgl,  popover:{ title:'Reduce Motion', description:'Turn off animations and transitions.', side:'left', align:'center' }});
       if (compactTgl) steps.push({ element:compactTgl, popover:{ title:'Compact Layout', description:'Tighter paddings for smaller screens.', side:'left', align:'center' }});
-      if (supportBtn) steps.push({ element:supportBtn, popover:{ title:'Support', description:'Contact the team or report an issue.', side:'top', align:'start' }, onNextClick: markPageDone });
+      if (supportBtn) steps.push({ element:supportBtn, popover:{ title:'Support', description:'Contact the team or report an issue.', side:'top', align:'start' }});
       return steps;
     }
 
@@ -204,248 +249,167 @@
       if (toc)  steps.push({ element:toc,  popover:{ title:'On this page', description:'Jump between sections; the active item updates as you scroll.', side:'right', align:'start' }});
       if (flow) steps.push({ element:flow, popover:{ title:'How it works', description:'A step-by-step timeline from message to response.', side:'top', align:'start' }});
       if (faq)  steps.push({ element:faq,  popover:{ title:'FAQ', description:'Common questions with concise answers.', side:'top', align:'start' }});
-      if (topFab) steps.push({ element:topFab, popover:{ title:'Back to top', description:'Appears after you scroll. Click to return to top smoothly.', side:'left', align:'center' }, onNextClick: markPageDone });
+      if (topFab) steps.push({ element:topFab, popover:{ title:'Back to top', description:'Appears after you scroll. Click to return to top smoothly.', side:'left', align:'center' }});
       return steps;
     }
 
-    /* ------------ APPOINTMENT (book page) ------------ */
+    /* ---- Appointment: booking page ---- */
     function appointmentSteps(){
-    const bannerBtn = document.querySelector('a[href*="/appointment/history"]');
-    const dateInput = document.getElementById('dateInput');
-    const openDate  = document.getElementById('openDateBtn');
-    const timeGrid  = document.getElementById('timeGrid');
-    const consent   = document.getElementById('consent-cbx');
-    const submitBtn = document.querySelector('form[action*="appointment/store"] button[type="submit"]')
-                    || document.querySelector('form[action*="appointment"] button[type="submit"]');
+      const historyBtn = document.querySelector('a[href*="/appointment/history"]');
+      const dateInput  = document.getElementById('dateInput');
+      const openDate   = document.getElementById('openDateBtn');
+      const timeGrid   = document.getElementById('timeGrid');
+      const consent    = document.getElementById('consent-cbx');
+      const submitBtn  = document.querySelector('form[action*="appointment/store"] button[type="submit"]')
+                      || document.querySelector('form[action*="appointment"] button[type="submit"]');
 
-    const steps = [];
-
-    if (bannerBtn) steps.push({
-        element: bannerBtn,
-        popover: {
-        title: 'Appointment History',
-        description: 'Review, reschedule, or cancel from here after booking.',
-        side: 'left', align: 'center'
-        }
-    });
-
-    if (dateInput) steps.push({
-        element: dateInput,
-        popover: {
-        title: 'Pick a date',
-        description: 'Choose your preferred date. Weekends are closed (Mon–Fri only).',
-        side: 'bottom', align: 'start'
-        }
-    });
-
-    if (openDate) steps.push({
-        element: openDate,
-        popover: {
-        title: 'Open calendar',
-        description: 'Click to open the native date picker.',
-        side: 'left', align: 'center'
-        },
-        onNextClick: () => openDate.click?.()
-    });
-
-    if (timeGrid) steps.push({
-        element: timeGrid,
-        popover: {
-        title: 'Select a time',
-        description: 'Available slots appear here after you pick a date. Click a pill to select.',
-        side: 'top', align: 'start'
-        }
-    });
-
-    if (consent) steps.push({
-        element: consent,
-        popover: {
-        title: 'Privacy consent',
-        description: 'Please confirm you agree with LumiCHAT’s privacy policy.',
-        side: 'left', align: 'center'
-        }
-    });
-
-    if (submitBtn) steps.push({
-        element: submitBtn,
-        popover: {
-        title: 'Confirm appointment',
-        description: 'Submit your booking. An admin will assign a counselor.',
-        side: 'top', align: 'start'
-        },
-        onNextClick: markPageDone   // ✅ marks this page done so it won’t auto-run again
-    });
-
-    // Fallback
-    if (!steps.length && document.body) steps.push({
-        element: document.body,
-        popover: { title:'Appointments', description:'Book a date and time, then confirm.', side:'top', align:'start' },
-        onNextClick: markPageDone
-    });
-
-    return steps;
+      const steps = [];
+      if (historyBtn) steps.push({ element:historyBtn, popover:{ title:'Appointment History', description:'Review, reschedule, or cancel here after booking.', side:'left', align:'center' }});
+      if (dateInput)  steps.push({ element:dateInput,  popover:{ title:'Pick a date', description:'Choose your preferred date. Weekends are closed (Mon–Fri).', side:'bottom', align:'start' }});
+      if (openDate)   steps.push({ element:openDate,   popover:{ title:'Open calendar', description:'Click to open the date picker.', side:'left', align:'center' }, onNextClick: () => openDate.click?.() });
+      if (timeGrid)   steps.push({ element:timeGrid,   popover:{ title:'Select a time', description:'Available slots appear here after you pick a date. Click a pill to select.', side:'top', align:'start' }});
+      if (consent)    steps.push({ element:consent,    popover:{ title:'Privacy consent', description:'Please confirm you agree with LumiCHAT’s privacy policy.', side:'left', align:'center' }});
+      if (submitBtn)  steps.push({ element:submitBtn,  popover:{ title:'Confirm appointment', description:'Submit your booking. An admin will assign a counselor.', side:'top', align:'start' }});
+      if (!steps.length && document.body) steps.push({ element:document.body, popover:{ title:'Appointments', description:'Book a date and time, then confirm.', side:'top', align:'start' }});
+      return steps;
     }
 
+    function appointmentHistorySteps(){
+      const list = document.querySelector('[data-appt-list], .appt-list, main');
+      return [{
+        element: list || document.body,
+        popover: { title:'Your appointments', description:'Manage upcoming and past bookings here (reschedule or cancel).', side:'top', align:'start' }
+      }];
+    }
 
     const STEP_BUILDERS = {
-      'chat.index'          : chatSteps,
-      'profile.edit'        : profileSteps,
-      'chat.history'        : historySteps,
-      'settings.index'      : settingsSteps,
-      'about.index'         : aboutSteps,
-      'appointment.index'   : appointmentSteps,     
-      'appointment.create'  : appointmentSteps,        
-      'appointment.history' : appointmentHistorySteps, 
+      chat: chatSteps,                        // grouped
+      'chat.index': chatSteps,
+      'profile.edit': profileSteps,
+      'chat.history': historySteps,
+      'settings.index': settingsSteps,
+      'about.index': aboutSteps,
+      appointment: appointmentSteps,          // grouped for booking/create variants
+      'appointment.index': appointmentSteps,
+      'appointment.create': appointmentSteps,
+      'appointment.history': appointmentHistorySteps,
     };
 
-    /* ----------------------- Driver instance ----------------------- */
-    let drv;
-    function getDriver(){
-      if (drv) return drv;
-      const isDark = document.documentElement.classList.contains('dark');
-      drv = window.driver({
-        showProgress:true, animate:true, allowClose:true, smoothScroll:true, stagePadding:6,
-        overlayOpacity: isDark ? 0.50 : 0.32,
-        nextBtnText:'Next →', prevBtnText:'← Previous', doneBtnText:'Done',
-        popoverClass:'lumi-tour'
-      });
-      return drv;
+    /* ----------------------- Start a page tour ----------------------- */
+    async function startPageTour(pageKey = PAGE_KEY){
+    const build = STEP_BUILDERS[pageKey] || STEP_BUILDERS[ROUTE_KEY];
+    if (!build) return;
+    let steps = build();
+    if (!steps || !steps.length) return;
+    steps = ensureTerminalMark(steps);
+
+    const D = await ensureDriver();
+    if (!D) return;
+
+    // ✅ Immediately mark this page as "done" to prevent re-triggers on reloads
+    markPageDone();
+
+    const inst = getDriver();
+    inst.setSteps(steps);
+    inst.drive();
+
+    // (Optional extra safety: mark on first highlight)
+    try {
+        inst.on?.('highlightStarted', ()=>{
+        if (!window.__lumiTourMarkedOnce){ markPageDone(); window.__lumiTourMarkedOnce = true; }
+        });
+    } catch(_) {}
+
+    setTimeout(()=>{ if (!document.querySelector('.driver-overlay')) markPageDone(); }, 1500);
     }
 
-    async function markGlobalDone(){
-      localStorage.setItem(GLOBAL_DONE,'1');
-      try{
-        const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-        await fetch(@json(route('tour.complete')), { method:'POST', headers:{ 'X-CSRF-TOKEN':token, 'Accept':'application/json' } });
-      }catch(_){}
-    }
-
-    function markPageDone(){
-      localStorage.setItem(PAGE_FLAG(ROUTE_KEY),'1');
-    }
-
-    async function startPageTour(pageKey){
-      const build = STEP_BUILDERS[pageKey];
-      if (!build) return;
-      const steps = build();
-      if (!steps.length) return;
-
-      // make sure Driver is present
-      const D = await ensureDriver();
-      if (!D) return; // CDN still not ready
-      getDriver().setSteps(steps);
-      getDriver().drive();
-    }
-
+    /* ----------------------- Welcome (first-time only) ----------------------- */
     async function maybeShowWelcome(){
-    const seenGlobal = localStorage.getItem(GLOBAL_DONE) === '1';
-    // If the welcome has already been completed, do NOT auto-start any tour
-    if (seenGlobal) return false;
+      if (localStorage.getItem(WELCOME_SEEN) === '1') return false;
 
-    if (window.Swal){
+      if (window.Swal){
         const res = await Swal.fire({
-        title: 'Welcome to LumiCHAT ✨',
-        html: `<div style="text-align:left;line-height:1.45">
-                <p>We’ll give you a quick tour so you know where everything is.</p>
-                <ul style="margin:.5rem 0 0 1rem;padding:0;list-style:disc;">
+          title: 'Welcome to LumiCHAT ✨',
+          html: `<div style="text-align:left;line-height:1.45">
+                  <p>We’ll give you a quick tour so you know where everything is.</p>
+                  <ul style="margin:.5rem 0 0 1rem;padding:0;list-style:disc;">
                     <li>Where to start a new chat</li>
                     <li>Where your messages appear</li>
                     <li>How to tweak settings</li>
-                </ul>
-                </div>`,
-        confirmButtonText:'Start tour',
-        showCancelButton:true,
-        cancelButtonText:'Not now',
-        width:560
+                  </ul>
+                 </div>`,
+          confirmButtonText:'Start tour',
+          showCancelButton:true,
+          cancelButtonText:'Not now',
+          width:560,
+          background:'var(--lumi-bg)',
+          customClass:{
+            popup:'lumi-tour-modal', title:'lumi-tour-title',
+            htmlContainer:'lumi-tour-body',
+            confirmButton:'btn-grad', cancelButton:'btn-neutral'
+          }
         });
-        if (res.isConfirmed) await markGlobalDone();
-        return res.isConfirmed;       // ✅ only true if user chose “Start tour”
-    } else {
+        localStorage.setItem(WELCOME_SEEN,'1');
+        if (res.isConfirmed) { await markGlobalDone(); return true; }
+        return false;
+      } else {
         const ok = confirm('Welcome to LumiCHAT! Start a quick tour now?');
-        if (ok) await markGlobalDone();
-        return ok;
-    }
+        localStorage.setItem(WELCOME_SEEN,'1');
+        if (ok) { await markGlobalDone(); return true; }
+        return false;
+      }
     }
 
-    /* ----------------------- FAB (+ modal) ----------------------- */
+    /* ----------------------- FAB ("?") = refresh tutorial ----------------------- */
     function addRestartFab(){
       if (document.getElementById('lumi-tour-fab')) return;
       const b = document.createElement('button');
-      b.id='lumi-tour-fab'; b.type='button'; b.title='Help & Tours';
-      b.innerHTML=`<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M12 2a10 10 0 1 0 10 10A10.011 10.011 0 0 0 12 2Zm1 15h-2v-2h2Zm1.07-7.75-.9.92A3.5 3.5 0 0 0 11 13h-2a5 5 0 0 1 1.46-3.54l1.24-1.26A1 1 0 0 0 12 7a1 1 0 0 0-1-1 1.2 1.2 0 0 0-1 .5 1 1 0 0 1-1.66-1.1A3.2 3.2 0 0 1 12 4a3 3 0 0 1 2.07 5.25Z"/>
-      </svg>`;
+      b.id='lumi-tour-fab'; b.type='button'; b.title='Help – Restart tutorial';
+      b.setAttribute('aria-label','Restart tutorial');
+      b.textContent='?';
       document.body.appendChild(b);
 
       // Keep About's ↑ Top above the help FAB
       const stackFabs = () => document.getElementById('about-top')?.classList.add('fab-above-help');
       stackFabs(); window.addEventListener('resize', stackFabs);
 
-      const restartPage = async ()=>{
-        localStorage.removeItem(PAGE_FLAG(ROUTE_KEY));
-        await sleep(60);
-        await startPageTour(ROUTE_KEY);
-      };
-
-      const restartAll = async ()=>{
-        const prefix='lumi_tour_'; const uid=`_${USER_ID}`; const keys=[];
-        for (let i=0;i<localStorage.length;i++){
-          const k=localStorage.key(i); if (k && k.startsWith(prefix) && k.includes(uid)) keys.push(k);
-        }
-        keys.forEach(k=>localStorage.removeItem(k));
-        localStorage.setItem(FORCE_ALL,'1'); // every page will auto-run once
-        await sleep(80);
-        await startPageTour(ROUTE_KEY); // restart current page immediately
-      };
-
+      // On click: clear page-done flag and immediately re-run this page’s tour
       b.addEventListener('click', async ()=>{
-        if (!window.Swal){
-          if (confirm('Restart this page tour? (Cancel = restart all pages)')) restartPage();
-          else restartAll();
-          return;
-        }
-        const res = await Swal.fire({
-          title:'Tours',
-          html:'<div class="lumi-tour-body">Choose what to restart.</div>',
-          showCancelButton:true,       // Close
-          showDenyButton:true,         // Restart all
-          confirmButtonText:'Restart this page',
-          cancelButtonText:'Close',
-          denyButtonText:'Restart all pages',
-          reverseButtons:true,
-          focusConfirm:true,
-          width:560,
-          background:'var(--lumi-bg)',
-          customClass:{
-            popup:'lumi-tour-modal', title:'lumi-tour-title',
-            htmlContainer:'lumi-tour-body',
-            confirmButton:'btn-grad', cancelButton:'btn-neutral', denyButton:'btn-outline'
-          }
-        });
-        if (res.isConfirmed) await restartPage();
-        else if (res.isDenied) await restartAll();
-      });
+        localStorage.removeItem(PAGE_FLAG(PAGE_KEY));
+        await sleep(60);
+        await startPageTour(PAGE_KEY);
+    });
+
     }
 
     /* ----------------------- Boot ----------------------- */
-    runWhenReady(async ()=>{
-    addRestartFab();                           // always shows “?” button
+    (function runWhenReady(){
+      if (document.readyState === 'complete' || document.readyState === 'interactive') boot();
+      else document.addEventListener('DOMContentLoaded', boot, { once:true });
+    })();
 
-    const pageSeen = localStorage.getItem(PAGE_FLAG(ROUTE_KEY)) === '1';
-    const forceAll = localStorage.getItem(FORCE_ALL) === '1';
+    async function boot(){
+      addRestartFab();
 
-    if (forceAll) {                            // only after you click “Restart all pages”
-        await startPageTour(ROUTE_KEY);
+      const pageSeen    = localStorage.getItem(PAGE_FLAG(PAGE_KEY)) === '1';
+      const globalDone = localStorage.getItem(GLOBAL_DONE) === '1';
+
+      // 1) First-time user: show welcome, then start tour on the current page
+      if (!globalDone) {
+        const ok = await maybeShowWelcome();
+        if (ok) await startPageTour(PAGE_KEY);
+        return;
+      }
+
+      // 2) Optional server nudges (e.g., after big UI changes)
+      if (SHOULD_RUN_SERVER && !pageSeen) {
+        await startPageTour(PAGE_KEY);
         return;
     }
 
-    if (SHOULD_RUN_SERVER && !pageSeen){       // first time per page only
-        const ok = await maybeShowWelcome();     // now returns false if global welcome done
-        if (!ok) return;
-        await startPageTour(ROUTE_KEY);
+      // 3) Otherwise: do nothing automatically once a page is marked done.
+      //    The "?" FAB lets users restart anytime.
     }
-    });
-
   })();
   </script>
 @endif
