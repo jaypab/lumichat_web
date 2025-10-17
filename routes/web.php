@@ -10,6 +10,7 @@ use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\AppointmentController;
 use App\Http\Controllers\FeaturesController;
 use App\Http\Controllers\SelfAssessmentController;
+use App\Http\Controllers\AboutController;
 
 /*
 |--------------------------------------------------------------------------
@@ -138,7 +139,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 Route::view('/support/contact', 'support.contact')->name('support.contact');
 Route::view('/support/bug', 'support.bug')->name('support.bug');
-
+/*
+|--------------------------------------------------------------------------
+| About Page
+|--------------------------------------------------------------------------
+*/
+Route::get('/about', [AboutController::class, 'index'])->name('about.index');
 /*
 |--------------------------------------------------------------------------
 | Auth scaffolding (login, logout, password reset, etc.)

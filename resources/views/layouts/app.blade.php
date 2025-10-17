@@ -221,6 +221,7 @@
           ['label' => 'Appointment', 'route' => 'appointment.index',          'icon' => 'appointment.png'],
           ['label' => 'Chat History','route' => Route::has('chat.history') ? 'chat.history' : null, 'icon' => 'chat-history.png'],
           ['label' => 'Settings',    'route' => Route::has('settings.index') ? 'settings.index' : null, 'icon' => 'settings.png'],
+          ['label' => 'About',       'route' => 'about.index',                'icon' => 'about.png'],
         ];
       @endphp
 

@@ -4,7 +4,8 @@ use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\ServiceProvider;
 
 return [
-
+    'version' => env('APP_VERSION', '2.4'),
+    'started' => env('APP_STARTED', '2025-06-01'),
     /*
     |--------------------------------------------------------------------------
     | Application Name
