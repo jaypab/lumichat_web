@@ -208,16 +208,84 @@
       return steps;
     }
 
+    /* ------------ APPOINTMENT (book page) ------------ */
     function appointmentSteps(){
-      const entry   = document.querySelector('#nav-appointment-link, a[href*="/appointment"]');
-      const bookBtn = document.querySelector('a[href*="/appointment/book"], [data-book-appt], .book-appointment-btn');
-      const history = document.querySelector('a[href*="/appointment/history"], .appointment-history-link');
-      const steps = [];
-      if (entry)   steps.push({ element:entry,   popover:{ title:'Appointments', description:'Book or review counseling appointments here.', side:'right', align:'center' }});
-      if (bookBtn) steps.push({ element:bookBtn, popover:{ title:'Book', description:'Pick a date and time to schedule a session.', side:'bottom', align:'start' }});
-      if (history) steps.push({ element:history, popover:{ title:'History', description:'See past and upcoming bookings.', side:'bottom', align:'start' }, onNextClick: markPageDone });
-      return steps;
+    const bannerBtn = document.querySelector('a[href*="/appointment/history"]');
+    const dateInput = document.getElementById('dateInput');
+    const openDate  = document.getElementById('openDateBtn');
+    const timeGrid  = document.getElementById('timeGrid');
+    const consent   = document.getElementById('consent-cbx');
+    const submitBtn = document.querySelector('form[action*="appointment/store"] button[type="submit"]')
+                    || document.querySelector('form[action*="appointment"] button[type="submit"]');
+
+    const steps = [];
+
+    if (bannerBtn) steps.push({
+        element: bannerBtn,
+        popover: {
+        title: 'Appointment History',
+        description: 'Review, reschedule, or cancel from here after booking.',
+        side: 'left', align: 'center'
+        }
+    });
+
+    if (dateInput) steps.push({
+        element: dateInput,
+        popover: {
+        title: 'Pick a date',
+        description: 'Choose your preferred date. Weekends are closed (Mon–Fri only).',
+        side: 'bottom', align: 'start'
+        }
+    });
+
+    if (openDate) steps.push({
+        element: openDate,
+        popover: {
+        title: 'Open calendar',
+        description: 'Click to open the native date picker.',
+        side: 'left', align: 'center'
+        },
+        onNextClick: () => openDate.click?.()
+    });
+
+    if (timeGrid) steps.push({
+        element: timeGrid,
+        popover: {
+        title: 'Select a time',
+        description: 'Available slots appear here after you pick a date. Click a pill to select.',
+        side: 'top', align: 'start'
+        }
+    });
+
+    if (consent) steps.push({
+        element: consent,
+        popover: {
+        title: 'Privacy consent',
+        description: 'Please confirm you agree with LumiCHAT’s privacy policy.',
+        side: 'left', align: 'center'
+        }
+    });
+
+    if (submitBtn) steps.push({
+        element: submitBtn,
+        popover: {
+        title: 'Confirm appointment',
+        description: 'Submit your booking. An admin will assign a counselor.',
+        side: 'top', align: 'start'
+        },
+        onNextClick: markPageDone   // ✅ marks this page done so it won’t auto-run again
+    });
+
+    // Fallback
+    if (!steps.length && document.body) steps.push({
+        element: document.body,
+        popover: { title:'Appointments', description:'Book a date and time, then confirm.', side:'top', align:'start' },
+        onNextClick: markPageDone
+    });
+
+    return steps;
     }
+
 
     const STEP_BUILDERS = {
       'chat.index'          : chatSteps,
@@ -225,9 +293,9 @@
       'chat.history'        : historySteps,
       'settings.index'      : settingsSteps,
       'about.index'         : aboutSteps,
-      'appointment.index'   : appointmentSteps,
-      'appointment.history' : appointmentSteps,
-      'appointment.create'  : appointmentSteps
+      'appointment.index'   : appointmentSteps,     
+      'appointment.create'  : appointmentSteps,        
+      'appointment.history' : appointmentHistorySteps, 
     };
 
     /* ----------------------- Driver instance ----------------------- */
