@@ -4,7 +4,10 @@
   <meta charset="utf-8" />
   <title>{{ trim($__env->yieldContent('title')) ?: 'Lumi - Chat Interface' }}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   @include('layouts.partials.favicons')
+  @include('layouts.partials.tour')
+
   {{-- =========================================================
        0) CRITICAL FONT LOADING (prevents chat bubble resize)
       ========================================================= --}}
@@ -17,15 +20,13 @@
       src:url("/fonts/inter-var.woff2") format("woff2");
       font-weight:100 900;
       font-style:normal;
-      font-display:swap;   /* was block/optional → can cause jank */
+      font-display:swap;
     }
-    /* Gentle fallback bg before CSS loads */
     html{ background:#f9fafb; color:#111827; }
     html.dark{ background:#111827; color:#e5e7eb; }
     [x-cloak]{ display:none !important; }
   </style>
 
-  {{-- Keep Poppins via Google; Inter is self-hosted above. Use display=optional to avoid swaps. --}}
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&display=optional" rel="stylesheet">
 
   {{-- =========================================================
@@ -49,99 +50,81 @@
         root.setAttribute('data-app','student');
         const get = k => localStorage.getItem(k);
 
-        // ---- Dark (explicit only; default LIGHT) ----
         let dark = get('lumichat_dark');
-        if (dark === null) {
-          // first load → pin to light
-          localStorage.setItem('lumichat_dark','0');
-          dark = '0';
-        }
-        // normalize legacy true/false
+        if (dark === null) { localStorage.setItem('lumichat_dark','0'); dark = '0'; }
         if (dark === 'true') { localStorage.setItem('lumichat_dark','1'); dark = '1'; }
         if (dark === 'false'){ localStorage.setItem('lumichat_dark','0'); dark = '0'; }
 
         const wantsDark = dark === '1';
         root.classList.toggle('dark', wantsDark);
 
-        // Reduce motion
         root.classList.toggle('reduce-motion', get('lumichat_reduce_motion') === '1');
 
-        // Font size
         const fs = get('lumichat_font_size') || 'md';
         root.classList.add('font-' + (['sm','md','lg'].includes(fs) ? fs : 'md'));
 
-        // Compact
         root.classList.toggle('compact', get('lumichat_compact') === '1');
       } catch(_) {}
     })();
   </script>
-@else
-
-    <script>
-      try{
-        let pref = localStorage.getItem('lumichat_dark');
-        if (pref === null) { localStorage.setItem('lumichat_dark','0'); pref = '0'; }
-        if (pref === 'true') { localStorage.setItem('lumichat_dark','1'); pref = '1'; }
-        if (pref === 'false'){ localStorage.setItem('lumichat_dark','0'); pref = '0'; }
-
-        const wantsDark = pref === '1';
-        document.documentElement.classList.toggle('dark', wantsDark);
-      }catch(_){}
-    </script>
+  @else
+  <script>
+    try{
+      let pref = localStorage.getItem('lumichat_dark');
+      if (pref === null) { localStorage.setItem('lumichat_dark','0'); pref = '0'; }
+      if (pref === 'true') { localStorage.setItem('lumichat_dark','1'); pref = '1'; }
+      if (pref === 'false'){ localStorage.setItem('lumichat_dark','0'); pref = '0'; }
+      const wantsDark = pref === '1';
+      document.documentElement.classList.toggle('dark', wantsDark);
+    }catch(_){}
+  </script>
   @endif
 
   {{-- =========================================================
        3) Vite bundles (Tailwind, app JS, chat helpers)
       ========================================================= --}}
-<style id="critical-chat-lock">
-  :root{ --bubble-w: 620px; }
-
-  /* Legacy bubbles (exclude .lb2) */
-  #chat-messages .bubble:not(.lb2){
-    box-sizing:border-box !important;
-    width:auto !important;
-    max-width:min(var(--bubble-w),86%) !important;
-    min-height:0 !important;
-    padding:8px 12px !important;
-    margin:0 !important;
-    white-space:pre-wrap !important;
-    word-break:normal !important;
-    overflow-wrap:anywhere !important;
-  }
-  #chat-messages .bubble.bubble-tight{
-    font-size:15px !important;
-    line-height:22px !important;
-    padding:8px 12px !important;
-  }
-
-  /* v2 shrink-to-content bubbles */
-  #lb-scope .lb2{
-    width:fit-content !important;
-    max-width:min(520px,46ch) !important;
-    text-align:left !important;
-    padding:6px 10px !important;
-    display:inline-block !important;
-    box-sizing:border-box !important;
-    min-height:0 !important;
-    margin:0 !important;
-    white-space:pre-wrap !important;
-    word-break:normal !important;
-    overflow-wrap:anywhere !important;
-    align-self:flex-start !important;
-  }
-  #lb-scope .msg-row.items-end .lb2,
-  #lb-scope .msg-row.text-right .lb2{ align-self:flex-end !important; }
-</style>
+  <style id="critical-chat-lock">
+    :root{ --bubble-w: 620px; }
+    #chat-messages .bubble:not(.lb2){
+      box-sizing:border-box !important;
+      width:auto !important;
+      max-width:min(var(--bubble-w),86%) !important;
+      min-height:0 !important;
+      padding:8px 12px !important;
+      margin:0 !important;
+      white-space:pre-wrap !important;
+      word-break:normal !important;
+      overflow-wrap:anywhere !important;
+    }
+    #chat-messages .bubble.bubble-tight{
+      font-size:15px !important;
+      line-height:22px !important;
+      padding:8px 12px !important;
+    }
+    #lb-scope .lb2{
+      width:fit-content !important;
+      max-width:min(520px,46ch) !important;
+      text-align:left !important;
+      padding:6px 10px !important;
+      display:inline-block !important;
+      box-sizing:border-box !important;
+      min-height:0 !important;
+      margin:0 !important;
+      white-space:pre-wrap !important;
+      word-break:normal !important;
+      overflow-wrap:anywhere !important;
+      align-self:flex-start !important;
+    }
+    #lb-scope .msg-row.items-end .lb2,
+    #lb-scope .msg-row.text-right .lb2{ align-self:flex-end !important; }
+  </style>
   @vite(['resources/css/app.css', 'resources/js/app.js'])
 
   {{-- =========================================================
        4) Other styles (SweetAlert theme, page-level pushes)
       ========================================================= --}}
-  {{-- Style overrides for SweetAlert look --}}
   <style id="lumi-swal-theme">
-    .swal2-container.swal2-backdrop-show{
-      background:rgba(15,23,42,.55)!important; backdrop-filter:blur(4px) saturate(110%);
-    }
+    .swal2-container.swal2-backdrop-show{ background:rgba(15,23,42,.55)!important; backdrop-filter:blur(4px) saturate(110%); }
     .swal2-container.swal2-top-start,
     .swal2-container.swal2-top,
     .swal2-container.swal2-top-end,
@@ -168,9 +151,7 @@
     .swal2-popup:not(.swal2-toast) .swal2-actions{ margin-top:22px!important; gap:10px; flex-wrap:wrap; }
 
     .swal2-styled{ border-radius:14px!important; padding:10px 18px!important; font-weight:700!important; box-shadow:none!important; }
-    .swal2-confirm{
-      background:linear-gradient(90deg,#7c3aed,#6366f1)!important; color:#fff!important; box-shadow:0 10px 24px rgba(99,102,241,.35)!important;
-    }
+    .swal2-confirm{ background:linear-gradient(90deg,#7c3aed,#6366f1)!important; color:#fff!important; box-shadow:0 10px 24px rgba(99,102,241,.35)!important; }
     .swal2-cancel,.swal2-deny{ background:#fff!important; color:#334155!important; border:1px solid #e5e7eb!important; }
     .dark .swal2-cancel,.dark .swal2-deny{ background:#1f2937!important; color:#e5e7eb!important; border-color:#334155!important; }
 
@@ -188,17 +169,14 @@
     }
     .dark .swal2-popup.swal2-toast{ background:#111827!important; color:#e5e7eb!important; }
     .swal2-popup.swal2-toast .swal2-icon{ margin:0!important; width:22px!important; height:22px!important; min-width:22px!important; display:flex!important; align-items:center!important; justify-content:center!important; }
-    .swal2-popup.swal2-toast .swal2-icon .swal2-icon-content{ display:flex; align-items:center; justify-content:center; }
     .swal2-popup.swal2-toast .swal2-title{ margin:0!important; padding:0!important; font-size:14px!important; font-weight:700!important; line-height:1.2!important; display:flex; align-items:center; }
   </style>
 
-  {{-- Let pages push extra CSS (e.g., chat page bubble tweaks) --}}
   @stack('styles')
 
-  {{-- Ensure teleported modals sit above header blur --}}
   <style id="lumi-modal-zfix">
-    .modal-z  { z-index: 2147483646 !important; } /* backdrop */
-    .modal-zp { z-index: 2147483647 !important; } /* dialog */
+    .modal-z  { z-index: 2147483646 !important; }
+    .modal-zp { z-index: 2147483647 !important; }
   </style>
 </head>
 
@@ -230,49 +208,51 @@
           <p class="section-label">MAIN</p>
           <ul class="space-y-2">
             @foreach ($mainLinks as $item)
-             @if ($item['label'] === 'Appointment')
-  @php
-    // Defaults so nothing is "undefined"
-    $showAppointment = (bool) ($appointmentEnabled ?? false);
-    $hasAppointments = (bool) ($hasAppointments ?? false);
-    $apptLabel       = $hasAppointments ? 'Appointment History' : 'Appointment';
-    $apptRoute       = $hasAppointments ? route('appointment.history') : route('appointment.index');
-    $apptIsActive    = request()->routeIs('appointment.*');
+              @if ($item['label'] === 'Appointment')
+                @php
+                  $showAppointment = (bool) ($appointmentEnabled ?? false);
+                  $hasAppointments = (bool) ($hasAppointments ?? false);
+                  $apptLabel       = $hasAppointments ? 'Appointment History' : 'Appointment';
+                  $apptRoute       = $hasAppointments ? route('appointment.history') : route('appointment.index');
+                  $apptIsActive    = request()->routeIs('appointment.*');
 
-    // Compute unseen updates (only if student + feature visible)
-    $apptUnseen = 0;
-    if ($showAppointment && Auth::check()) {
-        $last = Auth::user()->last_seen_appt_at ?? \Carbon\Carbon::createFromTimestamp(0);
-        $apptUnseen = \DB::table('tbl_appointments')
-            ->where('student_id', Auth::id())
-            ->where('updated_at', '>', $last)
-            ->count();
-    }
-  @endphp
+                  $apptUnseen = 0;
+                  if ($showAppointment && Auth::check()) {
+                      $last = Auth::user()->last_seen_appt_at ?? \Carbon\Carbon::createFromTimestamp(0);
+                      $apptUnseen = \DB::table('tbl_appointments')
+                          ->where('student_id', Auth::id())
+                          ->where('updated_at', '>', $last)
+                          ->count();
+                  }
+                @endphp
 
-  @if ($showAppointment)
-    <li>
-      <a href="{{ $apptRoute }}"
-         @class(['nav-item', 'nav-item--active' => $apptIsActive, 'relative' => true])
-         id="nav-appointment-link">
-        <img src="{{ asset('images/icons/appointment.png') }}" alt="" class="sidebar-icon icon-white">
-        <span>{{ $apptLabel }}</span>
+                @if ($showAppointment)
+                  <li>
+                    <a href="{{ $apptRoute }}"
+                       @class(['nav-item', 'nav-item--active' => $apptIsActive, 'relative' => true])
+                       id="nav-appointment-link">
+                      <img src="{{ asset('images/icons/appointment.png') }}" alt="" class="sidebar-icon icon-white">
+                      <span>{{ $apptLabel }}</span>
+                      <span id="nav-appt-dot"
+                            class="absolute left-6 top-2 block w-2 h-2 rounded-full bg-rose-500 ring-2 ring-rose-100 {{ $apptUnseen ? '' : 'hidden' }}"
+                            title="New appointment updates"></span>
+                    </a>
+                  </li>
+                @endif
 
-        {{-- red dot badge --}}
-        <span id="nav-appt-dot"
-              class="absolute left-6 top-2 block w-2 h-2 rounded-full bg-rose-500 ring-2 ring-rose-100 {{ $apptUnseen ? '' : 'hidden' }}"
-              title="New appointment updates"></span>
-      </a>
-    </li>
-  @endif
-
-  @continue
-@endif
-
+                @continue
+              @endif
 
               @php
                 $href = $item['route'] && is_string($item['route']) ? route($item['route']) : '#';
                 $isActive = $item['route'] && is_string($item['route']) ? request()->routeIs($item['route']) : false;
+
+                /* === IDs for the interactive tour === */
+                $extraId = match($item['label']) {
+                  'Chat History' => 'nav-chat-history',
+                  'Settings'     => 'nav-settings',
+                  default        => null
+                };
               @endphp
               <li>
                 <a href="{{ $href }}"
@@ -281,7 +261,8 @@
                      'nav-item--active' => $isActive,
                      'opacity-100' => $item['route'] && is_string($item['route']),
                      'opacity-70 cursor-not-allowed' => !$item['route'] || !is_string($item['route']),
-                   ])>
+                   ])
+                   @if($extraId) id="{{ $extraId }}" @endif>
                   <img src="{{ asset('images/icons/' . $item['icon']) }}" alt="" class="sidebar-icon icon-white">
                   <span>{{ $item['label'] }}</span>
                 </a>
@@ -312,25 +293,22 @@
 
     {{-- ============================ MAIN CONTENT ============================ --}}
     @php
-    use Illuminate\Support\Str;
+      use Illuminate\Support\Str;
+      $yieldHeading = trim($__env->yieldContent('page_title'));
+      $routeName    = Route::currentRouteName();
+      $autoTitle    = '';
+      if (!$yieldHeading && $routeName) {
+        $autoTitle = Str::of($routeName)->replace(['.', '_'], ' ')->title();
+        $autoTitle = Str::of($autoTitle)->replace(['Index', 'Show'], '')->trim();
+      }
+      $pageTitle = $yieldHeading ?: ($autoTitle ?: 'LumiCHAT');
 
-    // Page heading (H1) comes from 'page_title' or falls back to route-derived title.
-    $yieldHeading = trim($__env->yieldContent('page_title'));   // <-- new section name
-    $routeName    = Route::currentRouteName();
-    $autoTitle    = '';
-    if (!$yieldHeading && $routeName) {
-      $autoTitle = Str::of($routeName)->replace(['.', '_'], ' ')->title();
-      $autoTitle = Str::of($autoTitle)->replace(['Index', 'Show'], '')->trim();
-    }
-    $pageTitle = $yieldHeading ?: ($autoTitle ?: 'LumiCHAT');
-
-    // User initials (unchanged)
-    $initials = '';
-    if (Auth::check()) {
-      $parts = preg_split('/\s+/', trim(Auth::user()->name ?? ''));
-      $initials = strtoupper(collect($parts)->take(2)->map(fn($s)=>mb_substr($s,0,1))->implode(''));
-    }
-  @endphp
+      $initials = '';
+      if (Auth::check()) {
+        $parts = preg_split('/\s+/', trim(Auth::user()->name ?? ''));
+        $initials = strtoupper(collect($parts)->take(2)->map(fn($s)=>mb_substr($s,0,1))->implode(''));
+      }
+    @endphp
 
     <div class="main-content">
       <header class="header-shell">
@@ -354,6 +332,7 @@
 
           <div class="flex items-center gap-2 sm:gap-3">
             <a href="{{ route('chat.new') }}"
+               id="header-newchat"
                class="header-newchat inline-flex items-center gap-2 h-10 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
                aria-label="Start a new chat"
                data-new-chat="1">
@@ -471,7 +450,7 @@
           const wrap = document.querySelector('#chat-wrapper');
           const threadId = (wrap && wrap.dataset.threadId) || location.pathname;
           sessionStorage.removeItem(`lumi_welcome_${threadId}`);
-          sessionStorage.removeItem('lumi_welcome'); // legacy
+          sessionStorage.removeItem('lumi_welcome');
         } catch(_) {}
       }
       document.addEventListener('DOMContentLoaded', () => {
@@ -560,13 +539,9 @@
     };
   </script>
 
-  {{-- Global alerts --}}
   @include('profile.partials.alerts')
-
-  {{-- Page-level scripts (e.g., chat page inline fallback) --}}
   @stack('scripts')
 
-  {{-- Session-driven SweetAlert --}}
   @if (session('swal'))
     <script>
       window.addEventListener('DOMContentLoaded', () => {

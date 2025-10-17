@@ -81,6 +81,10 @@ class AppServiceProvider extends ServiceProvider
             $view->with('hasAppointments', $hasAppointments);
             $view->with('appointmentEnabled', $appointmentEnabled);
         });
+
+        view()->composer('*', function ($view) {
+            $view->with('shouldRunTour', Auth::check() && !optional(Auth::user())->has_seen_tutorial);
+        });
         // =================================================================
 
         // --- existing model events ---

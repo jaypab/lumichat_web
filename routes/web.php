@@ -17,7 +17,13 @@ use App\Http\Controllers\AboutController;
 | Web Routes (Student-facing)
 |--------------------------------------------------------------------------
 */
-
+// Mark tutorial as seen
+Route::post('/tour/complete', function () {
+    if (Auth::check()) {
+        Auth::user()->forceFill(['has_seen_tutorial' => true])->save();
+    }
+    return response()->noContent();
+})->name('tour.complete')->middleware('auth');
 // Landing → Chat
 Route::get('/', fn () => redirect()->route('chat.index'))->name('home');
 
