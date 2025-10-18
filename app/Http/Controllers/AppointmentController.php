@@ -5,18 +5,18 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Collection;
 use Carbon\Carbon;
 
 class AppointmentController extends Controller
 {
-    /** Minutes per slot */
-    private const STEP_MINUTES = 30;
-    /** Minimum step for availability ranges (must divide SLOT_MINUTES) */
-    private const SLOT_MINUTES = 30;
+    /** Minutes per slot (now hourly) */
+    private const STEP_MINUTES = 60;
+    /** Grid step for building slots (must divide ranges) */
+    private const SLOT_MINUTES = 60;
 
     /** Statuses that block a time from being offered again */
     private const BLOCKING_STATUSES = ['pending', 'confirmed', 'completed'];
-    
 
     /** Student “active” statuses that block new bookings */
     private const STUDENT_ACTIVE_STATUSES = ['pending', 'confirmed'];
@@ -26,7 +26,7 @@ class AppointmentController extends Controller
     private const WEEKDAY_MAX = 5; // Friday
 
     /* --------------------------- Booking page --------------------------- */
-    private function floorToSlot(\Carbon\Carbon $dt): \Carbon\Carbon
+    private function floorToSlot(Carbon $dt): Carbon
     {
         $m = (int) floor($dt->minute / self::SLOT_MINUTES) * self::SLOT_MINUTES;
         return $dt->copy()->setTime($dt->hour, $m, 0);
@@ -61,29 +61,97 @@ class AppointmentController extends Controller
         return view('appointment.index');
     }
 
+    /* ---------- Availability helper: prefer date-specific over recurring ---------- */
+    /**
+     * Returns availability ranges for a counselor on a specific date.
+     * If there are date-specific rows for that date, they are returned.
+     * Otherwise, falls back to recurring rows for that weekday.
+     */
+    private function rangesForCounselorOnDate(int $cid, Carbon $date): Collection
+    {
+        $dow = $date->isoWeekday(); // 1..7
+
+        // 1) exact date rows (override)
+        $dated = DB::table('tbl_counselor_availabilities')
+            ->where('counselor_id', $cid)
+            ->whereDate('date', $date->toDateString())
+            ->orderBy('start_time')
+            ->get(['start_time', 'end_time', 'slot_type']);
+
+        if ($dated->count() > 0) {
+            return $dated;
+        }
+
+        // 2) fallback to recurring weekday rows
+        return DB::table('tbl_counselor_availabilities')
+            ->where('counselor_id', $cid)
+            ->whereNull('date')
+            ->where('weekday', $dow)
+            ->orderBy('start_time')
+            ->get(['start_time', 'end_time', 'slot_type']);
+    }
+
+    // GET /appointment/counselors?date=YYYY-MM-DD&time=HH:MM
+    public function counselors(Request $request)
+    {
+        $request->validate([
+            'date' => ['required','date_format:Y-m-d'],
+            'time' => ['required','regex:/^\d{2}:\d{2}$/'],
+        ]);
+
+        $slot = Carbon::parse($request->date.' '.$request->time.':00')->second(0);
+
+        // weekday + future guards (same rules as store)
+        if ($slot->isoWeekday() < 1 || $slot->isoWeekday() > 5) {
+            return response()->json(['counselors'=>[], 'reason'=>'weekend', 'message'=>'Weekends are closed.']);
+        }
+        if ($slot->lte(now())) {
+            return response()->json(['counselors'=>[], 'reason'=>'past', 'message'=>'Past time.']);
+        }
+
+        // Use the same date-aware helper as slots()
+        $freeIds = $this->counselorsFreeAt($slot);
+
+        if (empty($freeIds)) {
+            return response()->json(['counselors'=>[]]);
+        }
+
+        $rows = DB::table('tbl_counselors')
+            ->whereIn('id', $freeIds)
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get(['id','name','email','phone']);
+
+        return response()->json([
+            'counselors' => $rows->map(fn($r)=>[
+                'id'    => (int)$r->id,
+                'name'  => (string)$r->name,
+                'email' => (string)$r->email,
+                'phone' => (string)($r->phone ?? ''),
+            ])->values(),
+        ]);
+    }
+
     /* -------------- Optional landing: decide index vs history ----------- */
-    private function workingCounselorsAt(\Carbon\Carbon $slotStart): int
+    private function workingCounselorsAt(Carbon $slotStart): int
     {
         $date    = $slotStart->copy()->startOfDay();
-        $dowIso  = $slotStart->isoWeekday();      // 1..7 ✅
         $slotEnd = $slotStart->copy()->addMinutes(self::SLOT_MINUTES);
 
-        $cids = \DB::table('tbl_counselors')->where('is_active', 1)->pluck('id')->all();
+        $cids = DB::table('tbl_counselors')->where('is_active', 1)->pluck('id')->all();
         if (empty($cids)) return 0;
 
         $count = 0;
         foreach ($cids as $cid) {
-            $ranges = \DB::table('tbl_counselor_availabilities')
-                ->where('counselor_id', $cid)
-                ->where('weekday', $dowIso)        // 1..7 ✅
-                ->get(['start_time','end_time']);
+            $ranges = $this->rangesForCounselorOnDate($cid, $date)
+                ->filter(fn($r) => !isset($r->slot_type) || $r->slot_type === 'available');
 
             foreach ($ranges as $r) {
                 if (!\is_string($r->start_time) || !\is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') {
                     continue;
                 }
-                $start = \Carbon\Carbon::parse($date->toDateString().' '.$r->start_time);
-                $end   = \Carbon\Carbon::parse($date->toDateString().' '.$r->end_time);
+                $start = Carbon::parse($date->toDateString().' '.$r->start_time);
+                $end   = Carbon::parse($date->toDateString().' '.$r->end_time);
 
                 // slot fully inside range (end is exclusive)
                 if ($slotStart->gte($start) && $slotEnd->lte($end)) {
@@ -95,13 +163,13 @@ class AppointmentController extends Controller
         return $count;
     }
 
-    // --- NEW: pooled capacity remaining at this exact slot ---
-    private function remainingCapacityAt(\Carbon\Carbon $slotStart): int
+    // --- pooled capacity remaining at this exact slot ---
+    private function remainingCapacityAt(Carbon $slotStart): int
     {
         $working = $this->workingCounselorsAt($slotStart);
 
         // Any appointment at this exact time (assigned or not) consumes capacity
-        $booked = \DB::table('tbl_appointments')
+        $booked = DB::table('tbl_appointments')
             ->where('scheduled_at', $slotStart)
             ->whereIn('status', self::BLOCKING_STATUSES)
             ->count();
@@ -109,7 +177,6 @@ class AppointmentController extends Controller
         $remain = $working - $booked;
         return $remain > 0 ? $remain : 0;
     }
-
 
     public function entrypoint(Request $request)
     {
@@ -146,7 +213,7 @@ class AppointmentController extends Controller
             return response()->json(['slots'=>[], 'reason'=>'bad_request', 'message'=>'Provide date=YYYY-MM-DD.'], 400);
         }
 
-        $date  = \Carbon\Carbon::parse($dateStr)->startOfDay();
+        $date  = Carbon::parse($dateStr)->startOfDay();
         $today = now();
 
         // Mon..Fri only (isoWeekday 1..5)
@@ -155,29 +222,26 @@ class AppointmentController extends Controller
             return response()->json(['slots'=>[], 'reason'=>'weekend', 'message'=>'Appointments are available Monday to Friday only.']);
         }
 
-        // Build candidate HH:MM from active counselors’ weekly windows (using iso weekday)
-        $cids = \DB::table('tbl_counselors')->where('is_active', 1)->pluck('id')->all();
+        // Build candidate HH:MM from active counselors’ windows for THIS DATE (date-specific overrides recurring)
+        $cids = DB::table('tbl_counselors')->where('is_active', 1)->pluck('id')->all();
         if (empty($cids)) {
             return response()->json(['slots'=>[], 'reason'=>'no_counselor', 'message'=>'No counselors are currently available.']);
         }
 
-        // Collect unique candidate times for the day
+        // Collect unique candidate times for the day (now stepping hourly)
         $candidate = [];
         foreach ($cids as $cid) {
-            $ranges = \DB::table('tbl_counselor_availabilities')
-                ->where('counselor_id', $cid)
-                ->where('weekday', $dowIso) // 1..7 ✅
-                ->orderBy('start_time')
-                ->get(['start_time','end_time']);
+            $ranges = $this->rangesForCounselorOnDate($cid, $date)
+                ->filter(fn($r) => !isset($r->slot_type) || $r->slot_type === 'available');
 
             foreach ($ranges as $r) {
                 if (!\is_string($r->start_time) || !\is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') {
                     continue;
                 }
-                $cursor = \Carbon\Carbon::parse($date->toDateString().' '.$r->start_time)->second(0);
-                $end    = \Carbon\Carbon::parse($date->toDateString().' '.$r->end_time)->second(0);
+                $cursor = Carbon::parse($date->toDateString().' '.$r->start_time)->second(0);
+                $end    = Carbon::parse($date->toDateString().' '.$r->end_time)->second(0);
 
-                // walk by 30 minutes
+                // walk by 60 minutes
                 while ($cursor->lt($end)) {
                     $slot = $this->floorToSlot($cursor);
                     $next = $slot->copy()->addMinutes(self::SLOT_MINUTES);
@@ -209,6 +273,7 @@ class AppointmentController extends Controller
         usort($slots, fn($a,$b)=>strcmp($a['value'],$b['value']));
         return response()->json(['slots'=>$slots]);
     }
+
     /* --------------------------- Store booking -------------------------- */
     // Student submits date + time + consent; system DOES NOT assign counselor
     // We reserve capacity anonymously; admin assigns counselor later.
@@ -220,19 +285,19 @@ class AppointmentController extends Controller
             'consent' => ['accepted'],
         ], [], ['date'=>'date', 'time'=>'time']);
 
-        $studentId = \Auth::id();
+        $studentId = Auth::id();
 
-        // Parse & snap to 30-min slot
-        $raw     = \Carbon\Carbon::parse($request->date.' '.$request->time.':00')->second(0);
-        $slot    = $this->floorToSlot($raw); // snaps (e.g., 09:17 -> 09:00)
+        // Parse & snap to hourly grid
+        $raw  = Carbon::parse($request->date.' '.$request->time.':00')->second(0);
+        $slot = $this->floorToSlot($raw); // e.g., 09:17 -> 09:00
 
-        // Reject off-grid inputs (e.g., 09:15) to keep UI honest
+        // Reject off-grid inputs (e.g., 09:30) to keep UI honest
         if ($raw->ne($slot)) {
-            return back()->withErrors(['time'=>'Please choose a 30-minute step (e.g., 09:00, 09:30).'])->withInput();
+            return back()->withErrors(['time'=>'Please choose a 60-minute step (e.g., 09:00, 10:00).'])->withInput();
         }
 
         // One ACTIVE appointment at a time (pending/confirmed)
-        $hasActiveAny = \DB::table('tbl_appointments')
+        $hasActiveAny = DB::table('tbl_appointments')
             ->where('student_id', $studentId)
             ->whereIn('status', self::STUDENT_ACTIVE_STATUSES)
             ->exists();
@@ -252,7 +317,7 @@ class AppointmentController extends Controller
         }
 
         // One appointment per day (any blocking status)
-        $hasSameDay = \DB::table('tbl_appointments')
+        $hasSameDay = DB::table('tbl_appointments')
             ->where('student_id', $studentId)
             ->whereDate('scheduled_at', $slot->toDateString())
             ->whereIn('status', self::BLOCKING_STATUSES)
@@ -263,7 +328,7 @@ class AppointmentController extends Controller
 
         // RACE-SAFE pooled capacity reservation
         try {
-            \DB::transaction(function () use ($studentId, $slot) {
+            DB::transaction(function () use ($studentId, $slot) {
 
                 // Re-check remaining capacity **inside** the transaction
                 $remaining = $this->remainingCapacityAt($slot);
@@ -272,7 +337,7 @@ class AppointmentController extends Controller
                 }
 
                 // Insert a pending appointment WITHOUT counselor (consumes pooled capacity)
-                \DB::table('tbl_appointments')->insert([
+                DB::table('tbl_appointments')->insert([
                     'student_id'   => $studentId,
                     'counselor_id' => null,            // assigned later by admin
                     'scheduled_at' => $slot,           // exact slot start
@@ -355,176 +420,173 @@ class AppointmentController extends Controller
             });
         }
 
-// Completed at bottom + period-aware ordering
-$query->orderByRaw("CASE WHEN a.status = 'completed' THEN 1 ELSE 0 END ASC");
+        // Completed at bottom + period-aware ordering
+        $query->orderByRaw("CASE WHEN a.status = 'completed' THEN 1 ELSE 0 END ASC");
 
-if ($period === 'past') {
-    // Past view: newest past first, completed still at the bottom bucket
-    $query->orderBy('a.scheduled_at', 'desc');
-} elseif (in_array($period, ['today','upcoming','this_week','this_month'], true)) {
-    // Upcoming views: soonest first, completed still at the bottom bucket
-    $query->orderBy('a.scheduled_at', 'asc');
-} else {
-    // 'all' (default): future first (ASC), then past (DESC); completed block is at the end
-    $query->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN 0 ELSE 1 END", [$now]) // future then past
-          ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN a.scheduled_at END ASC",  [$now]) // future asc
-          ->orderByRaw("CASE WHEN a.scheduled_at <  ? THEN a.scheduled_at END DESC", [$now]) // past desc
-          ->orderByRaw("CASE WHEN a.status = 'completed' THEN a.scheduled_at END DESC");      // completed desc at bottom
-}
+        if ($period === 'past') {
+            $query->orderBy('a.scheduled_at', 'desc');
+        } elseif (in_array($period, ['today','upcoming','this_week','this_month'], true)) {
+            $query->orderBy('a.scheduled_at', 'asc');
+        } else {
+            $query->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN 0 ELSE 1 END", [$now]) // future then past
+                  ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN a.scheduled_at END ASC",  [$now]) // future asc
+                  ->orderByRaw("CASE WHEN a.scheduled_at <  ? THEN a.scheduled_at END DESC", [$now]) // past desc
+                  ->orderByRaw("CASE WHEN a.status = 'completed' THEN a.scheduled_at END DESC");      // completed desc at bottom
+        }
 
- $appointments = $query->paginate(10)->withQueryString();
+        $appointments = $query->paginate(10)->withQueryString();
 
-    // Build the view first
-    $view = view('appointment.history', [
-        'appointments' => $appointments,
-        'status'       => $status,
-        'period'       => $period,
-        'q'            => $q,
-    ]);
+        // Build the view first
+        $view = view('appointment.history', [
+            'appointments' => $appointments,
+            'status'       => $status,
+            'period'       => $period,
+            'q'            => $q,
+        ]);
 
-    // Then stamp “seen”
-    \App\Models\User::where('id', \Auth::id())->update([
-        'last_seen_appt_at' => now(),
-    ]);
+        // Then stamp “seen”
+        \App\Models\User::where('id', Auth::id())->update([
+            'last_seen_appt_at' => now(),
+        ]);
 
-    return $view;
-}
-// App\Http\Controllers\AppointmentController
-public function unseenCount(Request $request)
-{
-    $user   = \Auth::user();
-    if (!$user) return response()->json(['count' => 0]);
-
-    $last = $user->last_seen_appt_at ?? \Carbon\Carbon::createFromTimestamp(0);
-
-    $count = \DB::table('tbl_appointments')
-        ->where('student_id', $user->id)
-        ->where('updated_at', '>', $last)
-        ->count();
-
-    return response()->json(['count' => $count]);
-}
-
-public function exportHistoryPdf(Request $request)
-{
-    $status = (string) $request->query('status', 'all');
-    $period = (string) ($request->query('period', $request->query('preoid', 'all'))); // keeps your alias
-    $q      = trim((string) $request->query('q', ''));
-    $now    = now();
-
-    $query = DB::table('tbl_appointments as a')
-        ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
-        ->select([
-            'a.id','a.student_id','a.counselor_id','a.scheduled_at','a.status',
-            'c.name as counselor_name','c.email as counselor_email','c.phone as counselor_phone',
-            'a.final_note','a.finalized_at',
-        ])
-        ->where('a.student_id', Auth::id());
-
-    if ($status !== 'all') $query->where('a.status', $status);
-
-    switch ($period) {
-        case 'today':      $query->whereDate('a.scheduled_at', $now->toDateString()); break;
-        case 'upcoming':   $query->where('a.scheduled_at', '>=', $now); break;
-        case 'this_week':  $query->whereBetween('a.scheduled_at', [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()]); break;
-        case 'this_month': $query->whereBetween('a.scheduled_at', [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()]); break;
-        case 'past':       $query->where('a.scheduled_at', '<', $now); break;
-        default: /* all */ break;
+        return $view;
     }
 
-    if ($q !== '') {
-        $query->where(function($w) use ($q) {
-            $w->where('c.name', 'like', "%{$q}%")->orWhereNull('c.id');
-        });
+    public function unseenCount(Request $request)
+    {
+        $user   = Auth::user();
+        if (!$user) return response()->json(['count' => 0]);
+
+        $last = $user->last_seen_appt_at ?? Carbon::createFromTimestamp(0);
+
+        $count = DB::table('tbl_appointments')
+            ->where('student_id', $user->id)
+            ->where('updated_at', '>', $last)
+            ->count();
+
+        return response()->json(['count' => $count]);
     }
 
-    $query->orderByRaw("CASE WHEN a.status = 'completed' THEN 1 ELSE 0 END ASC");
-    if ($period === 'past') {
-        $query->orderBy('a.scheduled_at', 'desc');
-    } elseif (in_array($period, ['today','upcoming','this_week','this_month'], true)) {
-        $query->orderBy('a.scheduled_at', 'asc');
-    } else {
-        $query->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN 0 ELSE 1 END", [$now])
-              ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN a.scheduled_at END ASC",  [$now])
-              ->orderByRaw("CASE WHEN a.scheduled_at <  ? THEN a.scheduled_at END DESC", [$now])
-              ->orderByRaw("CASE WHEN a.status = 'completed' THEN a.scheduled_at END DESC");
+    public function exportHistoryPdf(Request $request)
+    {
+        $status = (string) $request->query('status', 'all');
+        $period = (string) ($request->query('period', $request->query('preoid', 'all')));
+        $q      = trim((string) $request->query('q', ''));
+        $now    = now();
+
+        $query = DB::table('tbl_appointments as a')
+            ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
+            ->select([
+                'a.id','a.student_id','a.counselor_id','a.scheduled_at','a.status',
+                'c.name as counselor_name','c.email as counselor_email','c.phone as counselor_phone',
+                'a.final_note','a.finalized_at',
+            ])
+            ->where('a.student_id', Auth::id());
+
+        if ($status !== 'all') $query->where('a.status', $status);
+
+        switch ($period) {
+            case 'today':      $query->whereDate('a.scheduled_at', $now->toDateString()); break;
+            case 'upcoming':   $query->where('a.scheduled_at', '>=', $now); break;
+            case 'this_week':  $query->whereBetween('a.scheduled_at', [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()]); break;
+            case 'this_month': $query->whereBetween('a.scheduled_at', [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()]); break;
+            case 'past':       $query->where('a.scheduled_at', '<', $now); break;
+            default: /* all */ break;
+        }
+
+        if ($q !== '') {
+            $query->where(function($w) use ($q) {
+                $w->where('c.name', 'like', "%{$q}%")->orWhereNull('c.id');
+            });
+        }
+
+        $query->orderByRaw("CASE WHEN a.status = 'completed' THEN 1 ELSE 0 END ASC");
+        if ($period === 'past') {
+            $query->orderBy('a.scheduled_at', 'desc');
+        } elseif (in_array($period, ['today','upcoming','this_week','this_month'], true)) {
+            $query->orderBy('a.scheduled_at', 'asc');
+        } else {
+            $query->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN 0 ELSE 1 END", [$now])
+                  ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN a.scheduled_at END ASC",  [$now])
+                  ->orderByRaw("CASE WHEN a.scheduled_at <  ? THEN a.scheduled_at END DESC", [$now])
+                  ->orderByRaw("CASE WHEN a.status = 'completed' THEN a.scheduled_at END DESC");
+        }
+
+        $appointments = $query->get();
+
+        $logoData = null;
+        $logoPath = public_path('images/chatbot.png');
+        if (is_file($logoPath)) $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
+
+        $pdf = app('dompdf.wrapper');
+        $pdf->setPaper('a4', 'portrait');
+        $pdf->setOptions([
+            'defaultFont'          => 'DejaVu Sans',
+            'isHtml5ParserEnabled' => true,
+            'isRemoteEnabled'      => true,
+            'chroot'               => public_path(),
+            'dpi'                  => 96,
+            'isPhpEnabled'         => true,
+        ]);
+
+        $pdf->loadView('appointment.history-pdf', [
+            'appointments' => $appointments,
+            'status'       => $status,
+            'period'       => $period,
+            'q'            => $q,
+            'generatedAt'  => now()->format('Y-m-d H:i'),
+            'logoData'     => $logoData,
+        ]);
+
+        $filename = 'My_Appointments_' . now()->format('Ymd_His') . '.pdf';
+
+        if ($request->boolean('download')) {
+            return $pdf->download($filename);
+        }
+        return $pdf->stream($filename);
     }
 
-    $appointments = $query->get();
+    public function exportShowPdf(Request $request, int $id)
+    {
+        $userId = Auth::id();
 
-    $logoData = null;
-    $logoPath = public_path('images/chatbot.png');
-    if (is_file($logoPath)) $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
+        $appointment = DB::table('tbl_appointments as a')
+            ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
+            ->select('a.*','c.name as counselor_name','c.email as counselor_email','c.phone as counselor_phone')
+            ->where('a.id', $id)
+            ->where('a.student_id', $userId)
+            ->first();
 
-    $pdf = app('dompdf.wrapper');
-    $pdf->setPaper('a4', 'portrait');
-    $pdf->setOptions([
-        'defaultFont'          => 'DejaVu Sans',
-        'isHtml5ParserEnabled' => true,
-        'isRemoteEnabled'      => true,
-        'chroot'               => public_path(),
-        'dpi'                  => 96,
-        'isPhpEnabled'         => true, // if your PDF view uses <script type="text/php"> for page numbers
-    ]);
+        abort_unless($appointment, 404);
 
-    $pdf->loadView('appointment.history-pdf', [
-        'appointments' => $appointments,
-        'status'       => $status,
-        'period'       => $period,
-        'q'            => $q,
-        'generatedAt'  => now()->format('Y-m-d H:i'),
-        'logoData'     => $logoData,
-    ]);
+        $logoData = null;
+        $logoPath = public_path('images/chatbot.png');
+        if (is_file($logoPath)) $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
 
-    $filename = 'My_Appointments_' . now()->format('Ymd_His') . '.pdf';
+        $pdf = app('dompdf.wrapper');
+        $pdf->setPaper('a4', 'portrait');
+        $pdf->setOptions([
+            'defaultFont'          => 'DejaVu Sans',
+            'isHtml5ParserEnabled' => true,
+            'isRemoteEnabled'      => true,
+            'chroot'               => public_path(),
+            'dpi'                  => 96,
+            'isPhpEnabled'         => true,
+        ]);
 
-    if ($request->boolean('download')) {
-        return $pdf->download($filename); // force download
+        $pdf->loadView('appointment.pdf-show', [
+            'appointment' => $appointment,
+            'generatedAt' => now()->format('Y-m-d H:i'),
+            'logoData'    => $logoData,
+        ]);
+
+        $filename = 'Appointment_' . $appointment->id . '_' . now()->format('Ymd_His') . '.pdf';
+
+        if ($request->boolean('download')) {
+            return $pdf->download($filename);
+        }
+        return $pdf->stream($filename);
     }
-    return $pdf->stream($filename); // inline view (opens in the new tab)
-}
-
-public function exportShowPdf(Request $request, int $id)
-{
-    $userId = Auth::id();
-
-    $appointment = DB::table('tbl_appointments as a')
-        ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
-        ->select('a.*','c.name as counselor_name','c.email as counselor_email','c.phone as counselor_phone')
-        ->where('a.id', $id)
-        ->where('a.student_id', $userId)
-        ->first();
-
-    abort_unless($appointment, 404);
-
-    $logoData = null;
-    $logoPath = public_path('images/chatbot.png');
-    if (is_file($logoPath)) $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
-
-    $pdf = app('dompdf.wrapper');
-    $pdf->setPaper('a4', 'portrait');
-    $pdf->setOptions([
-        'defaultFont'          => 'DejaVu Sans',
-        'isHtml5ParserEnabled' => true,
-        'isRemoteEnabled'      => true,
-        'chroot'               => public_path(),
-        'dpi'                  => 96,
-        'isPhpEnabled'         => true,
-    ]);
-
-    $pdf->loadView('appointment.pdf-show', [
-        'appointment' => $appointment,
-        'generatedAt' => now()->format('Y-m-d H:i'),
-        'logoData'    => $logoData,
-    ]);
-
-    $filename = 'Appointment_' . $appointment->id . '_' . now()->format('Ymd_His') . '.pdf';
-
-    if ($request->boolean('download')) {
-        return $pdf->download($filename);
-    }
-    return $pdf->stream($filename); // inline view (opens in the new tab)
-}
 
     public function show($id)
     {
@@ -549,29 +611,28 @@ public function exportShowPdf(Request $request, int $id)
 
     /* ------------------------------ Helpers ---------------------------- */
 
-    /** Return counselor IDs who are free at the exact $scheduledAt slot. */
+    /** Return counselor IDs who are free at the exact $scheduledAt slot (date-aware, hourly). */
     private function counselorsFreeAt(Carbon $scheduledAt): array
     {
-        $date = $scheduledAt->copy()->startOfDay();
-        $dow  = $date->isoWeekday();
+        $date      = $scheduledAt->copy()->startOfDay();
+        $endOfSlot = $scheduledAt->copy()->addMinutes(self::STEP_MINUTES);
 
         $active = DB::table('tbl_counselors')
             ->where('is_active', 1)
             ->pluck('id')->all();
         if (empty($active)) return [];
 
-        $endOfSlot = $scheduledAt->copy()->addMinutes(self::STEP_MINUTES);
-
         $free = [];
         foreach ($active as $cid) {
-            // availability that fits this slot
-            $ranges = DB::table('tbl_counselor_availabilities')
-                ->where('counselor_id', $cid)
-                ->where('weekday', $dow)
-                ->get(['start_time','end_time']);
+            // availability that fits this slot (date-specific first, else recurring)
+            $ranges = $this->rangesForCounselorOnDate($cid, $date)
+                ->filter(fn($r) => !isset($r->slot_type) || $r->slot_type === 'available');
 
             $fits = false;
             foreach ($ranges as $r) {
+                if (!\is_string($r->start_time) || !\is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') {
+                    continue;
+                }
                 $start = Carbon::parse($date->toDateString().' '.$r->start_time);
                 $end   = Carbon::parse($date->toDateString().' '.$r->end_time);
                 if ($scheduledAt->gte($start) && $endOfSlot->lte($end)) { $fits = true; break; }

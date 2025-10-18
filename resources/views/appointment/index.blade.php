@@ -60,6 +60,17 @@
               <p class="text-sm text-gray-500 dark:text-gray-400">You’ll see “Awaiting assignment” until a counselor is set.</p>
             </div>
           </li>
+          {{-- STEP 3: Available counselors for the chosen time --}}
+<div id="cWrap" class="space-y-2 mt-4 hidden">
+  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+    Available counselors for <span id="cWhen" class="font-semibold"></span>
+  </label>
+  <div id="cList" class="flex flex-wrap gap-2"></div>
+  <p id="cEmpty" class="text-xs text-gray-500 dark:text-gray-400 hidden">
+    No counselors are free at the selected time.
+  </p>
+</div>
+
         </ol>
 
         <div class="mt-5 rounded-xl bg-gray-50 p-4 text-sm text-gray-600 dark:bg-gray-900 dark:text-gray-300">
@@ -178,6 +189,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const consentCbx   = document.getElementById('consent-cbx');
   const formEl       = document.querySelector('form[action="{{ route('appointment.store') }}"]');
 
+  // Counselors panel
+  const cWrap  = document.getElementById('cWrap');
+  const cWhen  = document.getElementById('cWhen');
+  const cList  = document.getElementById('cList');
+  const cEmpty = document.getElementById('cEmpty');
+
+  // Endpoints
+  const slotsBase       = @json(route('appointment.slots'));
+  const counselorsBase  = @json(route('appointment.counselors'));
+
+  // --- helpers ----------------------------------------------------------
   const clearAllErrors = () => {
     document.querySelectorAll('[data-error-for]').forEach(el => el.classList.add('hidden-error'));
     if (window.Swal && Swal.isVisible()) Swal.close();
@@ -187,8 +209,6 @@ document.addEventListener('DOMContentLoaded', () => {
     formEl.addEventListener('change',  clearAllErrors, { capture: true });
     formEl.addEventListener('focusin', clearAllErrors, { capture: true });
   }
-
-  const slotsBase = @json(route('appointment.slots'));
 
   const toast = (title, icon='info', timer=2500) =>
     Swal.fire({ toast:true, position:'top-end', showConfirmButton:false, timer, icon, title });
@@ -209,13 +229,60 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const hideError = (field) => {
     document.querySelectorAll(`[data-error-for="${field}"]`).forEach(el => el.classList.add('hidden-error'));
-    if (Swal.isVisible()) Swal.close();
+    if (window.Swal && Swal.isVisible()) Swal.close();
   };
 
   openDateBtn.addEventListener('click', () => {
     if (dateInput.showPicker) { dateInput.showPicker(); }
     else { dateInput.focus(); dateInput.click(); }
   });
+
+  function clearCounselors() {
+    cWrap.classList.add('hidden');
+    cList.innerHTML = '';
+    cEmpty.classList.add('hidden');
+    cWhen.textContent = '';
+  }
+
+  async function loadCounselors(dateStr, hhmm) {
+    clearCounselors();
+    if (!dateStr || !hhmm) return;
+
+    // heading context
+    const whenFmt = new Date(`${dateStr}T${hhmm}:00`);
+    cWhen.textContent = whenFmt.toLocaleString(undefined, {
+      month:'short', day:'2-digit', year:'numeric', hour:'numeric', minute:'2-digit'
+    });
+
+    try {
+      const url = `${counselorsBase}?date=${encodeURIComponent(dateStr)}&time=${encodeURIComponent(hhmm)}`;
+      const res = await fetch(url, { headers:{'X-Requested-With':'XMLHttpRequest'} });
+      if (!res.ok) throw new Error('HTTP '+res.status);
+      const data = await res.json();
+
+      cWrap.classList.remove('hidden');
+      if (!Array.isArray(data.counselors) || data.counselors.length === 0) {
+        cEmpty.classList.remove('hidden');
+        return;
+      }
+
+      cList.innerHTML = '';
+      data.counselors.forEach(c => {
+        const chip = document.createElement('div');
+        chip.className = 'c-chip';
+        chip.innerHTML = `
+          <span class="font-medium">${c.name}</span>
+          <a class="underline text-gray-500 hover:text-gray-700" href="mailto:${c.email}">${c.email}</a>
+        `;
+        cList.appendChild(chip);
+      });
+    } catch (e) {
+      console.error('Load counselors failed', e);
+      cWrap.classList.remove('hidden');
+      cEmpty.textContent = 'Unable to load counselors.';
+      cEmpty.classList.remove('hidden');
+    }
+  }
 
   function clearTimeUI(placeholder='available slots'){
     timeSel.innerHTML = '';
@@ -225,6 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
     timeSel.appendChild(opt);
     timeGrid.innerHTML = '';
     emptyEl.classList.add('hidden');
+    clearCounselors(); // reset counselor panel
   }
 
   function buildTimeGridFromSelect(){
@@ -250,12 +318,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (o.value === current) btn.classList.add('time-pill--selected');
 
+      // ⬇️ choose time => fetch counselors
       btn.addEventListener('click', () => {
         if (btn.disabled) return;
         timeSel.value = o.value;
         hideError('time');
         document.querySelectorAll('.time-pill--selected').forEach(el => el.classList.remove('time-pill--selected'));
         btn.classList.add('time-pill--selected');
+        loadCounselors(dateInput.value, o.value);
       });
 
       timeGrid.appendChild(btn);
@@ -285,7 +355,7 @@ document.addEventListener('DOMContentLoaded', () => {
     clearTimeUI('loading…');
 
     try{
-      const url = slotsBase + '?date=' + encodeURIComponent(date);
+      const url = `${slotsBase}?date=${encodeURIComponent(date)}`;
       const res = await fetch(url, { headers:{'X-Requested-With':'XMLHttpRequest'} });
       if(!res.ok){ clearTimeUI('unable to load'); toast('Failed to load time slots.','error'); return; }
 
@@ -330,7 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
   dateInput.addEventListener('change', () => { hideError('date'); loadSlots(); });
   consentCbx.addEventListener('change', () => hideError('consent'));
 
-  if(dateInput.value) loadSlots();
+  if (dateInput.value) loadSlots();
 });
 </script>
 @endpush

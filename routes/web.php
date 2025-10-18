@@ -100,6 +100,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/api/appointments/unseen', [\App\Http\Controllers\AppointmentController::class, 'unseenCount'])
             ->name('appointments.unseen');
     });
+    Route::get('/appointment/counselors', [AppointmentController::class,'counselors'])
+    ->name('appointment.counselors');
+
 
     // Explicit pages (buttons/links)
     Route::get('/appointment/book',     [AppointmentController::class, 'index'])->name('appointment.create');

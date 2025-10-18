@@ -107,15 +107,24 @@
                 </div>
               </td>
 
-              {{-- Weekly availability --}}
+              {{-- Weekly availability (recurring only) --}}
               <td class="px-6 py-4">
-                @php $days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; @endphp
-                <div class="grid grid-cols-2 gap-1.5 w-max ml-6"> {{-- ⬅️ 2 columns + spacing + pushed right --}}
-                  @forelse ($c->availabilities->groupBy('weekday') as $weekday => $slots)
+                @php
+                  // Accept both 0..6 (Sun..Sat) and 1..7 (Mon..Sun) inputs
+                  $dayLabel = [
+                    0=>'Sun', 1=>'Mon', 2=>'Tue', 3=>'Wed', 4=>'Thu', 5=>'Fri', 6=>'Sat', 7=>'Sun'
+                  ];
+                  // keep only recurring rows (weekday not null)
+                  $weekly = ($c->availabilities ?? collect())->filter(fn($a) => !is_null($a->weekday));
+                @endphp
+
+                <div class="grid grid-cols-2 gap-1.5 w-max ml-6">
+                  @forelse ($weekly->groupBy('weekday') as $weekday => $slots)
+                    @php $label = $dayLabel[(int)$weekday] ?? '—'; @endphp
                     <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 whitespace-nowrap">
-                      <strong>{{ $days[$weekday] }}:</strong>
+                      <strong>{{ $label }}:</strong>
                       @foreach ($slots as $slot)
-                        {{ substr($slot->start_time,0,5) }}–{{ substr($slot->end_time,0,5) }}@if(!$loop->last),@endif
+                        {{ substr((string)$slot->start_time,0,5) }}–{{ substr((string)$slot->end_time,0,5) }}@if(!$loop->last),@endif
                       @endforeach
                     </span>
                   @empty
@@ -123,6 +132,7 @@
                   @endforelse
                 </div>
               </td>
+
 
               {{-- Actions --}}
               <td class="px-6 py-4 text-right whitespace-nowrap">
