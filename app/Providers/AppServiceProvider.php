@@ -63,9 +63,9 @@ class AppServiceProvider extends ServiceProvider
 
                 // Persisted column (optional): users.appointment_enabled
                 try {
-                    if (Schema::hasTable('users') && Schema::hasColumn('users', 'appointment_enabled')) {
+                    if (Schema::hasTable('tbl_users') && Schema::hasColumn('tbl_users', 'appointment_enabled')) {
                         $appointmentEnabled = $appointmentEnabled || (bool) (
-                            DB::table('users')->where('id', $user->id)->value('appointment_enabled') ?? false
+                            DB::table('tbl_users')->where('id', $user->id)->value('appointment_enabled') ?? false
                         );
                     }
                 } catch (\Throwable $e) {
@@ -85,11 +85,28 @@ class AppServiceProvider extends ServiceProvider
         view()->composer('*', function ($view) {
             $view->with('shouldRunTour', Auth::check() && !optional(Auth::user())->has_seen_tutorial);
         });
+
+        View::composer('layouts.counselor', function ($view) {
+            $pending = 0;
+
+            try {
+                if (Schema::hasTable('tbl_highrisk_reviews')) {
+                    $pending = (int) DB::table('tbl_highrisk_reviews')
+                                ->where('review_status', 'pending')
+                                ->count();
+                }
+            } catch (\Throwable $e) {
+                $pending = 0; // safe default
+            }
+
+            $view->with('cslPendingCount', $pending);
+        });
         // =================================================================
 
         // --- existing model events ---
 
         User::created(function (User $user) {
+            if (!Schema::hasTable('tbl_activity_log')) return;
             ActivityLog::create([
                 'event'        => 'user.registered',
                 'description'  => "New user registered: {$user->name}",
@@ -100,12 +117,8 @@ class AppServiceProvider extends ServiceProvider
             ]);
         });
 
-        RateLimiter::for('chat-send', function (Request $request) {
-            $by = optional($request->user())->id ?? $request->ip();
-            return [ Limit::perMinute(20)->by("chat:pm:{$by}") ];
-        });
-
         ChatSession::created(function (ChatSession $session) {
+            if (!Schema::hasTable('tbl_activity_log')) return;
             ActivityLog::create([
                 'event'        => 'chat_session.started',
                 'description'  => 'Chat session started: ' . Str::limit($session->topic_summary ?: 'New chat session', 80),
@@ -117,6 +130,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         Appointment::created(function (Appointment $appt) {
+            if (!Schema::hasTable('tbl_activity_log')) return;
             ActivityLog::create([
                 'event'        => 'appointment.created',
                 'description'  => 'Appointment created',

@@ -158,3 +158,4 @@ Route::get('/about', [AboutController::class, 'index'])->name('about.index');
 */
 require __DIR__ . '/auth.php';
 require __DIR__ . '/admin.php';
+require __DIR__.'/counselor.php';

@@ -23,6 +23,7 @@ class DatabaseSeeder extends Seeder
 
         $this->section('Counselors & schedules');
         $this->safeCall(\Database\Seeders\CounselorSeeder::class);
+        $this->call([CounselorSeeder::class,]);
 
         $this->section('Conversations & appointments');
         $this->safeCall(\Database\Seeders\ChatSessionSeeder::class);

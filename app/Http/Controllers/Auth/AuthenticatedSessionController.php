@@ -40,17 +40,37 @@ class AuthenticatedSessionController extends Controller
     }
 
     /** Handle login. */
-     public function store(LoginRequest $request): RedirectResponse
+    public function store(LoginRequest $request): RedirectResponse
     {
-        $request->authenticate();           
-        $request->session()->regenerate();  
+        $request->authenticate();
+        $request->session()->regenerate();
 
         $user = $request->user();
 
-        if (method_exists($user, 'canAccessAdmin') && $user->canAccessAdmin()) {
+        // If user was trying to hit a specific protected page, respect it,
+        // especially for /counselor/* pages.
+        $intended = (string) $request->session()->pull('url.intended', '');
+        if ($intended) {
+            // Hard-stop counselors from being redirected to /admin
+            if ($user->role === 'counselor' && str_starts_with($intended, '/counselor')) {
+                return redirect()->to($intended);
+            }
+            if ($user->role === 'admin' && str_starts_with($intended, '/admin')) {
+                return redirect()->to($intended);
+            }
+            // If intended is irrelevant (e.g., admin page for counselor), ignore it below.
+        }
+
+        // Route explicitly by role (counselor first)
+        if ($user->role === 'counselor') {
+            return redirect()->route('counselor.dashboard');
+        }
+
+        if ($user->role === 'admin') {
             return redirect()->route('admin.dashboard');
         }
 
+        // Default student landing
         return redirect()->intended(route('chat.index'));
     }
 
