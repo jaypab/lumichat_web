@@ -100,15 +100,26 @@
     const $ = (s)=>document.querySelector(s);
 
     /* ----------------------- Page grouping ----------------------- */
-    function normalizePageKey(route){
-    if (!route) return 'unknown';
-    if (route.startsWith('chat.')) return 'chat';
-    if (route === 'home' || route === 'dashboard') return 'chat';
-    if (route.startsWith('appointment.')) return 'appointment';
-    // NEW: group these
-    if (route.startsWith('profile.')) return 'profile';
-    if (route.startsWith('about.')) return 'about';
-    return route;
+     function normalizePageKey(route){
+      if (!route) return 'unknown';
+
+      // 1) Exact matches FIRST (so they don't get collapsed by broader rules)
+      if (route === 'chat.history')    return 'chat.history';
+      if (route === 'appointment.history') return 'appointment.history';
+      if (route === 'profile.edit')    return 'profile.edit';
+      if (route === 'about.index')     return 'about.index';
+      if (route === 'settings.index')  return 'settings.index';
+
+      // 2) Friendly groupings for families of pages
+      if (route.startsWith('appointment.')) return 'appointment';
+      if (route === 'home' || route === 'dashboard' || route === 'chat.index' || route === 'chat.show') {
+        return 'chat';
+      }
+      if (route.startsWith('profile.')) return 'profile';
+      if (route.startsWith('about.'))   return 'about';
+
+      // 3) Fallback to the raw route name
+      return route;
     }
     const PAGE_KEY = normalizePageKey(ROUTE_KEY);
 
