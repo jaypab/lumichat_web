@@ -3,6 +3,7 @@
 @section('page_title','My Availability')
 
 @section('content')
+
 <div class="max-w-6xl mx-auto space-y-6">
 
   {{-- 2-column layout: Calendar | Form --}}
