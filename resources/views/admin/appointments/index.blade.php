@@ -1,7 +1,7 @@
 {{-- resources/views/admin/appointments/index.blade.php --}}
 @extends('layouts.admin')
 @section('title','Admin - Appointments')
-@section('page_title', 'Manage Appointments') 
+@section('page_title', 'Manage Appointments')
 
 @php
   use Carbon\Carbon;
@@ -17,6 +17,7 @@
     'confirmed' => 'Confirmed',
     'completed' => 'Completed',
     'canceled'  => 'Canceled',
+    'no_show'   => 'No Show',   // ⬅️ added
   ];
   $periodOptions = [
     'all'        => 'All Dates',
@@ -40,23 +41,20 @@
         View and manage booked counseling sessions.
         <span class="ml-2 text-slate-400">•</span>
         <span class="ml-2 text-slate-500">
-          {{ $appointments->total() }} {{ Str::plural('appointment', $appointments->total()) }}
+          {{ $totalAppointments }} {{ Str::plural('appointment', $totalAppointments) }}
         </span>
       </p>
     </div>
 
-    {{-- Header action --}}
-{{-- Header action --}}
-<a href="{{ route('admin.appointments.export.pdf', request()->only('status','period','q')) }}"
-   target="_blank" rel="noopener"
-   class="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 h-10 rounded-xl shadow-sm hover:bg-emerald-700 active:scale-[.99] transition">
-  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
-  </svg>
-  Download PDF
-</a>
-
+    <a href="{{ route('admin.appointments.export.pdf', request()->only('status','period','q')) }}"
+       target="_blank" rel="noopener"
+       class="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 h-10 rounded-xl shadow-sm hover:bg-emerald-700 active:scale-[.99] transition">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+      </svg>
+      Download PDF
+    </a>
   </div>
 
   {{-- ========= Filters ========= --}}
@@ -123,7 +121,7 @@
     <button type="button" onclick="printAppointments()"
             class="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl shadow-sm hover:bg-emerald-700 active:scale-[.99] transition w-full sm:w-auto">
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9V4h12v5M6 18h12a2 2 0 002-2v-5H4v5a 2 2 0 002 2z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9V4h12v5M6 18h12a2 2 0 002-2v-5H4v5a2 2 0 002 2z"/>
       </svg>
       Print
     </button>
@@ -164,11 +162,21 @@
                 $dt       = Carbon::parse($row->scheduled_at);
                 $bookedAt = $row->booked_at ?? $row->created_at ?? null;
 
+                // display label + colors, including No Show
+                $statusNice = [
+                  'pending'   => 'Pending',
+                  'confirmed' => 'Confirmed',
+                  'completed' => 'Completed',
+                  'canceled'  => 'Canceled',
+                  'no_show'   => 'No Show',
+                ][$row->status] ?? ucfirst($row->status ?? '—');
+
                 $statusMap = [
                   'pending'   => ['bg'=>'bg-amber-50','text'=>'text-amber-700','ring'=>'ring-amber-200','dot'=>'bg-amber-500'],
                   'confirmed' => ['bg'=>'bg-blue-50','text'=>'text-blue-700','ring'=>'ring-blue-200','dot'=>'bg-blue-500'],
                   'completed' => ['bg'=>'bg-emerald-50','text'=>'text-emerald-700','ring'=>'ring-emerald-200','dot'=>'bg-emerald-500'],
-                  'canceled'  => ['bg'=>'bg-rose-50','text'=>'text-rose-700','ring'=>'ring-rose-200','dot'=>'bg-rose-500'],
+                  'canceled'  => ['bg'=>'bg-slate-200','text'=>'text-slate-800','ring'=>'ring-slate-300','dot'=>'bg-slate-500'],
+                  'no_show'   => ['bg'=>'bg-rose-50','text'=>'text-rose-700','ring'=>'ring-rose-200','dot'=>'bg-rose-500'],
                 ];
                 $s   = $statusMap[$row->status] ?? ['bg'=>'bg-slate-50','text'=>'text-slate-700','ring'=>'ring-slate-200','dot'=>'bg-slate-400'];
                 $cls = $s['bg'].' '.$s['text'].' ring-1 '.$s['ring'];
@@ -177,9 +185,10 @@
 
               <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition">
                 <td class="px-6 py-4 font-semibold text-slate-900">{{ $row->id }}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $row->student_name }} 
-                </td>
-                
+
+                {{-- Student --}}
+                <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $row->student_name }}</td>
+
                 {{-- Counselor --}}
                 <td class="px-6 py-4 whitespace-nowrap">
                   @if ($row->status === 'canceled')
@@ -187,30 +196,23 @@
                       <span class="inline-block size-1.5 rounded-full bg-rose-500"></span>
                       Appointment Canceled
                     </span>
-
                   @else
-                    @php $cname = trim((string) $row->counselor_name); @endphp
+                    @php $cname = trim((string) ($row->counselor_name ?? '')); @endphp
 
-                    {{-- Unassigned --}}
-                    @if ($cname === '' || $cname === '—')
-                      @if ($row->status === 'pending')
-                        {{-- Make it clickable only when pending --}}
-                        <a href="{{ route('admin.appointments.assign.form', $row->id) }}"
-                          class="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1 text-[13px] text-indigo-700 ring-1 ring-slate-200
-                                  hover:bg-indigo-50 hover:ring-indigo-200 transition cursor-pointer"
-                          title="Assign counselor">
-                          <span class="inline-block size-1.5 rounded-full bg-indigo-500"></span>
-                          Assign counselor
-                        </a>
-                      @else
-                        {{-- Not pending: just a neutral chip (not clickable) --}}
-                        <span class="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1 text-[13px] text-slate-700 ring-1 ring-slate-200">
-                          <span class="inline-block size-1.5 rounded-full bg-slate-400"></span>
-                          To be assigned
-                        </span>
-                      @endif
-
-                    {{-- Already assigned --}}
+                    {{-- Pending + unassigned => Assign link --}}
+                    @if (($cname === '' || $cname === '—') && $row->status === 'pending')
+                      <a href="{{ route('admin.appointments.assign.form', $row->id) }}"
+                         class="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1 text-[13px] text-indigo-700 ring-1 ring-slate-200
+                                hover:bg-indigo-50 hover:ring-indigo-200 transition"
+                         title="Assign counselor">
+                        <span class="inline-block size-1.5 rounded-full bg-indigo-500"></span>
+                        Assign counselor
+                      </a>
+                    @elseif ($cname === '' || $cname === '—')
+                      <span class="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1 text-[13px] text-slate-700 ring-1 ring-slate-200">
+                        <span class="inline-block size-1.5 rounded-full bg-slate-400"></span>
+                        To be assigned
+                      </span>
                     @else
                       <span class="text-slate-700">{{ $cname }}</span>
                     @endif
@@ -238,17 +240,17 @@
                   @endif
                 </td>
 
-                {{-- Status chip --}}
+                {{-- Status pill --}}
                 <td class="px-6 py-4 whitespace-nowrap">
                   <span class="relative inline-flex items-center h-7 w-[112px] rounded-full text-xs font-medium leading-none {{ $cls }}">
                     <span class="absolute left-3 inline-block size-2 rounded-full {{ $dot }}"></span>
-                    <span class="mx-auto">{{ ucfirst($row->status) }}</span>
+                    <span class="mx-auto">{{ $statusNice }}</span>
                   </span>
                 </td>
 
                 {{-- Actions --}}
                 <td class="px-6 py-4 text-right whitespace-nowrap">
-                  <div class="flex items-center justify-end gap-2 whitespace-nowrap">
+                  <div class="flex items-center justify-end gap-2">
                     <a href="{{ route('admin.appointments.show', $row->id) }}"
                        class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-1.5 text-white hover:bg-indigo-700">
                       View

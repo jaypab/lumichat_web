@@ -148,14 +148,17 @@
               $countdown = $mins===0 ? 'Starting now' : ($mins>0 ? ('Starts in '.implode(' ', $parts)) : (implode(' ', $parts).' ago'));
 
               $statusMap = [
-                'pending'   => ['bg'=>'bg-amber-50','text'=>'text-amber-700','ring'=>'ring-amber-200','dot'=>'bg-amber-500','label'=>'Pending'],
-                'confirmed' => ['bg'=>'bg-blue-50','text'=>'text-blue-700','ring'=>'ring-blue-200','dot'=>'bg-blue-500','label'=>'Confirmed'],
-                'completed' => ['bg'=>'bg-emerald-50','text'=>'text-emerald-700','ring'=>'ring-emerald-200','dot'=>'bg-emerald-500','label'=>'Completed'],
-                'canceled'  => ['bg'=>'bg-rose-50','text'=>'text-rose-700','ring'=>'ring-rose-200','dot'=>'bg-rose-500','label'=>'Canceled'],
+                'pending'   => ['bg'=>'bg-amber-50','text'=>'text-amber-700','ring'=>'ring-amber-200','dot'=>'bg-amber-500'],
+                'confirmed' => ['bg'=>'bg-blue-50','text'=>'text-blue-700','ring'=>'ring-blue-200','dot'=>'bg-blue-500'],
+                'completed' => ['bg'=>'bg-emerald-50','text'=>'text-emerald-700','ring'=>'ring-emerald-200','dot'=>'bg-emerald-500'],
+                'canceled'  => ['bg'=>'bg-slate-200','text'=>'text-slate-800','ring'=>'ring-slate-300','dot'=>'bg-slate-500'],
+                'no_show'   => ['bg'=>'bg-rose-50','text'=>'text-rose-700','ring'=>'ring-rose-200','dot'=>'bg-rose-500'],
               ];
-              $s   = $statusMap[$row->status] ?? ['bg'=>'bg-slate-50','text'=>'text-slate-700','ring'=>'ring-slate-200','dot'=>'bg-slate-400','label'=>ucfirst($row->status ?? '—')];
-              $cls = $s['bg'].' '.$s['text'].' ring-1 '.$s['ring'];
-              $dot = $s['dot'];
+
+              $s      = $statusMap[$row->status] ?? ['bg'=>'bg-slate-50','text'=>'text-slate-700','ring'=>'ring-slate-200','dot'=>'bg-slate-400'];
+              $cls    = $s['bg'].' '.$s['text'].' ring-1 '.$s['ring'];
+              $dot    = $s['dot'];
+              $label  = $s['label'] ?? Str::headline($row->status ?? '—');
 
               // If controller uses LEFT JOIN, $row->counselor_name may be null.
               $noCounselor = empty($row->counselor_name);
@@ -193,7 +196,7 @@
               <td class="px-6 py-4 whitespace-nowrap">
                 <span class="relative inline-flex items-center h-7 w-[128px] rounded-full text-xs font-medium leading-none {{ $cls }}">
                   <span class="absolute left-3 inline-block size-2 rounded-full {{ $dot }}"></span>
-                  <span class="mx-auto">{{ $s['label'] }}</span>
+                  <span class="mx-auto">{{ $label }}</span>
                 </span>
               </td>
 

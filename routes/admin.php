@@ -85,41 +85,25 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
         ->where(['session' => '[0-9]+']); // helps prevent 'export' being treated as {session}
 
 
-   /* APPOINTMENTS (Admin) */
-
-    // Put capacity BEFORE the {id} routes (or keep it here and also add whereNumber below)
-    Route::get('/appointments/capacity', [AdminAppointmentController::class, 'capacity'])
-        ->name('appointments.capacity');
-
+  /* APPOINTMENTS (Admin) — view, export, assign only */
     Route::get('/appointments', [AdminAppointmentController::class, 'index'])
         ->name('appointments.index');
 
     Route::get('/appointments/{id}', [AdminAppointmentController::class, 'show'])
         ->whereNumber('id')->name('appointments.show');
 
+    Route::get('/appointments/export/pdf', [AdminAppointmentController::class, 'exportPdf'])
+        ->name('appointments.export.pdf');
+
+    Route::get('/appointments/{id}/export/pdf', [AdminAppointmentController::class, 'exportShowPdf'])
+        ->whereNumber('id')->name('appointments.export.show.pdf');
+
+    /* assign stays on Admin side */
     Route::get('/appointments/{id}/assign', [AdminAppointmentController::class, 'assignForm'])
         ->whereNumber('id')->name('appointments.assign.form');
 
     Route::patch('/appointments/{id}/assign', [AdminAppointmentController::class, 'assign'])
         ->whereNumber('id')->name('appointments.assign');
-
-    Route::patch('/appointments/{id}/status', [AdminAppointmentController::class, 'updateStatus'])
-        ->whereNumber('id')->name('appointments.status');
-
-    Route::post('/appointments/{id}/report', [AdminAppointmentController::class, 'saveReport'])
-        ->whereNumber('id')->name('appointments.report');
-
-    Route::get('/appointments/{id}/export/pdf', [AdminAppointmentController::class, 'exportShowPdf'])
-        ->whereNumber('id')->name('appointments.export.show.pdf');
-
-    Route::get('/appointments/{id}/follow-up', [AdminAppointmentController::class, 'followUpForm'])
-        ->whereNumber('id')->name('appointments.follow.form');
-
-    Route::post('/appointments/{id}/follow-up', [AdminAppointmentController::class, 'followUpStore'])
-        ->whereNumber('id')->name('appointments.follow.store');
-
-    Route::get('/appointments/export/pdf', [AdminAppointmentController::class, 'exportPdf'])
-        ->name('appointments.export.pdf');
 
         
 

@@ -12,7 +12,8 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(\Illuminate\Console\Scheduling\Schedule $schedule): void
     {
-        $schedule->command('chats:cleanup')->dailyAt('02:10'); // server local time
+        $schedule->command('chats:cleanup')->dailyAt('02:10');
+        $schedule->command('lumichat:sweep-no-shows --grace=30 --slot=60')->hourly();
     }
 
     /**

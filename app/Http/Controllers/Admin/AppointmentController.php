@@ -24,8 +24,9 @@ class AppointmentController extends Controller
     // ==== Filters ====
     private const STATUS_ALL = 'all';
     private const PERIOD_ALL = 'all';
-    private const STATUSES   = ['pending','confirmed','canceled','completed'];
+    private const STATUSES   = ['pending','confirmed','canceled','completed','no_show'];
     private const PERIODS    = ['all','upcoming','today','this_week','this_month','past'];
+    private const NO_SHOW_GRACE_MINUTES = 30;
 
     public function __construct(
         protected AppointmentRepositoryInterface $appointments
@@ -100,44 +101,85 @@ class AppointmentController extends Controller
     /** Update status via action ('confirm' | 'done') with rule checks. */
     public function updateStatus(Request $r, int $id): RedirectResponse
     {
-        $action = $r->input('action'); // 'confirm' | 'done'
-        $res = $this->appointments->updateStatusByAction($id, $action);
+        $action = $r->input('action'); // 'confirm' | 'done' | 'no_show'
 
-        if (!$res['ok']) {
-            $map = [
-                'invalid_action'    => ['warning','Not allowed','Invalid action.'],
-                'not_found'         => ['warning','Not allowed','Appointment not found.'],
-                'must_be_confirmed' => ['warning','Not allowed','Appointment must be confirmed before you can mark it as done.'],
-                'too_early'         => ['warning','Too early','You can only mark the appointment as done once it has started.'],
-            ];
-            [$icon,$title,$text] = $map[$res['reason']] ?? ['error','Error','Unable to update status.'];
-            return back()->with(self::FLASH_SWAL, compact('icon','title','text'));
+        // Fast path: use repo for confirm/done as you already had
+        if (in_array($action, ['confirm','done'], true)) {
+            $res = $this->appointments->updateStatusByAction($id, $action);
+
+            if (!$res['ok']) {
+                $map = [
+                    'invalid_action'    => ['warning','Not allowed','Invalid action.'],
+                    'not_found'         => ['warning','Not allowed','Appointment not found.'],
+                    'must_be_confirmed' => ['warning','Not allowed','Appointment must be confirmed before you can mark it as done.'],
+                    'too_early'         => ['warning','Too early','You can only mark the appointment as done once it has started.'],
+                ];
+                [$icon,$title,$text] = $map[$res['reason']] ?? ['error','Error','Unable to update status.'];
+
+                return back()->with(self::FLASH_SWAL, compact('icon','title','text'));
+            }
+        }
+        // ✅ New: No-Show
+        else if ($action === 'no_show') {
+            $row = DB::table('tbl_appointments')->where('id', $id)->first();
+            if (!$row) {
+                return back()->with(self::FLASH_SWAL, [
+                    'icon'  => 'warning',
+                    'title' => 'Not found',
+                    'text'  => 'Appointment not found.',
+                ]);
+            }
+
+            // Only pending/confirmed can become no_show
+            if (!in_array($row->status, ['pending','confirmed'], true)) {
+                return back()->with(self::FLASH_SWAL, [
+                    'icon'  => 'warning',
+                    'title' => 'Not allowed',
+                    'text'  => 'Only pending/confirmed appointments can be marked as No-Show.',
+                ]);
+            }
+
+            $start      = Carbon::parse($row->scheduled_at);
+            $endOfSlot  = $start->copy()->addMinutes(60); // your slot = 60 minutes
+            $graceOver  = $endOfSlot->copy()->addMinutes(self::NO_SHOW_GRACE_MINUTES);
+
+            if ($graceOver->isFuture()) {
+                return back()->with(self::FLASH_SWAL, [
+                    'icon'  => 'warning',
+                    'title' => 'Too early',
+                    'text'  => 'You can mark No-Show only after the slot has passed the grace period.',
+                ]);
+            }
+
+            DB::table('tbl_appointments')
+                ->where('id', $id)
+                ->update([
+                    'status'     => 'no_show',
+                    'updated_at' => now(),
+                ]);
+        }
+        else {
+            return back()->with(self::FLASH_SWAL, [
+                'icon'  => 'warning',
+                'title' => 'Not allowed',
+                'text'  => 'Invalid action.',
+            ]);
         }
 
-        // ✅ Success path: fetch the fresh row and clear highs if now completed
-        $appt = DB::table('tbl_appointments')
-            ->select('id','student_id','status')
-            ->where('id', $id)
-            ->first();
-
-        // ✅ Success path: fetch the fresh row and clear highs if now completed
+        // ⬇️ Keep your post-update logic (clear high risk when completed)
         $appt = DB::table('tbl_appointments')
             ->select('id','student_id','status')
             ->where('id', $id)
             ->first();
 
         if ($appt && $appt->status === 'completed') {
-            // build updates only for columns that exist
             $updates = [
-                'risk_level' => null,   // or 'low' if you prefer a defined state
+                'risk_level' => null,
                 'updated_at' => now(),
             ];
-
-            // only set risk_score if the column exists
             if (Schema::hasColumn((new ChatSession)->getTable(), 'risk_score')) {
                 $updates['risk_score'] = 0;
             }
-
             ChatSession::where('user_id', $appt->student_id)
                 ->whereRaw("LOWER(COALESCE(risk_level, '')) IN ('high','high-risk','high_risk')")
                 ->update($updates);

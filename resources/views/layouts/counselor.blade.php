@@ -135,7 +135,7 @@
   <div class="rail-header px-4 flex items-center justify-between border-b border-white/20">
     <div class="flex items-center gap-2">
       <img src="{{ asset('images/chatbot.png') }}" class="w-9 h-9 rounded-full ring-2 ring-white/30 object-cover" alt="LumiCHAT">
-      <span class="brand-text font-semibold tracking-wide">Counselor</span>
+      <span class="brand-text font-semibold tracking-wide">LumiChat</span>
     </div>
     <button id="railClose" class="p-2 rounded-md hover:bg-white/10" title="Collapse / Close" aria-label="Collapse / Close">
       <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -185,6 +185,19 @@
         <span class="nav-label font-medium">High-Risk Reviews</span>
         <span class="rail-tip">High-Risk Reviews</span>
         </a>
+
+        {{-- My Appointments --}}
+        <a href="{{ route('counselor.appointments.index') }}"
+          aria-current="{{ request()->routeIs('counselor.appointments.*') ? 'page' : 'false' }}"
+          class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
+                  {{ request()->routeIs('counselor.appointments.*') ? 'is-active' : '' }}">
+          <span class="inline-flex w-10 h-10 items-center justify-center">
+            <img src="{{ asset('images/icons/appointment.png') }}" alt="">
+          </span>
+          <span class="nav-label font-medium">Appointments</span>
+          <span class="rail-tip">Appointments</span>
+        </a>
+
     </div>
 
     <div class="px-3 py-3 border-t border-white/15 hide-when-collapsed">

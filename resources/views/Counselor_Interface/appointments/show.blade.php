@@ -1,4 +1,3 @@
-{{-- resources/views/Counselor_Interface/appointments/show.blade.php --}}
 @extends('layouts.counselor')
 @section('title', 'Appointment #'.$appointment->id)
 @section('page_title', 'Appointment Details')
@@ -7,17 +6,24 @@
   use Carbon\Carbon;
   use Illuminate\Support\Str;
 
-  $start    = Carbon::parse($appointment->scheduled_at)->second(0);
-  $end      = $start->copy()->addMinutes(60); // 60-min slot
+  $dt       = Carbon::parse($appointment->scheduled_at);
   $now      = Carbon::now();
   $bookedAt = $appointment->created_at ? Carbon::parse($appointment->created_at) : null;
 
-  // Friendly “when” text
-  $when = $now->isBefore($start)
-      ? 'Starts in '.$start->diffForHumans($now, ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW])
-      : 'Started '.$start->diffForHumans($now, ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW]);
+  $when = $now->isBefore($dt)
+      ? 'Starts in '.$dt->diffForHumans($now, ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW])
+      : 'Started '.$dt->diffForHumans($now, ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW]);
 
-  // Status chips (include no_show)
+  $hasStarted  = $now->gte($dt);
+  $canConfirm  = ($appointment->status === 'pending');
+  $canDone     = ($appointment->status === 'confirmed') && $hasStarted;
+  $canFollowUp = ($appointment->status === 'completed');
+
+  $doneTitle = $appointment->status !== 'confirmed'
+      ? 'You can only mark confirmed appointments as done'
+      : ($hasStarted ? 'Mark as completed' : 'You can only mark as done after the scheduled start time');
+
+  // chips (include no_show)
   $badgeMap = [
     'pending'   => 'bg-amber-100 text-amber-800',
     'confirmed' => 'bg-blue-100 text-blue-800',
@@ -35,17 +41,6 @@
   $status = strtolower((string)$appointment->status);
   $cls = $badgeMap[$status] ?? 'bg-slate-200 text-slate-700';
   $dot = $dotMap[$status] ?? 'bg-slate-500';
-
-  // Button gating
-  $isPending   = $status === 'pending';
-  $isConfirmed = $status === 'confirmed';
-
-  $canConfirm = $isPending   && $now->lt($start);      // before start only
-  $canDone    = $isConfirmed && $now->gte($start);     // at/after start
-  $canNoShow  = ($isPending || $isConfirmed) && $now->gte($end);
-
-  // Nice label for "no_show"
-  $statusLabel = $status === 'no_show' ? 'No Show' : ucfirst($status);
 @endphp
 
 @section('content')
@@ -53,36 +48,35 @@
   <div class="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
     <span class="pointer-events-none absolute inset-x-0 -top-px h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-fuchsia-500"></span>
 
-    {{-- Header row --}}
+    {{-- Header --}}
     <div class="px-6 pt-5">
       <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div class="min-w-0">
           <div class="flex items-center gap-3">
-            <h2 class="text-[20px] font-semibold text-slate-900 truncate">
-              Appointment #{{ $appointment->id }}
-            </h2>
+            <h2 class="text-[20px] font-semibold text-slate-900">Appointment #{{ $appointment->id }}</h2>
             <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium {{ $cls }}">
               <span class="inline-block w-1.5 h-1.5 rounded-full {{ $dot }} mr-1.5"></span>
-              {{ $statusLabel }}
+              {{ $appointment->status === 'no_show' ? 'No Show' : ucfirst($appointment->status) }}
             </span>
           </div>
           <div class="mt-1 text-sm text-slate-500 flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 8v5l3.5 3.5 1.5-1.5-3-3V8z"></path>
-              <path d="M12 22a10 10 0 110-20 10 10 0 010 20zm0-2a8 8 0 100-16 8 8 0 010 16z"></path>
+              <path d="M12 8v5l3.5 3.5 1.5-1.5-3-3V8z"/><path d="M12 22a10 10 0 110-20 10 10 0 010 20zm0-2a8 8 0 100-16 8 8 0 010 16z"/>
             </svg>
             {{ $when }}
           </div>
         </div>
 
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
           <a href="{{ route('counselor.appointments.index') }}"
              class="inline-flex items-center gap-2 h-10 px-3.5 rounded-xl bg-white ring-1 ring-slate-200 text-slate-700 hover:bg-slate-50">
             Back
           </a>
+
+          {{-- counselor-side single PDF --}}
           <a href="{{ route('counselor.appointments.export.show.pdf', $appointment->id) }}"
              target="_blank" rel="noopener"
-             class="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 h-10 rounded-xl shadow-sm hover:bg-emerald-700 active:scale-[.99]">
+             class="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 h-10 rounded-xl shadow-sm hover:bg-emerald-700">
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
@@ -92,13 +86,14 @@
         </div>
       </div>
 
-      {{-- Action buttons --}}
-      <div class="mt-3 flex items-center gap-3">
+      {{-- Actions (managed by counselor) --}}
+      <div class="mt-4 flex flex-wrap items-center gap-2">
         {{-- Confirm --}}
         <form method="POST"
               action="{{ route('counselor.appointments.status', $appointment->id) }}"
               onsubmit="return askAction(event, this, 'confirm')">
-          @csrf @method('PATCH')
+          @csrf
+          @method('PATCH')
           <input type="hidden" name="action" value="confirm">
           <button type="submit"
                   class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -107,33 +102,39 @@
           </button>
         </form>
 
-        {{-- Done (available at/after start) --}}
+        {{-- Done --}}
         <form method="POST"
               action="{{ route('counselor.appointments.status', $appointment->id) }}"
-              onsubmit="return {{ $canDone ? 'askAction(event, this, \'done\')' : 'false' }}">
-          @csrf @method('PATCH')
+              @if(!$canDone) onsubmit="return false" @else onsubmit="return askAction(event, this, 'done')" @endif
+              class="{{ $canDone ? '' : 'pointer-events-none' }}">
+          @csrf
+          @method('PATCH')
           <input type="hidden" name="action" value="done">
           <button type="submit"
-                  class="px-4 py-2 rounded-lg text-white {{ $canDone ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed' }}"
-                  {{ $canDone ? '' : 'disabled' }}>
+                  title="{{ $doneTitle }}"
+                  class="px-4 py-2 rounded-lg text-white {{ $canDone ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-emerald-600 opacity-50 cursor-not-allowed' }}">
             Done
           </button>
         </form>
 
-        {{-- No-Show (only after end) --}}
-        <form method="POST"
-              action="{{ route('counselor.appointments.no_show', $appointment->id) }}"
-              onsubmit="return {{ $canNoShow ? 'askAction(event, this, \'no_show\')' : 'false' }}">
-          @csrf
-          <button type="submit"
-                  class="px-4 py-2 rounded-lg text-white
-                  {{ $canNoShow
-                      ? 'bg-rose-600 hover:bg-rose-700'
-                      : 'bg-slate-300 text-slate-600 cursor-not-allowed' }}"
-                  {{ $canNoShow ? '' : 'disabled' }}>
-            Mark as No-Show
-          </button>
-        </form>
+        {{-- No-Show (allowed on pending/confirmed; your grace is handled in controller) --}}
+        @if(in_array($appointment->status, ['pending','confirmed']))
+          <form method="POST" action="{{ route('counselor.appointments.no_show', $appointment->id) }}"
+                onsubmit="return askAction(event, this, 'no_show')">
+            @csrf
+            <button type="submit" class="px-4 py-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700">
+              Mark as No-Show
+            </button>
+          </form>
+        @endif
+
+        {{-- Follow-up (only after completed) --}}
+        @if ($appointment->status === 'completed')
+          <a href="{{ route('counselor.appointments.follow.form', $appointment->id) }}"
+            class="inline-flex items-center rounded-lg bg-indigo-50 px-4 py-2 text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-100">
+            Create Follow-up
+          </a>
+        @endif
       </div>
     </div>
 
@@ -141,6 +142,7 @@
 
     {{-- Two columns --}}
     <div class="px-6 py-5 grid grid-cols-1 lg:grid-cols-2 gap-6">
+
       {{-- Student --}}
       <section class="rounded-2xl ring-1 ring-slate-200 bg-white">
         <header class="px-4 py-2.5 bg-slate-50/60 rounded-t-2xl">
@@ -169,9 +171,7 @@
             </div>
             <div>
               <div class="text-[13px] uppercase tracking-wide text-slate-500">Booked On</div>
-              <div class="font-medium text-slate-900">
-                {{ $bookedAt ? $bookedAt->format('F d, Y') : '—' }}
-              </div>
+              <div class="font-medium text-slate-900">{{ $bookedAt ? $bookedAt->format('F d, Y') : '—' }}</div>
               @if($bookedAt)
                 <div class="text-sm text-slate-600">{{ $bookedAt->format('g:i A') }}</div>
               @endif
@@ -187,20 +187,15 @@
             </div>
             <div>
               <div class="text-[13px] uppercase tracking-wide text-slate-500">Scheduled For</div>
-              <div class="font-medium text-slate-900">{{ $start->format('F d, Y') }}</div>
-              <div class="text-sm text-slate-600">
-                {{ $start->format('g:i A') }} – {{ $end->format('g:i A') }}
-              </div>
-              @if(!empty($appointment->location))
-                <div class="text-xs text-slate-500">{{ $appointment->location }}</div>
-              @endif
+              <div class="font-medium text-slate-900">{{ $dt->format('F d, Y') }}</div>
+              <div class="text-sm text-slate-600">{{ $dt->format('g:i A') }}</div>
             </div>
           </div>
         </div>
       </section>
     </div>
 
-    {{-- Final Diagnosis --}}
+    {{-- Final Diagnosis (counselor saves) --}}
     <div class="px-6 pb-6">
       <div class="rounded-2xl bg-indigo-50/40 ring-1 ring-indigo-200/70 overflow-hidden">
         <div class="flex items-center justify-between px-4 py-3">
@@ -213,19 +208,18 @@
         </div>
 
         <div class="px-4 pb-4">
-          @if($status === 'completed')
+          @if($appointment->status === 'completed')
             <form method="POST" action="{{ route('counselor.appointments.report', $appointment->id) }}" class="space-y-5">
               @csrf
-              {{-- Diagnosis --}}
+
               <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1">
                   Final Diagnosis <span class="text-rose-600">*</span>
                 </label>
                 <div class="relative">
-                  <textarea id="dxField" name="diagnosis" rows="4" required maxlength="4000"
+                  <textarea name="diagnosis" rows="4" required maxlength="4000"
                             class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3 js-counted"
-                            data-max="4000"
-                            placeholder="Write the final diagnosis... (clear, concise, student-friendly)">{{ old('diagnosis') }}</textarea>
+                            data-max="4000" placeholder="Write the final diagnosis...">{{ old('diagnosis') }}</textarea>
                   <div class="absolute right-2 bottom-1.5 text-[11px] text-slate-400">
                     <span class="js-count">0</span>/4000
                   </div>
@@ -233,14 +227,12 @@
                 @error('diagnosis') <div class="text-sm text-rose-600 mt-1">• {{ $message }}</div> @enderror
               </div>
 
-              {{-- Note --}}
               <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1">Note (optional)</label>
                 <div class="relative">
-                  <textarea id="noteField" name="final_note" rows="3" maxlength="4000"
+                  <textarea name="final_note" rows="3" maxlength="4000"
                             class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3 js-counted"
-                            data-max="4000"
-                            placeholder="Additional context for internal use...">{{ old('final_note') }}</textarea>
+                            data-max="4000" placeholder="Additional context for internal use...">{{ old('final_note') }}</textarea>
                   <div class="absolute right-2 bottom-1.5 text-[11px] text-slate-400">
                     <span class="js-count">0</span>/4000
                   </div>
@@ -268,46 +260,43 @@
       </div>
     </div>
 
-    {{-- Footer --}}
-    <div class="px-6 pb-6 border-t border-slate-200 flex items-center justify-between">
-      <span></span>
+    <div class="px-6 pb-6 border-t border-slate-200 flex items-center justify-end">
       <div class="text-xs text-slate-500">
-        Status: <span class="font-medium">{{ $statusLabel }}</span>
+        Status: <span class="font-medium">{{ $appointment->status === 'no_show' ? 'No Show' : ucfirst($appointment->status) }}</span>
       </div>
     </div>
   </div>
 </div>
-@endsection
 
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
   function askAction(e, form, action){
     e.preventDefault();
+    const btn = form.querySelector('button[type="submit"]');
+    const disable = (v)=>{ if(btn){ btn.disabled=v; btn.classList.toggle('opacity-50',v);} };
     const cfg = {
-      confirm:{ title:'Confirm appointment?', text:'Are you sure?',                    icon:'question', confirmButtonColor:'#2563eb' },
-      done:   { title:'Mark as Completed?',   text:'This will mark as completed.',     icon:'success',  confirmButtonColor:'#059669' },
-      no_show:{ title:'Mark as No-Show?',     text:'Student did not attend this slot.',icon:'warning',  confirmButtonColor:'#dc2626' }
-    }[action] || { title:'Proceed?', text:'', icon:'info', confirmButtonColor:'#2563eb' };
+      confirm:{ title:'Confirm Appointment?', text:'Are you sure?', icon:'question', confirmButtonColor:'#2563eb' },
+      done:{ title:'Mark as Completed?', text:'This will mark the appointment as done.', icon:'success', confirmButtonColor:'#059669' },
+      no_show:{ title:'Mark as No-Show?', text:'This marks the student as a no-show.', icon:'warning', confirmButtonColor:'#dc2626' }
+    }[action] || { title:'Are you sure?', text:'', icon:'info', confirmButtonColor:'#2563eb' };
 
     Swal.fire({
       title: cfg.title, text: cfg.text, icon: cfg.icon,
-      showCancelButton: true, confirmButtonText: 'Yes, proceed', cancelButtonText: 'Cancel',
+      showCancelButton: true, confirmButtonText: 'Yes, proceed', cancelButtonText: 'No, keep it',
       confirmButtonColor: cfg.confirmButtonColor, cancelButtonColor: '#6b7280',
       reverseButtons: true, focusCancel: true
-    }).then(res => { if (res.isConfirmed) form.submit(); });
+    }).then(res => { if (res.isConfirmed){ disable(true); form.submit(); } });
     return false;
   }
 
-  // live counters
+  // counters
   (function () {
     const fields = document.querySelectorAll('.js-counted');
     const clamp = (s, m) => s.length > m ? s.slice(0, m) : s;
-
     fields.forEach(el => {
       const max = parseInt(el.dataset.max || el.getAttribute('maxlength') || '4000', 10);
       const counter = el.parentElement.querySelector('.js-count');
-
       const paint = () => {
         if (el.value.length > max) el.value = clamp(el.value, max);
         if (counter) counter.textContent = el.value.length;
@@ -316,7 +305,6 @@
         const ratio = el.value.length / max;
         wrap.style.color = ratio >= 1 ? '#dc2626' : (ratio >= .9 ? '#f59e0b' : '#94a3b8');
       };
-
       paint();
       el.addEventListener('input', paint);
       el.addEventListener('paste', () => requestAnimationFrame(paint));
@@ -328,3 +316,4 @@
   @endif
 </script>
 @endpush
+@endsection
