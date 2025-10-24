@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Crypt;
+
 
 class ChatbotSessionController extends Controller
 {
@@ -135,6 +137,67 @@ class ChatbotSessionController extends Controller
             'c.name as counselor_name',
         ])
         ->first();
+        // ---- High-risk trigger resolver (id + decrypted text + time)
+$highRisk = (object)['id'=>null, 'text'=>null, 'sent_at'=>null];
+
+if (!empty($session->high_risk_chat_id)) {
+    // Preferred: use persisted pointer
+    $row = \DB::table('chats')
+        ->where('id', $session->high_risk_chat_id)
+        ->where('chat_session_id', $session->id)
+        ->first(['id','message','sent_at','sender']);
+
+    if ($row && ($row->sender ?? 'user') === 'user') {
+        try { $plain = Crypt::decryptString($row->message); }
+        catch (\Throwable $e) { $plain = '[Unreadable]'; }
+
+        $highRisk->id      = $row->id;
+        $highRisk->text    = $plain;
+        $highRisk->sent_at = $row->sent_at;
+    }
+}
+
+if (!$highRisk->id) {
+    // Fallback: scan earliest user message that qualifies as HIGH (same patterns as ChatController)
+    $msgs = \DB::table('chats')
+        ->where('chat_session_id', $session->id)
+        ->where('sender', 'user')
+        ->orderBy('sent_at')
+        ->get(['id','message','sent_at']);
+
+    // Reuse the same patterns you maintain in ChatController::evaluateRiskLevel
+    $high = [
+        '\bi\s*(?:wanna|want(?:\s*to)?|plan|planning|intend|need|will|gonna)\s*(?:to\s*)?(?:die|kill myself|end (?:it|my life)|commit suicide|unalive|disappear|be gone)\b',
+        '\b(?:kill myself|commit suicide|end it all|no reason to live|life is pointless)\b',
+        '\bi\s*(?:wish|want)\s*(?:i\s*)?(?:were|was)\s*dead\b',
+        '\bi\s*(?:can\'?t|cannot)\s*go on\b',
+        '\b(?:jump off|overdose|poison myself|hang myself)\b',
+        '\b(?:self[- ]harm|cut(?:ting)? myself)\b',
+        '\bgusto na ko mamatay\b',
+        '\bmaghikog\b',
+        '\bwala na koy paglaum\b',
+        '\bgusto ko mawala\b',
+        '\btapuson na nako tanan\b',
+    ];
+
+    foreach ($msgs as $m) {
+        try { $plain = Crypt::decryptString($m->message); }
+        catch (\Throwable $e) { continue; } // skip unreadables
+
+        $t = mb_strtolower(preg_replace('/\s+/u', ' ', $plain ?? ''));
+        $matched = false;
+        foreach ($high as $p) { if (preg_match('/'.$p.'/iu', $t)) { $matched = true; break; } }
+        if ($matched) {
+            $highRisk->id      = $m->id;
+            $highRisk->text    = $plain;
+            $highRisk->sent_at = $m->sent_at;
+            break;
+        }
+    }
+}
+
+// Pass to the view
+
 
         return view('admin.chatbot_sessions.show', [
             'session'                    => $session,
@@ -143,6 +206,7 @@ class ChatbotSessionController extends Controller
             'hasCompletedForThisSession' => $hasCompletedForThisSession,
             'wasExpedited'               => $wasExpedited,
             'nextAppt'                   => $nextAppt,
+             'highRisk'                   => $highRisk,   // <-- add this
         ]);
     }
 

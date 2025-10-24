@@ -111,12 +111,6 @@ class CounselorController extends Controller
             'email'      => ['required', 'email', 'max:255', 'unique:tbl_counselors,email'],
             'phone'      => ['nullable', 'string', 'max:30'],
             'is_active'  => ['required', 'boolean'],
-
-            // availability[]: [{ weekday, start_time, end_time }]
-            'availability'              => ['array'],
-            'availability.*.weekday'    => ['required', 'integer', 'between:0,6'],
-            'availability.*.start_time' => ['required', 'date_format:H:i'],
-            'availability.*.end_time'   => ['required', 'date_format:H:i', 'after:availability.*.start_time'],
         ];
     }
 

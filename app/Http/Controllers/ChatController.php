@@ -230,7 +230,6 @@ class ChatController extends Controller
     {
         $rules = [
             // Core “big six”
-            'happy|joy|glad|content|cheerful|pleased|relieved|grateful|gratitude|satisfied|proud|optimistic|hopeful|excited|thrilled|ecstatic|elated|euphoric|stoked|nalipay' => 'happy',
             'sad|down|blue|unhappy|depress(ed)?|depression|cry(ing)?|tearful|heartbroken|grief|grieving|mourning|nagool' => 'sad',
             'angry|mad|furious|rage|irate|annoy(ed)?|irritat(ed)?|frustrat(ed)?|resentful|outraged|cross' => 'angry',
             'anxious|anxiety|panic|panicky|afraid|fear|scared|terrified|nervous|uneasy|worried|apprehensive|kulba' => 'anxious',
@@ -378,6 +377,40 @@ $analysisText = $display !== '' ? $display : $text;
         'sent_at'         => now(),
         'idempotency_key' => $validated['_idem'],
     ]);
+
+    // Persist the FIRST high-risk trigger (id + excerpt + timestamp)
+try {
+    if ($msgRisk === 'high') {
+        // Reload fresh session columns if needed
+        $session->refresh();
+
+        $needsStamp = empty($session->high_risk_chat_id); // first trigger only
+        if ($needsStamp) {
+            $excerpt = \Illuminate\Support\Str::limit($text, 180, '…');
+
+            // Dynamic sessions table compatibility (if columns exist)
+            $sessTable = app(\App\Http\Controllers\Admin\ChatbotSessionController::class)->sessionsTable();
+            if ($sessTable && \Illuminate\Support\Facades\Schema::hasColumn($sessTable, 'high_risk_chat_id')) {
+                \Illuminate\Support\Facades\DB::table($sessTable)
+                    ->where('id', $session->id)
+                    ->update([
+                        'high_risk_chat_id' => $userMsg->id,
+                        'high_risk_excerpt' => $excerpt,
+                        'high_risk_at'      => now(),
+                        'updated_at'        => now(),
+                    ]);
+            } else {
+                // Fallback if the model has fillables/attributes
+                $session->high_risk_chat_id = $userMsg->id;
+                $session->high_risk_excerpt = $excerpt;
+                $session->high_risk_at      = now();
+                $session->save();
+            }
+        }
+    }
+} catch (\Throwable $e) {
+    // non-fatal
+}
 
     $count = Chat::where('chat_session_id', $sessionId)->where('sender', 'user')->count();
     if ($count === 1) {
