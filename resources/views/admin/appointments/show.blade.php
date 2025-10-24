@@ -1,5 +1,5 @@
 {{-- resources/views/Counselor_Interface/appointments/show.blade.php --}}
-@extends('layouts.counselor')
+@extends('layouts.admin')
 @section('title', 'Appointment #'.$appointment->id)
 @section('page_title', 'Appointment Details')
 
@@ -76,7 +76,7 @@
         </div>
 
         <div class="flex items-center gap-3">
-          <a href="{{ route('counselor.appointments.index') }}"
+          <a href="{{ route('admin.appointments.index') }}"
              class="inline-flex items-center gap-2 h-10 px-3.5 rounded-xl bg-white ring-1 ring-slate-200 text-slate-700 hover:bg-slate-50">
             Back
           </a>
