@@ -1,13 +1,14 @@
 @extends('layouts.app')
 
 @section('title', 'Lumi - Appointment')
-@section('page_title', 'Appointment')  
+@section('page_title', 'Appointment')
 
 @section('content')
-<div class="mx-auto max-w-6xl px-4 pt-0 pb-8 animate-fadeup">
+<div class="mx-auto max-w-6xl px-4 pt-0 pb-10 animate-fadeup">
+
   {{-- Banner --}}
-  <div class="mb-2">
-    <div class="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 p-6 shadow-sm mb-4">
+  <div class="mb-6">
+    <div class="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 p-6 shadow-sm">
       <div class="flex items-center justify-between gap-4">
         <div class="flex items-center gap-3">
           <div class="rounded-2xl bg-white/15 p-2 text-white">
@@ -17,12 +18,12 @@
           </div>
           <div class="-mt-0.5">
             <h1 class="text-lg font-semibold tracking-tight text-white">Book Appointment</h1>
-            <p class="text-white/80 text-sm">Pick a date and time. A counselor will be assigned by the admin.</p>
+            <p class="text-white/85 text-sm">Pick a date and time. A counselor will be assigned by the admin.</p>
           </div>
         </div>
 
         <a href="{{ route('appointment.history') }}"
-           class="self-center inline-flex items-center gap-2 rounded-xl bg-white/20 px-4 py-2.5 text-sm font-medium text-white backdrop-blur transition hover:bg-white/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60">
+           class="inline-flex items-center gap-2 rounded-xl bg-white/20 px-4 py-2.5 text-sm font-medium text-white backdrop-blur transition hover:bg-white/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60">
           View Appointment
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
@@ -32,13 +33,13 @@
     </div>
   </div>
 
-  {{-- ======= Two-column layout ======= --}}
-  <div class="grid grid-cols-1 gap-6 md:grid-cols-5">
-    {{-- Left: How it works --}}
-    <aside class="md:col-span-2">
-      <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-        <h3 class="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">How it works</h3>
-        <ol class="space-y-3">
+  {{-- Page grid --}}
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-5">
+    {{-- Left column --}}
+    <aside class="lg:col-span-2">
+      <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <h3 class="mb-4 text-sm font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">How it works</h3>
+        <ol class="space-y-4">
           <li class="flex items-start gap-3">
             <span class="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">1</span>
             <div>
@@ -60,20 +61,9 @@
               <p class="text-sm text-gray-500 dark:text-gray-400">You’ll see “Awaiting assignment” until a counselor is set.</p>
             </div>
           </li>
-          {{-- STEP 3: Available counselors for the chosen time --}}
-<div id="cWrap" class="space-y-2 mt-4 hidden">
-  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-    Available counselors for <span id="cWhen" class="font-semibold"></span>
-  </label>
-  <div id="cList" class="flex flex-wrap gap-2"></div>
-  <p id="cEmpty" class="text-xs text-gray-500 dark:text-gray-400 hidden">
-    No counselors are free at the selected time.
-  </p>
-</div>
-
         </ol>
 
-        <div class="mt-5 rounded-xl bg-gray-50 p-4 text-sm text-gray-600 dark:bg-gray-900 dark:text-gray-300">
+        <div class="mt-6 rounded-xl bg-gray-50 p-4 text-sm text-gray-600 dark:bg-gray-900 dark:text-gray-300">
           <p class="mb-2 font-medium">Tips</p>
           <ul class="list-inside list-disc space-y-1">
             <li>Arrive 15 minutes early.</li>
@@ -84,66 +74,161 @@
       </div>
     </aside>
 
-    {{-- Right: Form --}}
-    <section class="md:col-span-3">
-      <div class="rounded-2xl border border-gray-200 bg-white/80 p-8 shadow-lg backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/70">
+    {{-- Right column --}}
+    <section class="lg:col-span-3">
+      <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-lg dark:border-gray-700 dark:bg-gray-800/70">
 
-        <h2 class="mb-6 text-lg font-semibold text-gray-900 dark:text-gray-100">Fill Appointment Details</h2>
+        <h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">Fill Appointment Details</h2>
 
         <style>
-          #dateInput{ background-image:none!important; padding-right:3rem; }
-          #dateInput::-webkit-calendar-picker-indicator{ display:none!important; }
-          .hidden-error{ display: none !important; }
+          @keyframes slideUp { from {opacity:0; transform:translateY(10px) scale(.98);} to {opacity:1; transform:none;} }
+          .modal-enter-active { animation:slideUp .2s ease-out; }
+          .hidden-error{ display:none !important; }
+
+          /* Step headers */
+          .step-row{ display:flex; align-items:flex-start; justify-content:space-between; gap:.75rem; }
+          .step-left{ display:flex; align-items:flex-start; gap:.75rem; }
+          .step-badge{
+            display:inline-flex; align-items:center; justify-content:center;
+            width:1.5rem; height:1.5rem; border-radius:9999px;
+            background:#4f46e5; color:#fff; font-weight:700; font-size:.75rem; margin-top:.125rem;
+          }
+          .step-title{ font-weight:600; line-height:1.2; }
+          .step-hint{ margin-top:.125rem; font-size:.75rem; color:rgb(100 116 139); }
+          .dark .step-hint{ color:rgb(156 163 175); }
+
+          /* Required asterisk */
+          .req{ margin-left:.25rem; font-weight:700; color:#dc2626; }
+
+          /* Time pills */
           .time-pill{
-            @apply inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm
-            text-gray-700 transition hover:border-indigo-300 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-900
-            dark:text-gray-200 dark:hover:border-indigo-500 dark:hover:bg-gray-800;
+            display:inline-flex; align-items:center; justify-content:center;
+            border-radius:.75rem; border:1px solid rgb(229 231 235);
+            background:#fff; padding:.5rem .75rem; font-size:.875rem;
+            color:rgb(55 65 81); transition:background-color .15s, border-color .15s, color .15s, transform .08s;
           }
-          .time-pill--selected{
-            @apply border-indigo-600 bg-indigo-600 text-white dark:border-indigo-500 dark:bg-indigo-500;
+          .time-pill:hover{ border-color:rgb(165 180 252); background:rgb(239 246 255); transform:scale(1.02); }
+          .time-pill:focus-visible{ outline:2px solid #6366f1; outline-offset:2px; }
+          .time-pill--selected{ border-color:#4f46e5; background:#4f46e5; color:#fff; }
+
+          /* Fully booked (disabled) */
+          .time-pill--full{
+            background: linear-gradient(180deg, #ffffff 0%, #ffe4e6 100%);
+            border-color: #ef4444 !important;
+            color: #b91c1c;
+            cursor: not-allowed;
+            box-shadow: inset 0 0 0 1px rgba(239,68,68,.15);
           }
-          .slot-cap { @apply inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] bg-slate-100 text-slate-700 ml-2; }
-          .swal2-html-container.lumi{ text-align:left !important; }
-          .swal2-html-container.lumi .lumi-divider{ margin:.5rem 0 1rem; }
+          .time-pill--full:hover,.time-pill--full:active{ background: linear-gradient(180deg, #ffffff 0%, #ffe4e6 100%); }
+          .time-pill--full:focus-visible{ outline: none; }
+          .time-pill--full:disabled{ opacity:.85; }
+
+          /* Dark mode for full */
+          .dark .time-pill--full{
+            background: linear-gradient(180deg, #111827 0%, #1f2937 100%);
+            border-color: #f87171 !important;
+            color: #fecaca;
+            box-shadow: inset 0 0 0 1px rgba(248,113,113,.2);
+          }
+          .dark .time-pill--full:hover,.dark .time-pill--full:active{ background: linear-gradient(180deg, #111827 0%, #1f2937 100%); }
+          .dark .time-pill--full:focus-visible{ outline: none; }
+
+          /* Date chip */
+          .date-chip{
+            position:relative; overflow:hidden;
+            display:inline-flex; align-items:center; gap:.5rem;
+            padding:.625rem .875rem; border-radius:.75rem;
+            border:1px solid #e5e7eb; background:#fff; color:#111827;
+            box-shadow:0 1px 1px rgba(0,0,0,.04);
+            cursor:pointer; user-select:none;
+            transition:transform .08s ease, border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+          }
+          .date-chip:hover{ border-color:#a5b4fc; box-shadow:0 2px 6px rgba(99,102,241,.15); background:#f8fafc; transform:scale(1.02); }
+          .date-chip:focus-visible{ outline:2px solid #6366f1; outline-offset:2px; }
+          .date-chip--empty{ color:#374151; border-color:#e5e7eb; background:#ffffff; }
+          .date-chip--filled{ border-color:#a5b4fc; box-shadow:0 0 0 2px rgba(99,102,241,.3); background:#eef2ff; color:#111827; }
+
+          /* Ripple */
+          .chip-ripple{ position:absolute; inset:0; border-radius:inherit; overflow:hidden; pointer-events:none; }
+          .chip-ripple::after{
+            content:""; position:absolute; left:50%; top:50%;
+            width:0; height:0; border-radius:9999px; background:rgba(99,102,241,.18);
+            transform:translate(-50%,-50%); animation:chipWave .4s ease-out forwards;
+          }
+          @keyframes chipWave{ from{width:0;height:0;opacity:.35;} to{width:220%;height:220%;opacity:0;} }
+
+          /* Calendar (white theme) */
+          .cal-card button:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+          .cal-day{
+            width:2.5rem; height:2.5rem; border-radius:9999px; display:flex; align-items:center; justify-content:center;
+            font-weight:600; background:#fff; color:#0f172a; border:1px solid #e5e7eb; transition:.15s ease;
+          }
+          .cal-day:hover{ background:#eef2ff; border-color:#c7d2fe; }
+          .cal-day--selected{ box-shadow:0 0 0 2px rgba(99,102,241,.35); background:#4f46e5; color:#fff; border-color:#4f46e5; }
+          .cal-day--disabled{ background:#f3f4f6; color:#9ca3af; border-color:#e5e7eb; cursor:not-allowed; }
+          .cal-day--disabled:hover{ background:#f3f4f6; }
+
+          /* Modal transitions */
+          @media (prefers-reduced-motion:no-preference){
+            .modal-enter{ opacity:0; transform:translateY(8px) scale(.98); }
+            .modal-enter-active{ opacity:1; transform:none; transition:all .18s ease-out; }
+            .backdrop-enter{ opacity:0; }
+            .backdrop-enter-active{ opacity:.6; transition:opacity .18s ease-out; }
+          }
         </style>
 
-        <form method="POST" action="{{ route('appointment.store') }}" class="space-y-7">
+        <form method="POST" action="{{ route('appointment.store') }}" class="space-y-8">
           @csrf
 
-          {{-- STEP 1: Date --}}
-          <div class="space-y-2">
-            <label for="dateInput" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              1. Choose a preferred date *
-            </label>
-            <div class="relative">
-              <input id="dateInput" type="date" name="date" value="{{ old('date') }}"
-                     min="{{ now()->toDateString() }}" class="input-ui pr-12">
-              <button type="button" id="openDateBtn"
-                      class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                      aria-label="Open calendar">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M7 2a1 1 0 0 0-1 1v1H5a3 3 0 0 0-3 3v11a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3h-1V3a1 1 0 1 0-2 0v1H8V3a1 1 0 0 0-1-1ZM5 9h14v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V9Z"/>
-                </svg>
+          {{-- STEP 1: DATE --}}
+          <div class="space-y-3">
+            <div class="step-row">
+              <div class="step-left">
+                <span class="step-badge">1</span>
+                <div>
+                  <p class="step-title">
+                    Choose a preferred date
+                    <span id="reqDate" class="req">*</span>
+                  </p>
+                  <p class="step-hint">Pick a weekday. Weekends are closed (Mon–Fri only).</p>
+                </div>
+              </div>
+            </div>
+
+            {{-- Clickable date chip --}}
+            <div>
+              <button id="dateChip" type="button" class="date-chip date-chip--empty" aria-haspopup="dialog" aria-expanded="false">
+                <img src="{{ asset('images/icons/calendar.png') }}" alt="" class="h-4 w-4 opacity-90" width="16" height="16" decoding="async" loading="lazy" />
+                <span id="dateChipText">Choose date</span>
               </button>
             </div>
+
+            <input type="hidden" name="date" id="dateInput" value="{{ old('date') }}">
             @error('date')<p data-error-for="date" class="text-sm text-red-600">{{ $message }}</p>@enderror
           </div>
 
-          {{-- STEP 2: Time (modern grid + hidden select) --}}
+          {{-- STEP 2: TIME --}}
           <div class="space-y-2">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              2. Select a time *
-            </label>
+            <div class="step-row">
+              <div class="step-left">
+                <span class="step-badge">2</span>
+                <div>
+                  <p class="step-title">
+                    Select a time
+                    <span id="reqTime" class="req">*</span>
+                  </p>
+                  <p id="timeHint" class="step-hint">Times will appear after you choose a date.</p>
+                </div>
+              </div>
+            </div>
 
-            {{-- Hidden native select (submission + a11y) --}}
+            {{-- Hidden select for submission --}}
             <select id="timeSelect" name="time" class="sr-only" aria-hidden="true" tabindex="-1">
               <option value="">available slots</option>
             </select>
 
-            {{-- Pretty grid --}}
             <div id="timeGrid" class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4"></div>
 
-            {{-- Loading / empty states --}}
             <div id="timeLoading" class="hidden text-xs text-gray-500 dark:text-gray-400">Loading available times…</div>
             <p id="timeEmpty" class="text-xs text-gray-500 dark:text-gray-400 hidden">No available slots.</p>
 
@@ -164,8 +249,9 @@
           {{-- ACTIONS --}}
           <div class="flex items-center gap-4 pt-2">
             <a href="{{ route('chat.index') }}" class="btn-secondary">Cancel</a>
-            <button type="submit"
-                    class="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md transition hover:shadow-lg hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <button id="submitBtn" type="submit"
+                    class="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md transition hover:shadow-lg hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                    disabled>
               Confirm Appointment
             </button>
           </div>
@@ -175,133 +261,127 @@
   </div>
 </div>
 
+{{-- ===== Modal: Calendar ===== --}}
+<div id="calModal" class="fixed inset-0 z-50 hidden" aria-hidden="true">
+  <div id="calBackdrop" class="absolute inset-0 bg-black/60 backdrop-blur-[2px]"></div>
+  <div class="absolute inset-0 flex items-center justify-center px-4 py-8">
+    <div id="calDialog"
+         class="w-full max-w-lg rounded-2xl bg-white shadow-xl ring-1 ring-black/5 dark:bg-gray-900 dark:text-gray-100 p-5 modal-enter"
+         role="dialog" aria-modal="true" aria-labelledby="calTitle" tabindex="-1">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h2 id="calTitle" class="text-base font-semibold">Choose a date</h2>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Weekends are disabled. Use arrow keys; Enter to select. Esc to cancel.</p>
+        </div>
+        <button id="calCloseBtn" aria-label="Close"
+                class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:bg-gray-800">
+          ✕
+        </button>
+      </div>
+
+      <div class="mt-4 rounded-2xl cal-card bg-white text-slate-800 p-4 ring-1 ring-gray-200">
+        <div class="flex items-center justify-between">
+          <button id="calPrev" type="button" class="px-3 py-1 rounded-lg text-slate-600 hover:bg-gray-100 hover:text-slate-800 ring-1 ring-gray-200">‹</button>
+          <div class="text-center">
+            <div id="calMonth" class="tracking-widest text-indigo-600 font-bold text-lg"></div>
+          </div>
+          <button id="calNext" type="button" class="px-3 py-1 rounded-lg text-slate-600 hover:bg-gray-100 hover:text-slate-800 ring-1 ring-gray-200">›</button>
+        </div>
+
+        <div class="mt-4 grid grid-cols-7 text-center font-semibold text-slate-500">
+          <div>S</div><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div>
+        </div>
+
+        <div id="calGrid" class="mt-2 grid grid-cols-7 gap-2 select-none"></div>
+
+        <p class="mt-3 text-xs text-slate-500">Tip: Click a weekday to pick a date. Weekends are closed.</p>
+      </div>
+
+      <div class="mt-5 flex items-center justify-end gap-3">
+        <button id="calCancel" class="rounded-xl px-4 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50 dark:text-gray-200 dark:ring-gray-700 dark:hover:bg-gray-800">Cancel</button>
+        <button id="calUse" class="rounded-xl px-4 py-2 text-sm font-semibold bg-indigo-600 text-white hover:brightness-110 disabled:opacity-50" disabled>Use this date</button>
+      </div>
+    </div>
+  </div>
+</div>
+@endsection
+
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-  const dateInput    = document.getElementById('dateInput');
-  const openDateBtn  = document.getElementById('openDateBtn');
+  /* -------------------- Elements -------------------- */
+  const formEl     = document.querySelector('form[action="{{ route('appointment.store') }}"]');
+  const dateInput  = document.getElementById('dateInput');
+  const dateChip   = document.getElementById('dateChip');
+  const dateChipText = document.getElementById('dateChipText');
+  const reqDate    = document.getElementById('reqDate');
+  const reqTime    = document.getElementById('reqTime');
+  const submitBtn  = document.getElementById('submitBtn');
 
-  const timeSel      = document.getElementById('timeSelect');
-  const timeGrid     = document.getElementById('timeGrid');
-  const loadingEl    = document.getElementById('timeLoading');
-  const emptyEl      = document.getElementById('timeEmpty');
+  const timeSel    = document.getElementById('timeSelect');
+  const timeGrid   = document.getElementById('timeGrid');
+  const timeHint   = document.getElementById('timeHint');
+  const loadingEl  = document.getElementById('timeLoading');
+  const emptyEl    = document.getElementById('timeEmpty');
 
-  const consentCbx   = document.getElementById('consent-cbx');
-  const formEl       = document.querySelector('form[action="{{ route('appointment.store') }}"]');
+  const slotsBase  = @json(route('appointment.slots'));
 
-  // Counselors panel
-  const cWrap  = document.getElementById('cWrap');
-  const cWhen  = document.getElementById('cWhen');
-  const cList  = document.getElementById('cList');
-  const cEmpty = document.getElementById('cEmpty');
-
-  // Endpoints
-  const slotsBase       = @json(route('appointment.slots'));
-  const counselorsBase  = @json(route('appointment.counselors'));
-
-  // --- helpers ----------------------------------------------------------
+  /* -------------------- Error helpers -------------------- */
   const clearAllErrors = () => {
     document.querySelectorAll('[data-error-for]').forEach(el => el.classList.add('hidden-error'));
     if (window.Swal && Swal.isVisible()) Swal.close();
   };
-  if (formEl) {
-    formEl.addEventListener('input',   clearAllErrors, { capture: true });
-    formEl.addEventListener('change',  clearAllErrors, { capture: true });
-    formEl.addEventListener('focusin', clearAllErrors, { capture: true });
+  if (formEl){
+    formEl.addEventListener('input', clearAllErrors, {capture:true});
+    formEl.addEventListener('change', clearAllErrors, {capture:true});
+    formEl.addEventListener('focusin', clearAllErrors, {capture:true});
   }
-
-  const toast = (title, icon='info', timer=2500) =>
-    Swal.fire({ toast:true, position:'top-end', showConfirmButton:false, timer, icon, title });
-
-  const showFormErrors = (title, items) => {
-    const html = '<div class="lumi-divider"></div><ul style="text-align:left;margin:0;padding-left:1rem;line-height:1.6">'
-      + items.map(i => `<li>• ${i}</li>`).join('') + '</ul>';
-    Swal.fire({
-      icon: 'error', title, html, confirmButtonText: 'OK', buttonsStyling: false,
-      didRender: () => Swal.getConfirmButton().classList.add('btn-pill','btn-primary')
-    });
-  };
-
-  const successMsg = @json(session('status'));
-  const pageErrors = @json($errors->all());
-  if (successMsg) Swal.fire({ icon:'success', title:'Success', text:successMsg, timer:2200, showConfirmButton:false });
-  if (Array.isArray(pageErrors) && pageErrors.length) showFormErrors('Please fix the following', pageErrors);
-
   const hideError = (field) => {
     document.querySelectorAll(`[data-error-for="${field}"]`).forEach(el => el.classList.add('hidden-error'));
     if (window.Swal && Swal.isVisible()) Swal.close();
   };
 
-  openDateBtn.addEventListener('click', () => {
-    if (dateInput.showPicker) { dateInput.showPicker(); }
-    else { dateInput.focus(); dateInput.click(); }
-  });
-
-  function clearCounselors() {
-    cWrap.classList.add('hidden');
-    cList.innerHTML = '';
-    cEmpty.classList.add('hidden');
-    cWhen.textContent = '';
+  /* -------------------- Submit enable/disable -------------------- */
+  function updateSubmitState(){
+    const hasDate = !!dateInput.value;
+    const hasTime = !!timeSel.value;
+    submitBtn.disabled = !(hasDate && hasTime);
   }
 
-  async function loadCounselors(dateStr, hhmm) {
-    clearCounselors();
-    if (!dateStr || !hhmm) return;
-
-    // heading context
-    const whenFmt = new Date(`${dateStr}T${hhmm}:00`);
-    cWhen.textContent = whenFmt.toLocaleString(undefined, {
-      month:'short', day:'2-digit', year:'numeric', hour:'numeric', minute:'2-digit'
-    });
-
-    try {
-      const url = `${counselorsBase}?date=${encodeURIComponent(dateStr)}&time=${encodeURIComponent(hhmm)}`;
-      const res = await fetch(url, { headers:{'X-Requested-With':'XMLHttpRequest'} });
-      if (!res.ok) throw new Error('HTTP '+res.status);
-      const data = await res.json();
-
-      cWrap.classList.remove('hidden');
-      if (!Array.isArray(data.counselors) || data.counselors.length === 0) {
-        cEmpty.classList.remove('hidden');
-        return;
-      }
-
-      cList.innerHTML = '';
-      data.counselors.forEach(c => {
-        const chip = document.createElement('div');
-        chip.className = 'c-chip';
-        chip.innerHTML = `
-          <span class="font-medium">${c.name}</span>
-          <a class="underline text-gray-500 hover:text-gray-700" href="mailto:${c.email}">${c.email}</a>
-        `;
-        cList.appendChild(chip);
-      });
-    } catch (e) {
-      console.error('Load counselors failed', e);
-      cWrap.classList.remove('hidden');
-      cEmpty.textContent = 'Unable to load counselors.';
-      cEmpty.classList.remove('hidden');
+  /* -------------------- Date chip helpers -------------------- */
+  function updateDateChip(){
+    if (!dateInput.value){
+      dateChip.classList.add('date-chip--empty');
+      dateChip.classList.remove('date-chip--filled');
+      dateChipText.textContent = 'Choose date';
+      reqDate.classList.remove('hidden'); // show red asterisk
+      return;
     }
+    const d = new Date(dateInput.value + 'T00:00:00');
+    const label = new Intl.DateTimeFormat(undefined,{
+      weekday:'short', month:'short', day:'2-digit', year:'numeric'
+    }).format(d);
+    dateChipText.textContent = label;
+    dateChip.classList.remove('date-chip--empty');
+    dateChip.classList.add('date-chip--filled');
+    reqDate.classList.add('hidden'); // hide asterisk when valid
   }
 
+  /* -------------------- Time slots -------------------- */
   function clearTimeUI(placeholder='available slots'){
     timeSel.innerHTML = '';
-    const opt = document.createElement('option');
-    opt.value = '';
-    opt.textContent = placeholder;
+    const opt = document.createElement('option'); opt.value=''; opt.textContent = placeholder;
     timeSel.appendChild(opt);
     timeGrid.innerHTML = '';
     emptyEl.classList.add('hidden');
-    clearCounselors(); // reset counselor panel
+    updateSubmitState();
   }
 
   function buildTimeGridFromSelect(){
     timeGrid.innerHTML = '';
     const current = timeSel.value;
-
     [...timeSel.options].forEach(o => {
       if (!o.value) return;
-
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'time-pill';
@@ -312,96 +392,237 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (available === 0) {
         btn.disabled = true;
-        btn.classList.add('opacity-50', 'cursor-not-allowed');
-        btn.title = 'Fully booked';
+        btn.classList.add('time-pill--full');
+        btn.setAttribute('aria-disabled', 'true');
+        btn.title = 'Fully booked — please select another time';
       }
 
       if (o.value === current) btn.classList.add('time-pill--selected');
 
-      // ⬇️ choose time => fetch counselors
       btn.addEventListener('click', () => {
         if (btn.disabled) return;
         timeSel.value = o.value;
         hideError('time');
         document.querySelectorAll('.time-pill--selected').forEach(el => el.classList.remove('time-pill--selected'));
         btn.classList.add('time-pill--selected');
-        loadCounselors(dateInput.value, o.value);
+        reqTime.classList.add('hidden');
+        updateSubmitState();
       });
 
       timeGrid.appendChild(btn);
     });
-
-    if (timeGrid.children.length === 0) {
-      emptyEl.classList.remove('hidden');
-    }
+    if (!timeGrid.children.length) emptyEl.classList.remove('hidden');
   }
 
   function isWeekend(dateStr){
-    const d = new Date(dateStr + 'T00:00:00');
-    const day = d.getDay(); // 0 Sun .. 6 Sat
-    return day === 0 || day === 6;
+    const d = new Date(dateStr + 'T00:00:00'); const w = d.getDay();
+    return w === 0 || w === 6;
   }
 
   async function loadSlots(){
     const date = dateInput.value;
-    if (!date){ clearTimeUI('pick a date'); return; }
+    if (!date){ clearTimeUI('pick a date'); if (timeHint) timeHint.textContent='Times will appear after you choose a date.'; return; }
     if (isWeekend(date)){
       clearTimeUI('closed (Mon–Fri only)');
-      toast('Appointments are available Mon–Fri only.','info');
+      if (timeHint) timeHint.textContent = 'Closed on weekends. Please choose a weekday.';
       return;
     }
 
     loadingEl.classList.remove('hidden');
     clearTimeUI('loading…');
+    if (timeHint) timeHint.textContent = 'Fetching available time slots…';
 
     try{
       const url = `${slotsBase}?date=${encodeURIComponent(date)}`;
       const res = await fetch(url, { headers:{'X-Requested-With':'XMLHttpRequest'} });
-      if(!res.ok){ clearTimeUI('unable to load'); toast('Failed to load time slots.','error'); return; }
+      if(!res.ok){ clearTimeUI('unable to load'); if (timeHint) timeHint.textContent='Unable to load slots. Try again.'; return; }
 
       const data = await res.json();
 
       timeSel.innerHTML = '';
-      const ph = document.createElement('option');
-      ph.value = '';
-      ph.textContent = 'Choose a preferred time *';
-      timeSel.appendChild(ph);
+      const ph = document.createElement('option'); ph.value=''; ph.textContent='Choose a preferred time *'; timeSel.appendChild(ph);
 
-      if (Array.isArray(data.slots) && data.slots.length) {
+      if (Array.isArray(data.slots) && data.slots.length){
         data.slots.forEach(s => {
           const opt = document.createElement('option');
           opt.value = s.value;
-          opt.textContent = s.label + (s.available > 1 ? `  (${s.available} slots)` : (s.available === 1 ? '  (1 slot)' : '  (full)'));
+          opt.textContent = s.label + (s.available > 1 ? `  (${s.available} slots)` : (s.available === 1 ? '  (1 slot)' : '  (No Slots Available)'));
           opt.dataset.available = String(s.available);
           timeSel.appendChild(opt);
         });
-        buildTimeGridFromSelect();
+        if (timeHint) timeHint.textContent = 'Choose one available time slot.';
       } else {
         const reason = data.reason || '';
-        const message = data.message || '';
-        if      (reason === 'weekend')          clearTimeUI('Mon–Fri only');
-        else if (reason === 'no_availability')  clearTimeUI('no availability on this day');
-        else if (reason === 'fully_booked')     clearTimeUI('fully booked');
-        else if (reason === 'no_slots')         clearTimeUI('no working-hour slots');
-        else                                    clearTimeUI('no available slots');
-        if (message) toast(message,'info');
-        buildTimeGridFromSelect();
+        if      (reason==='weekend')         clearTimeUI('Mon–Fri only');
+        else if (reason==='no_availability') clearTimeUI('no availability on this day');
+        else if (reason==='fully_booked')    clearTimeUI('fully booked');
+        else if (reason==='no_slots')        clearTimeUI('no working-hour slots');
+        else                                  clearTimeUI('no available slots');
+        if (timeHint) timeHint.textContent = 'No slots for this date. Try another day.';
       }
-    } catch(e){
+
+      buildTimeGridFromSelect();
+    }catch(e){
       console.error('Failed to load slots', e);
       clearTimeUI('unable to load');
-      toast('Something went wrong while loading slots.','error');
-      buildTimeGridFromSelect();
-    } finally{
+      if (timeHint) timeHint.textContent='Something went wrong while loading slots.';
+    }finally{
       loadingEl.classList.add('hidden');
+      updateSubmitState();
     }
   }
 
-  dateInput.addEventListener('change', () => { hideError('date'); loadSlots(); });
-  consentCbx.addEventListener('change', () => hideError('consent'));
+  /* -------------------- Modal calendar -------------------- */
+  const modal     = document.getElementById('calModal');
+  const dialog    = document.getElementById('calDialog');
+  const backdrop  = document.getElementById('calBackdrop');
+  const btnClose  = document.getElementById('calCloseBtn');
+  const btnCancel = document.getElementById('calCancel');
+  const btnUse    = document.getElementById('calUse');
 
-  if (dateInput.value) loadSlots();
+  const calGrid   = document.getElementById('calGrid');
+  const calMonth  = document.getElementById('calMonth');
+  const calPrev   = document.getElementById('calPrev');
+  const calNext   = document.getElementById('calNext');
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  let view = new Date(); view.setDate(1);
+  let pickup = null;
+  let lastFocus = null;
+
+  function fmtYMD(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+  function sameYM(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth(); }
+
+  function openModal(){
+    lastFocus = document.activeElement;
+    dateChip.setAttribute('aria-expanded', 'true');
+    modal.classList.remove('hidden');
+    requestAnimationFrame(()=>{ backdrop.classList.add('backdrop-enter-active'); dialog.classList.add('modal-enter-active'); });
+    document.body.style.overflow = 'hidden';
+    dialog.focus();
+  }
+  function closeModal(){
+    modal.classList.add('hidden');
+    document.body.style.overflow = '';
+    btnUse.disabled = true;
+    dateChip.setAttribute('aria-expanded', 'false');
+    if (lastFocus) lastFocus.focus();
+  }
+
+  function renderCal(){
+    const hdr = new Intl.DateTimeFormat('en', {month:'long', year:'numeric'}).format(view);
+    calMonth.textContent = hdr.toUpperCase();
+    calPrev.disabled = sameYM(view, today);
+    calPrev.classList.toggle('opacity-40', calPrev.disabled);
+    if (calPrev.disabled) calPrev.classList.remove('hover:bg-gray-100');
+
+    calGrid.innerHTML = '';
+    const firstDow = new Date(view.getFullYear(), view.getMonth(), 1).getDay();
+    const daysInMonth = new Date(view.getFullYear(), view.getMonth()+1, 0).getDate();
+
+    for (let i=0;i<firstDow;i++) calGrid.appendChild(document.createElement('div'));
+
+    for (let day=1; day<=daysInMonth; day++){
+      const cell = new Date(view.getFullYear(), view.getMonth(), day); cell.setHours(0,0,0,0);
+      const weekend = cell.getDay()===0 || cell.getDay()===6;
+      const past = cell < today;
+      const disabled = weekend || past;
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = String(day);
+
+      if (disabled) {
+        btn.className = 'cal-day cal-day--disabled';
+        btn.disabled = true;
+        if (weekend) { btn.title = 'Closed (Sat–Sun)'; btn.setAttribute('aria-disabled', 'true'); }
+        else { btn.title = 'Past date'; }
+      } else {
+        btn.className = 'cal-day';
+        btn.addEventListener('click', () => { pickup = cell; highlightSelection(); btnUse.disabled = false; });
+        btn.addEventListener('keydown', (e) => { if (e.key==='Enter' || e.key===' ') { e.preventDefault(); pickup = cell; highlightSelection(); btnUse.disabled = false; }});
+      }
+      calGrid.appendChild(btn);
+    }
+    highlightSelection();
+  }
+
+  function highlightSelection(){
+    const buttons = calGrid.querySelectorAll('button.cal-day');
+    buttons.forEach(b => b.classList.remove('cal-day--selected'));
+    if (!pickup) return;
+    if (pickup.getFullYear()===view.getFullYear() && pickup.getMonth()===view.getMonth()){
+      const d = pickup.getDate();
+      buttons.forEach(b => {
+        if (b.textContent === String(d) && !b.classList.contains('cal-day--disabled')) {
+          b.classList.add('cal-day--selected');
+        }
+      });
+    }
+  }
+
+  function applyPicked(){
+    if (!pickup) return;
+    dateInput.value = fmtYMD(pickup);
+    hideError('date');
+    updateDateChip();
+    reqTime.classList.remove('hidden'); // user still needs to pick time
+    if (timeHint) timeHint.textContent = 'Times are based on your selected date.';
+    loadSlots();
+    updateSubmitState();
+  }
+
+  // Date chip opens modal with ripple
+  dateChip.addEventListener('click', () => {
+    // ripple node
+    const r = document.createElement('span');
+    r.className = 'chip-ripple';
+    dateChip.appendChild(r);
+    r.addEventListener('animationend', () => r.remove());
+
+    if (dateInput.value){
+      const d = new Date(dateInput.value + 'T00:00:00');
+      pickup = d; view = new Date(d.getFullYear(), d.getMonth(), 1);
+    } else {
+      let d = new Date(); d.setHours(0,0,0,0);
+      const dow = d.getDay(); if (dow===0) d.setDate(d.getDate()+1); if (dow===6) d.setDate(d.getDate()+2);
+      pickup = d; view = new Date(d.getFullYear(), d.getMonth(), 1);
+    }
+    renderCal();
+    btnUse.disabled = false;
+    openModal();
+  });
+
+  [btnClose, btnCancel, backdrop].forEach(el => el.addEventListener('click', closeModal));
+  btnUse.addEventListener('click', () => { applyPicked(); closeModal(); });
+
+  calPrev.addEventListener('click', ()=>{ if (!calPrev.disabled){ view.setMonth(view.getMonth()-1); renderCal(); }});
+  calNext.addEventListener('click', ()=>{ view.setMonth(view.getMonth()+1); renderCal(); });
+
+  modal.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); closeModal(); }
+    if (e.key === 'Tab') {
+      const focusables = dialog.querySelectorAll('button, [tabindex]:not([tabindex="-1"])');
+      const list = Array.from(focusables).filter(n => !n.hasAttribute('disabled'));
+      if (!list.length) return;
+      const first = list[0], last = list[list.length-1];
+      if (e.shiftKey && document.activeElement === first){ last.focus(); e.preventDefault(); }
+      else if (!e.shiftKey && document.activeElement === last){ first.focus(); e.preventDefault(); }
+    }
+  });
+
+  /* -------------------- Initial states -------------------- */
+  reqDate.classList.add('req');
+  reqTime.classList.add('req');
+
+  if (dateInput.value){
+    updateDateChip();
+    loadSlots();
+  } else {
+    updateDateChip(); // shows "Choose date"
+    if (timeHint) timeHint.textContent = 'Times will appear after you choose a date.';
+  }
+  updateSubmitState();
 });
 </script>
 @endpush
-@endsection
