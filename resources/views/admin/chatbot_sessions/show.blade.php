@@ -63,22 +63,25 @@
     }
   } catch (\Throwable $e) { $msgCount=null; $minsDur=null; $lastAct=$session->updated_at; }
 
-  // ---- Latest high-risk trigger message
-  $lastHighRisk = $highRisk
-    ?? optional(
-         $session->chatMessages()
-           ->where(function($q){
-             $q->where('is_high_risk', 1)
-               ->orWhere('risk_level', 'high');
-           })
-           ->latest('sent_at')
-           ->latest('created_at')
-           ->first()
-       );
-  if ($lastHighRisk) {
-    $hrId   = $lastHighRisk->id ?? null;
-    $hrText = trim($lastHighRisk->text ?? $lastHighRisk->message ?? '');
-    $hrTime = \Carbon\Carbon::parse($lastHighRisk->sent_at ?? $lastHighRisk->created_at ?? now());
+  // ---- Latest high-risk trigger message (ONLY if controller passed it and not locked)
+  // Controller now passes: $highRisk (object|null) and $sensitiveLocked (bool)
+  if (!($sensitiveLocked ?? false)) {
+    $lastHighRisk = $highRisk
+      ?? optional(
+           $session->chatMessages()
+             ->where(function($q){
+               $q->where('is_high_risk', 1)
+                 ->orWhere('risk_level', 'high');
+             })
+             ->latest('sent_at')
+             ->latest('created_at')
+             ->first()
+         );
+    if ($lastHighRisk) {
+      $hrId   = $lastHighRisk->id ?? null;
+      $hrText = trim($lastHighRisk->text ?? $lastHighRisk->message ?? '');
+      $hrTime = \Carbon\Carbon::parse($lastHighRisk->sent_at ?? $lastHighRisk->created_at ?? now());
+    }
   }
 @endphp
 
@@ -124,7 +127,7 @@
     </div>
   </section>
 
-  {{-- ===== GRID: Top KPIs + Right Risk (row-span), then High-risk + Emotions, then Session Counts ===== --}}
+  {{-- ===== GRID: KPIs etc. ===== --}}
   <div class="kpi-grid grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
 
     {{-- TOP: Session ID --}}
@@ -180,7 +183,7 @@
       @endif
     </div>
 
-    {{-- RIGHT: Risk (row-span = same visual height as #2 + #3) --}}
+    {{-- RIGHT: Risk (row-span) --}}
     <div class="risk-card card flex flex-col rounded-2xl bg-white ring-1 ring-slate-200 p-3 md:p-4 lg:col-span-3 lg:row-span-2">
 
       {{-- header --}}
@@ -217,12 +220,10 @@
         </div>
       </div>
 
-      {{-- helper --}}
       <p class="risk-hint mt-1">
         Use <kbd class="kbd">L</kbd>, <kbd class="kbd">M</kbd>, or <kbd class="kbd">H</kbd>. Downgrades require a brief reason.
       </p>
 
-      {{-- last change --}}
       @if(isset($lastRisk))
         <div class="risk-last mt-2">
           <div class="flex items-start justify-between gap-3">
@@ -246,23 +247,15 @@
         </div>
       @endif
 
-      {{-- --- Risk level (no numeric) + top emotions --- --}}
       @php
-        // map to a % only to position the pin; no number shown
         $scoreFromLevel = match($riskStr){
           'high','high-risk','high_risk' => 90,
           'moderate'                     => 60,
           'low'                          => 20,
           default                        => 0,
         };
-        $riskScore = max(0, min(100, (int)($session->risk_score ?? $scoreFromLevel))); // used only for the pin
+        $riskScore = max(0, min(100, (int)($session->risk_score ?? $scoreFromLevel)));
         $riskLevel = ucfirst($riskStr ?: '—');
-        $lvlPill = match ($riskStr) {
-          'high','high-risk','high_risk' => 'bg-rose-100 text-rose-700 ring-rose-200',
-          'moderate'                     => 'bg-amber-100 text-amber-800 ring-amber-200',
-          'low'                          => 'bg-emerald-100 text-emerald-800 ring-emerald-200',
-          default                        => 'bg-slate-100 text-slate-700 ring-slate-200',
-        };
       @endphp
 
       <div class="mt-3 risk-extras">
@@ -285,34 +278,70 @@
     </div>
 
     {{-- ROW 2: High-risk + Emotions --}}
-    @if(!empty($hrText))
-      <div class="hr-card card rounded-2xl border border-rose-200 bg-rose-50 p-3 md:p-4 lg:col-span-6">
-        <div class="flex items-start gap-2.5">
-          <img src="{{ asset('images/icons/alert.png') }}" alt="High risk" class="h-5 w-5 mt-0.5 object-contain" />
-          <div class="flex-1">
-            <div class="font-semibold text-rose-700">High-risk trigger (student message)</div>
-            <div class="mt-0.5 text-xs text-rose-800/80">
-              {{ $hrTime->format('F d, Y • h:i A') }}
-              @if($hrId)<span class="ml-1 opacity-70">• Chat ID: #{{ $hrId }}</span>@endif
+    @php $lockIcon = asset('images/icons/security.png'); @endphp
+    <div id="hrWrap" class="relative lg:col-span-6">
+      <div id="hrCard"
+           class="hr-card card rounded-2xl border p-3 md:p-4 {{ ($sensitiveLocked ?? false) ? 'border-slate-200 bg-white' : 'border-rose-200 bg-rose-50' }}">
+        @if(!($sensitiveLocked ?? false))
+          @if(!empty($highRisk?->text ?? $hrText ?? null))
+            <div class="flex items-start gap-2.5">
+              <img src="{{ asset('images/icons/alert.png') }}" alt="High risk" class="h-5 w-5 mt-0.5 object-contain" />
+              <div class="flex-1">
+                <div class="font-semibold text-rose-700">High-risk trigger (student message)</div>
+                <div class="mt-0.5 text-xs text-rose-800/80">
+                  {{ isset($highRisk) ? \Carbon\Carbon::parse($highRisk->sent_at)->format('F d, Y • h:i A')
+                                      : (isset($hrTime) ? $hrTime->format('F d, Y • h:i A') : '') }}
+                  @if(isset($highRisk->id) && $highRisk->id) <span class="ml-1 opacity-70">• Chat ID: #{{ $highRisk->id }}</span>@endif
+                </div>
+                <blockquote class="mt-1.5 rounded-xl bg-white ring-1 ring-rose-100 p-3 text-sm text-slate-800">“{{ $highRisk->text ?? $hrText ?? '' }}”</blockquote>
+              </div>
             </div>
-            <blockquote class="mt-1.5 rounded-xl bg-white ring-1 ring-rose-100 p-3 text-sm text-slate-800">“{{ $hrText }}”</blockquote>
+          @elseif(in_array($riskStr, ['high','high-risk','high_risk'], true))
+            <div class="flex items-start gap-2.5">
+              <svg class="h-5 w-5 mt-0.5 text-amber-700" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1010 10A10.012 10.012 0 0012 2zm1 15h-2v-2h2zm0-4h-2V7h2z"/></svg>
+              <div class="flex-1 text-amber-900">
+                Session is HIGH-risk, but the exact trigger message wasn’t located.
+              </div>
+            </div>
+          @else
+            <div class="text-sm text-slate-600">No recent high-risk trigger.</div>
+          @endif
+        @else
+
+        {{-- LOCKED view --}}
+        <div class="relative overflow-hidden">
+          <div class="h-28 md:h-32 rounded-xl bg-slate-100 ring-1 ring-slate-200 flex items-center justify-center">
+            <div class="text-center">
+              <div class="text-sm font-semibold text-slate-600">High-risk trigger (student message)</div>
+              <div class="mt-1 text-xs text-slate-500">Extra verification required</div>
+            </div>
           </div>
+
+          {{-- blur layer --}}
+          <div class="absolute inset-0 pointer-events-none"
+              style="backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);"></div>
+
+          {{-- unlock button (smaller icon + helper) --}}
+          <button id="hrUnlock" type="button"
+                  class="absolute inset-0 flex flex-col items-center justify-center gap-2 focus-visible:outline-none group"
+                  aria-label="Unlock high-risk message"
+                  title="Click to unlock">
+            <img src="{{ asset('images/icons/security.png') }}"
+                alt="Security"
+                class="h-12 w-12 md:h-14 md:w-14 opacity-90 drop-shadow-sm transition-transform duration-150 group-hover:scale-105">
+
+            <span class="inline-flex items-center gap-1 rounded-full bg-white/80 text-slate-700 ring-1 ring-slate-200
+                        px-2.5 py-1 text-xs font-medium shadow-sm backdrop-blur-sm">
+              Click to unlock the student's high-risk trigger message
+              <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path d="M10.293 3.293a1 1 0 0 1 1.414 0l5 5a1 1 0 0 1-1.414 1.414L11 6.414V16a1 1 0 1 1-2 0V6.414L4.707 9.707A1 1 0 1 1 3.293 8.293l5-5Z"/>
+              </svg>
+            </span>
+          </button>
         </div>
+        @endif
       </div>
-    @elseif(in_array($riskStr, ['high','high-risk','high_risk'], true))
-      <div class="hr-card card rounded-2xl border border-amber-200 bg-amber-50 p-3 md:p-4 lg:col-span-6">
-        <div class="flex items-start gap-2.5">
-          <svg class="h-5 w-5 mt-0.5 text-amber-700" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1010 10A10.012 10.012 0 0012 2zm1 15h-2v-2h2zm0-4h-2V7h2z"/></svg>
-          <div class="flex-1 text-amber-900">
-            Session is HIGH-risk, but the exact trigger message wasn’t located.
-          </div>
-        </div>
-      </div>
-    @else
-      <div class="hr-card card rounded-2xl bg-white ring-1 ring-slate-200 p-4 lg:col-span-6">
-        <div class="text-sm text-slate-600">No recent high-risk trigger.</div>
-      </div>
-    @endif
+    </div>
 
     <div class="emo-card card rounded-2xl bg-white ring-1 ring-slate-200 p-4 lg:col-span-3">
       <h3 class="text-sm font-semibold text-slate-900">Emotions Mentioned</h3>
@@ -332,7 +361,7 @@
       </div>
     </div>
 
-    {{-- ROW 3: Session Counts (no Actions column) --}}
+    {{-- ROW 3: Session Counts --}}
     <div class="lg:col-span-9 space-y-4">
       <div id="sessionPrintable" class="space-y-4">
         <div class="card relative rounded-2xl shadow-sm ring-1 ring-slate-200/70 overflow-hidden">
@@ -408,6 +437,42 @@
     <div class="mt-4 text-right">
       <button type="button" id="riskHistoryClose2" class="rounded-lg bg-slate-100 px-4 py-2 text-slate-700 hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">Close</button>
     </div>
+  </div>
+</div>
+
+{{-- ===== Sensitive unlock modal (second 2FA) ===== --}}
+<div id="hrModal" class="fixed inset-0 z-[75] hidden flex items-center justify-center" aria-hidden="true" role="dialog" aria-labelledby="hrTitle">
+  <div class="absolute inset-0 bg-slate-900/45 backdrop-blur-[2px] opacity-0 transition-opacity duration-200"></div>
+  <div class="relative z-[76] w-full max-w-md origin-center scale-95 opacity-0 translate-y-2
+              rounded-2xl bg-white shadow-xl ring-1 ring-slate-200 p-5 md:p-6 transition-all duration-200">
+    <div class="flex items-center justify-between">
+      <h3 id="hrTitle" class="text-base font-semibold text-slate-900">Confirm again to view sensitive content</h3>
+      <button type="button" id="hrClose" class="rounded-lg p-1 text-slate-500 hover:bg-slate-100">✕</button>
+    </div>
+    <form id="hrForm" class="mt-4 space-y-4" novalidate>
+      @csrf
+      <div>
+        <label for="hrPassword" class="block text-sm font-medium text-slate-700">Password</label>
+        <div class="mt-1 relative">
+          <input id="hrPassword" name="password" type="password" autocomplete="current-password" required
+                 class="block w-full rounded-xl border border-slate-300 px-3 py-2.5 pr-10 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/60">
+          <button type="button" id="hrToggle" class="absolute inset-y-0 right-0 my-1 mr-1 rounded-lg px-2 hover:bg-slate-100">
+            <img id="hrEye" src="{{ asset('images/icons/eye.png') }}" class="h-5 w-5 opacity-80" alt="Show">
+          </button>
+        </div>
+        <p id="hrErr" class="mt-2 text-sm text-rose-600 hidden"></p>
+      </div>
+      <div class="flex items-center justify-end gap-2">
+        <button type="button" id="hrCancel" class="rounded-xl px-3 py-2 ring-1 ring-slate-200 hover:bg-slate-50">Cancel</button>
+        <button type="submit" id="hrSubmit" class="inline-flex items-center gap-2 rounded-xl px-3 py-2 bg-indigo-600 text-white hover:bg-indigo-700">
+          <svg id="hrSpin" class="hidden h-4 w-4 animate-spin" viewBox="0 0 24 24">
+            <circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none"/>
+            <path class="opacity-80" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v3a5 5 0 0 0-5 5H4z"/>
+          </svg>
+          <span id="hrLabel">Confirm</span>
+        </button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -583,34 +648,147 @@
     document.getElementById('riskHistoryClose')?.addEventListener('click', () => modal?.classList.add('hidden'));
     document.getElementById('riskHistoryClose2')?.addEventListener('click', () => modal?.classList.add('hidden'));
   })();
+
+  // ====== High-risk sensitive unlock (second 2FA) ======
+  (() => {
+    const locked    = @json($sensitiveLocked ?? false);
+    if (!locked) return;
+
+    const hrUnlock  = document.getElementById('hrUnlock');
+    const card      = document.getElementById('hrCard');
+
+    const modal = document.getElementById('hrModal');
+    const overlay = modal?.firstElementChild;
+    const panel   = modal?.lastElementChild;
+    const close   = document.getElementById('hrClose');
+    const cancel  = document.getElementById('hrCancel');
+    const form    = document.getElementById('hrForm');
+    const pwd     = document.getElementById('hrPassword');
+    const err     = document.getElementById('hrErr');
+    const submit  = document.getElementById('hrSubmit');
+    const spin    = document.getElementById('hrSpin');
+    const label   = document.getElementById('hrLabel');
+    const eyeBtn  = document.getElementById('hrToggle');
+    const eyeImg  = document.getElementById('hrEye');
+    const eyeOn   = @json(asset('images/icons/eye.png'));
+    const eyeOff  = @json(asset('images/icons/eye-off.png'));
+
+    const epConfirm   = @json(route('admin.reauth.confirm_sensitive'));
+    const epSensitive = @json(route('admin.chatbot-sessions.sensitive', $session->id));
+
+    function open(){
+      modal.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        overlay.classList.remove('opacity-0');
+        panel.classList.remove('opacity-0','scale-95','translate-y-2');
+        setTimeout(() => pwd?.focus(), 10);
+      });
+    }
+    function closeModal(){
+      overlay.classList.add('opacity-0');
+      panel.classList.add('opacity-0','scale-95','translate-y-2');
+      setTimeout(() => {
+        modal.classList.add('hidden');
+        err?.classList.add('hidden'); err.textContent = '';
+        pwd.value = '';
+      }, 180);
+    }
+    function busy(b){
+      submit.disabled = b;
+      if (b){ spin.classList.remove('hidden'); label.textContent = 'Verifying…'; }
+      else  { spin.classList.add('hidden');     label.textContent = 'Confirm'; }
+    }
+    function shake(el){ el.classList.remove('ux-shake'); void el.offsetWidth; el.classList.add('ux-shake'); }
+
+    eyeBtn?.addEventListener('click', () => {
+      const isPw = pwd.getAttribute('type') === 'password';
+      pwd.setAttribute('type', isPw ? 'text' : 'password');
+      eyeImg.src = isPw ? eyeOff : eyeOn; eyeImg.alt = isPw ? 'Hide' : 'Show';
+    });
+
+    hrUnlock?.addEventListener('click', open);
+    close?.addEventListener('click', closeModal);
+    cancel?.addEventListener('click', closeModal);
+    overlay?.addEventListener('click', closeModal);
+
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      err.classList.add('hidden'); err.textContent = '';
+      busy(true);
+
+      try {
+        // step 1: sensitive confirm
+        const fd = new FormData(form);
+        let res  = await fetch(epConfirm, { method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body: fd });
+        let data = await res.json().catch(()=> ({}));
+        if (!res.ok || !data?.ok) {
+          const msg = data?.message || 'Verification failed.';
+          if (window.Swal) Swal.fire({ icon:'error', title:'Try again', text: msg });
+          else { err.textContent = msg; err.classList.remove('hidden'); shake(panel); }
+          busy(false); return;
+        }
+
+        // step 2: fetch sensitive text
+        res  = await fetch(epSensitive, { headers: { 'X-Requested-With': 'XMLHttpRequest' }});
+        data = await res.json().catch(()=> ({}));
+        if (!res.ok || !data?.ok) {
+          const msg = data?.message || 'Could not load sensitive details.';
+          if (window.Swal) Swal.fire({ icon:'error', title:'Error', text: msg });
+          else { err.textContent = msg; err.classList.remove('hidden'); shake(panel); }
+          busy(false); return;
+        }
+
+        // step 3: render into card
+        card.innerHTML = `
+          <div class="flex items-start gap-2.5">
+            <img src="{{ asset('images/icons/alert.png') }}" alt="High risk" class="h-5 w-5 mt-0.5 object-contain" />
+            <div class="flex-1">
+              <div class="font-semibold text-rose-700">High-risk trigger (student message)</div>
+              <div class="mt-0.5 text-xs text-rose-800/80">
+                ${data.at ? data.at : ''}
+                ${data.id ? `<span class="ml-1 opacity-70">• Chat ID: #${data.id}</span>` : ''}
+              </div>
+              <blockquote class="mt-1.5 rounded-xl bg-white ring-1 ring-rose-100 p-3 text-sm text-slate-800">“${(data.txt || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}”</blockquote>
+            </div>
+          </div>
+        `;
+        card.classList.remove('border-slate-200','bg-white');
+        card.classList.add('border-rose-200','bg-rose-50');
+
+        if (window.Swal) {
+          Swal.fire({ toast:true, position:'top-end', icon:'success', title:'Unlocked', timer:900, showConfirmButton:false });
+        }
+        closeModal();
+      } catch (ex) {
+        const msg = ex?.message || String(ex) || 'Something went wrong.';
+        if (window.Swal) Swal.fire({ icon:'error', title:'Error', text: msg });
+        else { err.textContent = msg; err.classList.remove('hidden'); shake(panel); }
+      } finally {
+        busy(false);
+      }
+    });
+  })();
 </script>
 
 {{-- ===== Styles ===== --}}
 <style>
+  #hrUnlock span { transform: translateY(2px); opacity: .95; }
+  #hrUnlock:hover span { transform: translateY(0); opacity: 1; transition: all .15s ease; }
   /* Generic card shadow */
   .card{ box-shadow:0 1px 2px rgba(15,23,42,.06),0 1px 1px rgba(15,23,42,.04); }
 
-  /* Do NOT equalize row heights (prevents other KPIs from being affected) */
-  .kpi-grid{ /* no grid-auto-rows:1fr here */ }
+  /* Do NOT equalize row heights */
+  .kpi-grid{ }
 
-  /* Only the first three KPI tiles */
   .kpi{ min-height:132px; }
-
-  /* Row-2 tiles on the left */
   .hr-card{  min-height:150px; }
   .emo-card{ min-height:150px; }
 
-  /* ------- RISK KPI HEIGHT ONLY ------- */
-  :root{  --risk-kpi-height-lg: 292px; }  /* change this number to whatever you want */
-
+  :root{  --risk-kpi-height-lg: 292px; }
   @media (min-width:1024px){
-    /* target ONLY the Risk card inside the KPI grid */
-    .kpi-grid > .risk-card{
-      height: var(--risk-kpi-height-lg);
-    }
-  /* ------------------------------------ */
+    .kpi-grid > .risk-card{ height: var(--risk-kpi-height-lg); }
+  }
 
-  /* Segmented control */
   .seg{ display:flex; flex-wrap:wrap; background:#fff; }
   .seg-btn{
     flex:1 1 33.333%;
@@ -627,7 +805,6 @@
 
   .note-1line{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-  /* Print */
   @media print{
     body *{ visibility:hidden !important; }
     #sessionPrintable, #sessionPrintable *{ visibility:visible !important; }
@@ -637,96 +814,61 @@
     @page{ size:A4; margin:12mm 14mm; }
   }
 
-  /* --- Risk card internals (scoped) --- */
-.risk-card .risk-hint{
-  font-size:11px; line-height:1.25rem; color:rgb(100 116 139);
-  white-space:normal;            /* allow wrapping */
-  overflow:visible;              /* show full text */
-  text-overflow:clip;            /* no ellipsis */
-}
-.risk-card .risk-hint .kbd{
-  padding:0.125rem 0.25rem; border:1px solid rgb(203 213 225); border-radius:0.25rem;
-}
+  .risk-card .risk-hint{
+    font-size:11px; line-height:1.25rem; color:rgb(100 116 139);
+    white-space:normal; overflow:visible; text-overflow:clip;
+  }
+  .risk-card .risk-hint .kbd{
+    padding:0.125rem 0.25rem; border:1px solid rgb(203 213 225); border-radius:0.25rem;
+  }
 
-.risk-card .risk-last{
-  border:1px solid rgb(226 232 240);
-  background:rgb(248 250 252);
-  border-radius:0.75rem;
-  padding:0.5rem;                /* a little tighter */
-}
-.risk-card .risk-last .risk-meta{
-  margin-top:0.125rem;
-  font-size:10.5px;              /* slightly smaller */
-  color:rgb(100 116 139);
-}
-.risk-card .risk-last .risk-note{
-  margin-top:0.25rem;            /* tighter */
-  font-size:12px;
-  color:rgb(71 85 105);
-}
+  .risk-card .risk-last{
+    border:1px solid rgb(226 232 240);
+    background:rgb(248 250 252);
+    border-radius:0.75rem;
+    padding:0.5rem;
+  }
+  .risk-card .risk-last .risk-meta{
+    margin-top:0.125rem; font-size:10.5px; color:rgb(100 116 139);
+  }
+  .risk-card .risk-last .risk-note{
+    margin-top:0.25rem; font-size:12px; color:rgb(71 85 105);
+  }
+  .risk-card .line-clamp-2{
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+  }
 
+  .risk-card .risk-extras{ margin-top:.25rem; }
+  .risk-card .risk-meter-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:.25rem; }
+  .risk-card .risk-meter-title{ font-size:12px; font-weight:600; color:rgb(15 23 42); }
+  .risk-card .risk-meter-bar{
+    position:relative; height:8px; border-radius:9999px; overflow:hidden;
+    background:linear-gradient(90deg,
+      rgba(16,185,129,.22) 0% , rgba(16,185,129,.22) 33.33%,
+      rgba(245,158,11,.22) 33.34% , rgba(245,158,11,.22) 66.66%,
+      rgba(244,63,94,.22) 66.67% , rgba(244,63,94,.22) 100%
+    );
+  }
+  .risk-card .risk-meter-pin{
+    position:absolute; top:50%; transform:translate(-50%, -50%);
+    width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent;
+    border-top:8px solid rgb(51 65 85);
+    filter:drop-shadow(0 1px 1px rgba(0,0,0,.15));
+  }
+  .risk-card .risk-meter-legend{
+    display:flex; justify-content:space-between; margin-top:.25rem;
+    font-size:10.5px; color:rgb(100 116 139);
+  }
+  .risk-card .risk-meter-legend .leg-low::before,
+  .risk-card .risk-meter-legend .leg-mod::before,
+  .risk-card .risk-meter-legend .leg-high::before{
+    content:''; display:inline-block; width:.5rem; height:.5rem; border-radius:9999px; margin-right:.35rem; vertical-align:middle;
+  }
+  .risk-card .risk-meter-legend .leg-low::before{ background:rgb(16 185 129); }
+  .risk-card .risk-meter-legend .leg-mod::before{ background:rgb(245 158 11); }
+  .risk-card .risk-meter-legend .leg-high::before{ background:rgb(244 63 94); }
 
-/* 2-line clamp utility (scoped-safe) */
-.risk-card .line-clamp-2{
-  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
-}
-
-/* ---------- Risk card extras (meter + top emotions) ---------- */
-.risk-card .risk-extras{ margin-top:.25rem; }
-.risk-card .risk-meter{ }
-.risk-card .risk-meter-head{
-  display:flex; align-items:center; justify-content:space-between;
-  margin-bottom:.25rem;
-}
-.risk-card .risk-meter-title{
-  font-size:12px; font-weight:600; color:rgb(15 23 42);
-}
-.risk-card .risk-meter-value{
-  font-size:12px; font-weight:600; color:rgb(71 85 105);
-}
-
-.risk-card .risk-meter-bar{
-  position:relative;
-  height:8px; border-radius:9999px; overflow:hidden;
-  background:linear-gradient(90deg,
-    rgba(16,185,129,.22) 0% , rgba(16,185,129,.22) 33.33%,
-    rgba(245,158,11,.22) 33.34% , rgba(245,158,11,.22) 66.66%,
-    rgba(244,63,94,.22) 66.67% , rgba(244,63,94,.22) 100%
-  );
-}
-.risk-card .risk-meter-seg{ display:none; } /* background handled by gradient */
-
-.risk-card .risk-meter-pin{
-  position:absolute; top:50%; transform:translate(-50%, -50%);
-  width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent;
-  border-top:8px solid rgb(51 65 85); /* slate-700 */
-  filter:drop-shadow(0 1px 1px rgba(0,0,0,.15));
-}
-
-.risk-card .risk-meter-legend{
-  display:flex; justify-content:space-between; margin-top:.25rem;
-  font-size:10.5px; color:rgb(100 116 139);
-}
-.risk-card .risk-meter-legend .leg-low::before,
-.risk-card .risk-meter-legend .leg-mod::before,
-.risk-card .risk-meter-legend .leg-high::before{
-  content:''; display:inline-block; width:.5rem; height:.5rem; border-radius:9999px; margin-right:.35rem; vertical-align:middle;
-}
-.risk-card .risk-meter-legend .leg-low::before{ background:rgb(16 185 129); }   /* emerald-500 */
-.risk-card .risk-meter-legend .leg-mod::before{ background:rgb(245 158 11); }   /* amber-500  */
-.risk-card .risk-meter-legend .leg-high::before{ background:rgb(244 63 94); }   /* rose-500   */
-
-.risk-card .risk-topemo{ margin-top:.5rem; }
-.risk-card .risk-topemo-title{
-  font-size:12px; font-weight:600; color:rgb(15 23 42); margin-bottom:.25rem;
-}
-.risk-card .risk-topemo-wrap{ display:flex; flex-wrap:wrap; gap:.35rem; }
-.risk-card .risk-chip{
-  display:inline-flex; align-items:center;
-  font-size:11px; font-weight:600; padding:.15rem .45rem;
-  color:rgb(67 56 202); background:rgba(99,102,241,.08);
-  border:1px solid rgba(99,102,241,.22); border-radius:9999px;
-}
-.risk-card .risk-topemo-empty{ font-size:12px; color:rgb(100 116 139); }
+  @keyframes shake { 0%,100%{transform:translateX(0)}15%{transform:translateX(-6px)}30%{transform:translateX(5px)}45%{transform:translateX(-4px)}60%{transform:translateX(3px)}75%{transform:translateX(-2px)}90%{transform:translateX(1px)}}
+  .ux-shake{animation:shake .35s ease-in-out}
 </style>
 @endsection

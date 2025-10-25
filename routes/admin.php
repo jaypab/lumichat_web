@@ -53,6 +53,18 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
         [StudentController::class, 'exportShowPdf']
     )->whereNumber('student')->name('students.show.export.pdf');
 
+    // ✅ Re-auth confirm endpoint (AJAX)
+    Route::post('reauth/confirm', [\App\Http\Controllers\Admin\ChatbotSessionController::class, 'confirmPasswordAjax'])
+        ->name('reauth.confirm');
+
+    // ✅ Second-factor just for sensitive items (shorter window)
+    Route::post('reauth/confirm-sensitive', [\App\Http\Controllers\Admin\ChatbotSessionController::class, 'confirmSensitiveAjax'])
+        ->name('reauth.confirm_sensitive');
+
+    // ✅ After second-factor success, fetch sensitive details (AJAX)
+    Route::get('chatbot-sessions/{session}/sensitive', [\App\Http\Controllers\Admin\ChatbotSessionController::class, 'sensitiveDetails'])
+        ->whereNumber('session')->name('chatbot-sessions.sensitive');
+
     /* CHATBOT SESSIONS (custom routes first) */
     Route::get('chatbot-sessions/export/pdf',
         [ChatbotSessionController::class, 'exportPdf']

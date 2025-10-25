@@ -16,6 +16,8 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Crypt;
 use App\Models\ChatbotSessionRiskLog;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 
 
 class ChatbotSessionController extends Controller
@@ -24,6 +26,12 @@ class ChatbotSessionController extends Controller
     private const PER_PAGE     = 10;
     private const DATE_KEY_ALL = 'all';
     private const DATE_KEYS    = ['all', '7d', '30d', 'month'];
+    
+    /** Minutes the global page re-auth stays valid (already added earlier) */
+    private const REAUTH_WINDOW_MINUTES = 10;
+
+    /** Minutes the *sensitive* re-auth stays valid (shorter) */
+    private const REAUTH_SENSITIVE_MINUTES = 5;
 
     /** Minutes per slot */
     private const STEP_MINUTES = 30;
@@ -37,6 +45,148 @@ class ChatbotSessionController extends Controller
     public function __construct(
         protected ChatbotSessionRepositoryInterface $sessions
     ) {}
+
+    private function sensitiveOkay(): bool
+    {
+        $until = session('admin.reauth_sensitive_until');
+        if (!$until) return false;
+        try { return now()->lt(\Carbon\Carbon::parse($until)); } catch (\Throwable) { return false; }
+    }
+
+    private function reauthOkay(): bool
+    {
+        $until = session('admin.reauth_until');
+        if (!$until) return false;
+        try {
+            return now()->lt(\Carbon\Carbon::parse($until));
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+    
+    public function confirmSensitiveAjax(Request $request): JsonResponse
+    {
+        $request->validate(['password' => ['required','string']]);
+
+        $user = auth()->user();
+        if (!$user) return response()->json(['message' => 'Unauthenticated.'], 401);
+
+        // throttle by user+IP
+        $key = sprintf('reauth:sensitive:%s:%s', (string)$user->id, (string)$request->ip());
+        if (RateLimiter::tooManyAttempts($key, 5)) {
+            $sec = RateLimiter::availableIn($key);
+            return response()->json(['message' => "Too many attempts. Try again in {$sec}s."], 429);
+        }
+
+        if (!Hash::check((string)$request->input('password'), $user->password)) {
+            RateLimiter::hit($key, 60);
+            return response()->json(['message' => 'Invalid credentials.'], 422);
+        }
+
+        RateLimiter::clear($key);
+        session(['admin.reauth_sensitive_until' => now()->addMinutes(self::REAUTH_SENSITIVE_MINUTES)]);
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * GET sensitive High-risk details (after sensitive re-auth)
+     */
+    public function sensitiveDetails(int $session): JsonResponse
+    {
+        if (!$this->sensitiveOkay()) {
+            return response()->json(['message' => 'Second verification required.'], 403);
+        }
+
+        $row = $this->sessions->findWithOrderedChats($session);
+        if (!$row) return response()->json(['message' => 'Not found.'], 404);
+
+        // Build only the sensitive piece (same logic you use in show(), but isolated)
+        $highRisk = (object)['id'=>null, 'text'=>null, 'sent_at'=>null];
+
+        if (!empty($row->high_risk_chat_id)) {
+            $m = \DB::table('chats')
+                ->where('id', $row->high_risk_chat_id)
+                ->where('chat_session_id', $row->id)
+                ->first(['id','message','sent_at','sender']);
+            if ($m && ($m->sender ?? 'user') === 'user') {
+                try { $plain = \Crypt::decryptString($m->message); } catch (\Throwable) { $plain = '[Unreadable]'; }
+                $highRisk->id = $m->id; $highRisk->text = $plain; $highRisk->sent_at = $m->sent_at;
+            }
+        }
+
+        if (!$highRisk->id) {
+            $msgs = \DB::table('chats')
+                ->where('chat_session_id', $row->id)
+                ->where('sender', 'user')
+                ->orderBy('sent_at')
+                ->get(['id','message','sent_at']);
+            $patterns = [
+                '\bi\s*(?:wanna|want(?:\s*to)?|plan|planning|intend|need|will|gonna)\s*(?:to\s*)?(?:die|kill myself|end (?:it|my life)|commit suicide|unalive|disappear|be gone)\b',
+                '\b(?:kill myself|commit suicide|end it all|no reason to live|life is pointless)\b',
+                '\bi\s*(?:wish|want)\s*(?:i\s*)?(?:were|was)\s*dead\b',
+                '\bi\s*(?:can\'?t|cannot)\s*go on\b',
+                '\b(?:jump off|overdose|poison myself|hang myself)\b',
+                '\b(?:self[- ]harm|cut(?:ting)? myself)\b',
+                '\bgusto na ko mamatay\b','\bmaghikog\b','\bwala na koy paglaum\b','\bgusto ko mawala\b','\btapuson na nako tanan\b',
+            ];
+            foreach ($msgs as $m) {
+                try { $plain = \Crypt::decryptString($m->message); } catch (\Throwable) { continue; }
+                $t = mb_strtolower(preg_replace('/\s+/u',' ', $plain ?? ''));
+                foreach ($patterns as $p) {
+                    if (preg_match('/'.$p.'/iu', $t)) {
+                        $highRisk->id = $m->id; $highRisk->text = $plain; $highRisk->sent_at = $m->sent_at;
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        return response()->json([
+            'ok'  => true,
+            'id'  => $highRisk->id,
+            'at'  => $highRisk->sent_at ? \Carbon\Carbon::parse($highRisk->sent_at)->format('F d, Y • h:i A') : null,
+            'txt' => $highRisk->text,
+        ]);
+    }
+
+    /**
+     * POST /admin/reauth/confirm (AJAX)
+     * Body: password
+     */
+    public function confirmPasswordAjax(Request $request): JsonResponse
+    {
+        // Basic validation
+        $request->validate([
+            'password' => ['required', 'string'],
+        ]);
+
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        // Throttle based on user+IP
+        $key = sprintf('reauth:%s:%s', (string) $user->id, (string) $request->ip());
+        if (RateLimiter::tooManyAttempts($key, 5)) {
+            $seconds = RateLimiter::availableIn($key);
+            return response()->json([
+                'message' => 'Too many attempts. Try again in '.$seconds.'s.',
+            ], 429);
+        }
+
+        $password = (string) $request->input('password');
+
+        if (!Hash::check($password, $user->password)) {
+            RateLimiter::hit($key, 60); // decay in 60s
+            return response()->json(['message' => 'Invalid credentials.'], 422);
+        }
+
+        // Success → clear attempts and set short-lived re-auth window
+        RateLimiter::clear($key);
+        session(['admin.reauth_until' => now()->addMinutes(self::REAUTH_WINDOW_MINUTES)]);
+
+        return response()->json(['ok' => true, 'until' => session('admin.reauth_until')]);
+    }
 
     /** INDEX: list chatbot sessions with “handled/cleared AFTER session” maps */
    public function index(Request $r): View
@@ -99,9 +249,20 @@ class ChatbotSessionController extends Controller
     /** SHOW: one session + ordered chats + per-session handled flags */
     public function show(int $id): View
     {
+        // Page-level gate: show the re-auth shell first
+        if (!$this->reauthOkay()) {
+            return view('admin.chatbot_sessions.show_gate', [
+                'sessionId' => $id,
+            ]);
+        }
+
         $session = $this->sessions->findWithOrderedChats($id);
         abort_unless($session, 404);
 
+        // Second gate: sensitive section (high-risk trigger) is locked by default
+        $sensitiveLocked = !$this->sensitiveOkay();
+
+        // ----- Common aggregates (needed in both locked/unlocked states)
         $hasAnyActiveForStudent = DB::table('tbl_appointments')
             ->where('student_id', $session->user_id)
             ->whereIn('status', ['pending','confirmed'])
@@ -119,7 +280,6 @@ class ChatbotSessionController extends Controller
             ->where('updated_at', '>=', $session->created_at)
             ->exists();
 
-        // ✅ robust one-time flag: either column is set OR an active appt is already linked to this session
         $wasExpedited = !empty($session->expedited_at) || DB::table('tbl_appointments')
             ->where('student_id', $session->user_id)
             ->where('chatbot_session_id', $session->id)
@@ -127,92 +287,86 @@ class ChatbotSessionController extends Controller
             ->exists();
 
         $nextAppt = DB::table('tbl_appointments as a')
-        ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
-        ->where('a.student_id', $session->user_id)
-        ->whereIn('a.status', ['pending','confirmed'])
-        ->where('a.scheduled_at', '>', now())
-        ->orderBy('a.scheduled_at')
-        ->select([
-            'a.id',
-            'a.scheduled_at',
-            'a.status',
-            'c.name as counselor_name',
-        ])
-        ->first();
-        // ---- High-risk trigger resolver (id + decrypted text + time)
-$highRisk = (object)['id'=>null, 'text'=>null, 'sent_at'=>null];
+            ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
+            ->where('a.student_id', $session->user_id)
+            ->whereIn('a.status', ['pending','confirmed'])
+            ->where('a.scheduled_at', '>', now())
+            ->orderBy('a.scheduled_at')
+            ->select(['a.id','a.scheduled_at','a.status','c.name as counselor_name'])
+            ->first();
 
-if (!empty($session->high_risk_chat_id)) {
-    // Preferred: use persisted pointer
-    $row = \DB::table('chats')
-        ->where('id', $session->high_risk_chat_id)
-        ->where('chat_session_id', $session->id)
-        ->first(['id','message','sent_at','sender']);
-
-    if ($row && ($row->sender ?? 'user') === 'user') {
-        try { $plain = Crypt::decryptString($row->message); }
-        catch (\Throwable $e) { $plain = '[Unreadable]'; }
-
-        $highRisk->id      = $row->id;
-        $highRisk->text    = $plain;
-        $highRisk->sent_at = $row->sent_at;
-    }
-}
-
-if (!$highRisk->id) {
-    // Fallback: scan earliest user message that qualifies as HIGH (same patterns as ChatController)
-    $msgs = \DB::table('chats')
-        ->where('chat_session_id', $session->id)
-        ->where('sender', 'user')
-        ->orderBy('sent_at')
-        ->get(['id','message','sent_at']);
-
-    // Reuse the same patterns you maintain in ChatController::evaluateRiskLevel
-    $high = [
-        '\bi\s*(?:wanna|want(?:\s*to)?|plan|planning|intend|need|will|gonna)\s*(?:to\s*)?(?:die|kill myself|end (?:it|my life)|commit suicide|unalive|disappear|be gone)\b',
-        '\b(?:kill myself|commit suicide|end it all|no reason to live|life is pointless)\b',
-        '\bi\s*(?:wish|want)\s*(?:i\s*)?(?:were|was)\s*dead\b',
-        '\bi\s*(?:can\'?t|cannot)\s*go on\b',
-        '\b(?:jump off|overdose|poison myself|hang myself)\b',
-        '\b(?:self[- ]harm|cut(?:ting)? myself)\b',
-        '\bgusto na ko mamatay\b',
-        '\bmaghikog\b',
-        '\bwala na koy paglaum\b',
-        '\bgusto ko mawala\b',
-        '\btapuson na nako tanan\b',
-    ];
-
-    foreach ($msgs as $m) {
-        try { $plain = Crypt::decryptString($m->message); }
-        catch (\Throwable $e) { continue; } // skip unreadables
-
-        $t = mb_strtolower(preg_replace('/\s+/u', ' ', $plain ?? ''));
-        $matched = false;
-        foreach ($high as $p) { if (preg_match('/'.$p.'/iu', $t)) { $matched = true; break; } }
-        if ($matched) {
-            $highRisk->id      = $m->id;
-            $highRisk->text    = $plain;
-            $highRisk->sent_at = $m->sent_at;
-            break;
-        }
-    }
-}               
-        $logs = ChatbotSessionRiskLog::where('chatbot_session_id', $session->id)
-            ->latest()->get();
-
+        // ----- Risk logs (always available)
+        $logs     = ChatbotSessionRiskLog::where('chatbot_session_id', $session->id)->latest()->get();
         $lastRisk = $logs->first();
 
+        // ----- Build high-risk trigger ONLY when unlocked
+        $highRisk = null;
+        if (!$sensitiveLocked) {
+            $highRisk = (object)['id'=>null, 'text'=>null, 'sent_at'=>null];
+
+            if (!empty($session->high_risk_chat_id)) {
+                $row = DB::table('chats')
+                    ->where('id', $session->high_risk_chat_id)
+                    ->where('chat_session_id', $session->id)
+                    ->first(['id','message','sent_at','sender']);
+
+                if ($row && ($row->sender ?? 'user') === 'user') {
+                    try { $plain = Crypt::decryptString($row->message); }
+                    catch (\Throwable $e) { $plain = '[Unreadable]'; }
+
+                    $highRisk->id      = $row->id;
+                    $highRisk->text    = $plain;
+                    $highRisk->sent_at = $row->sent_at;
+                }
+            }
+
+            if (!$highRisk->id) {
+                $msgs = DB::table('chats')
+                    ->where('chat_session_id', $session->id)
+                    ->where('sender', 'user')
+                    ->orderBy('sent_at')
+                    ->get(['id','message','sent_at']);
+
+                $patterns = [
+                    '\bi\s*(?:wanna|want(?:\s*to)?|plan|planning|intend|need|will|gonna)\s*(?:to\s*)?(?:die|kill myself|end (?:it|my life)|commit suicide|unalive|disappear|be gone)\b',
+                    '\b(?:kill myself|commit suicide|end it all|no reason to live|life is pointless)\b',
+                    '\bi\s*(?:wish|want)\s*(?:i\s*)?(?:were|was)\s*dead\b',
+                    '\bi\s*(?:can\'?t|cannot)\s*go on\b',
+                    '\b(?:jump off|overdose|poison myself|hang myself)\b',
+                    '\b(?:self[- ]harm|cut(?:ting)? myself)\b',
+                    '\bgusto na ko mamatay\b','\bmaghikog\b','\bwala na koy paglaum\b','\bgusto ko mawala\b','\btapuson na nako tanan\b',
+                ];
+
+                foreach ($msgs as $m) {
+                    try { $plain = Crypt::decryptString($m->message); }
+                    catch (\Throwable $e) { continue; }
+                    $t = mb_strtolower(preg_replace('/\s+/u', ' ', $plain ?? ''));
+                    foreach ($patterns as $p) {
+                        if (preg_match('/'.$p.'/iu', $t)) {
+                            $highRisk->id      = $m->id;
+                            $highRisk->text    = $plain;
+                            $highRisk->sent_at = $m->sent_at;
+                            break 2;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ----- Always return the main view
         return view('admin.chatbot_sessions.show', [
-            'highRisk'                   => $highRisk,
+            'session'                    => $session,
             'riskLogs'                   => $logs,
             'lastRisk'                   => $lastRisk,
-            'session'                    => $session,
+
             'hasAnyActiveForStudent'     => $hasAnyActiveForStudent,
             'hasActiveAfterThisSession'  => $hasActiveAfterThisSession,
             'hasCompletedForThisSession' => $hasCompletedForThisSession,
             'wasExpedited'               => $wasExpedited,
             'nextAppt'                   => $nextAppt,
-             'highRisk'                   => $highRisk,   // <-- add this
+
+            'sensitiveLocked'            => $sensitiveLocked,
+            'highRisk'                   => $highRisk,   // may be null when locked
         ]);
     }
 

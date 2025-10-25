@@ -43,7 +43,12 @@ class AuthenticatedSessionController extends Controller
     public function store(LoginRequest $request): RedirectResponse
     {
         $request->authenticate();
+
+        // Regenerate session (keeps data unless explicitly forgotten)
         $request->session()->regenerate();
+
+        // ✅ Ensure no stale re-auth window carries into a fresh login
+        $request->session()->forget('admin.reauth_until');
 
         $user = $request->user();
 
@@ -77,9 +82,16 @@ class AuthenticatedSessionController extends Controller
     /** Logout. */
     public function destroy(Request $request): RedirectResponse
     {
+        // ✅ Explicitly clear the re-auth flag so next access requires 2-step
+        $request->session()->forget('admin.reauth_until');
+
         Auth::guard('web')->logout();
+
+        // Fully reset the session & CSRF token
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+
+        // You can keep this, or redirect to admin.login if you prefer
         return redirect('/');
     }
 }
