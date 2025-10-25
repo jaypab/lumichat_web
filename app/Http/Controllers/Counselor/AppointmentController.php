@@ -109,25 +109,41 @@ class AppointmentController extends Controller
     /** Show a single appointment (must belong to this counselor) */
     public function show(int $id)
     {
-        $cid = $this->myCounselorId(); abort_unless($cid, 404);
+        $cid = $this->myCounselorId(); 
+        abort_unless($cid, 404);
 
         $row = DB::table('tbl_appointments as a')
             ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-            ->select('a.*',
+            ->select(
+                'a.*',
                 DB::raw("COALESCE(s.name,'—') as student_name"),
-                DB::raw("COALESCE(s.email,'') as student_email"))
+                DB::raw("COALESCE(s.email,'') as student_email")
+            )
             ->where('a.id', $id)
             ->where('a.counselor_id', $cid)
             ->first();
 
         abort_unless($row, 404);
 
-        return view('Counselor_Interface.appointments.show', ['appointment' => $row]);
+        // Optional safety: only query if the column exists
+        $latestReport = null;
+        if (Schema::hasTable('tbl_diagnosis_reports') && Schema::hasColumn('tbl_diagnosis_reports', 'appointment_id')) {
+            $latestReport = DB::table('tbl_diagnosis_reports')
+                ->where('appointment_id', $row->id)
+                ->latest('id')
+                ->first();
+        }
+
+        return view('Counselor_Interface.appointments.show', [
+            'appointment'  => $row,
+            'latestReport' => $latestReport,
+        ]);
     }
 
     /** PATCH /counselor/appointments/{id}/status — actions: done (we keep confirm on Admin) */
     public function updateStatus(Request $r, int $id)
     {
+        return $this->status($r, $id);
         $cid = $this->myCounselorId(); abort_unless($cid, 404);
         $action = $r->string('action')->toString(); // 'done'
 
@@ -204,9 +220,8 @@ class AppointmentController extends Controller
             'appointment_id' => $a->id,
             'student_id'     => $a->student_id,
             'counselor_id'   => $cid,
-            'diagnosis'      => $data['diagnosis'],
-            'final_note'     => $data['final_note'] ?? null,
-            'created_at'     => now(),
+            'diagnosis_result' => $data['diagnosis'],  
+            'notes'            => $data['final_note'] ?? null, 
             'updated_at'     => now(),
         ]);
 
@@ -321,4 +336,67 @@ class AppointmentController extends Controller
 
         return $request->boolean('download') ? $pdf->download($filename) : $pdf->stream($filename);
     }
+
+    public function status(Request $request, int $id)
+    {
+        $action = (string) $request->input('action'); // 'confirm' | 'start' | 'done' | ...
+        $appt   = DB::table('tbl_appointments')->where('id', $id)->first();
+        abort_unless($appt, 404);
+
+        $now      = now();
+        $startAt  = \Carbon\Carbon::parse($appt->scheduled_at);
+        $graceMin = 10; // optional: allow starting a few minutes early
+
+        switch ($action) {
+            case 'confirm':
+                if ($appt->status === 'pending') {
+                    DB::table('tbl_appointments')->where('id', $id)->update([
+                        'status' => 'confirmed',
+                        'updated_at' => $now,
+                    ]);
+                    return back()->with('swal', [
+                        'icon'=>'success','title'=>'Confirmed','text'=>'The appointment is now confirmed.'
+                    ]);
+                }
+                break;
+
+            case 'start':
+                // allow start when status is confirmed and current time is >= start - grace
+                if ($appt->status === 'confirmed' && $now->gte($startAt->copy()->subMinutes($graceMin))) {
+                    DB::table('tbl_appointments')->where('id', $id)->update([
+                        'status' => 'ongoing',
+                        'updated_at' => $now,
+                    ]);
+                    return back()->with('swal', [
+                        'icon'=>'info','title'=>'Session Started','text'=>'Status set to Ongoing.'
+                    ]);
+                }
+                return back()->with('swal', [
+                    'icon'=>'warning','title'=>'Too early','text'=>"You can start within {$graceMin} minutes of the scheduled time."
+                ]);
+
+            case 'done':
+                // allow completing from confirmed (if started) or ongoing
+                $allowed = in_array($appt->status, ['ongoing','confirmed'], true);
+                if ($allowed && $now->gte($startAt)) {
+                    DB::table('tbl_appointments')->where('id', $id)->update([
+                        'status' => 'completed',
+                        'updated_at' => $now,
+                    ]);
+                    return back()->with('swal', [
+                        'icon'=>'success','title'=>'Completed','text'=>'Session marked as done.'
+                    ]);
+                }
+                return back()->with('swal', [
+                    'icon'=>'info','title'=>'Not yet','text'=>'You can only mark as done after start time.'
+                ]);
+
+            // You likely already handle no_show in a dedicated method, keeping as-is.
+        }
+
+        return back()->with('swal', [
+            'icon'=>'info','title'=>'No change','text'=>'Nothing to update for this status.'
+        ]);
+    }
+
 }

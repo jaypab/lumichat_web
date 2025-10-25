@@ -4,32 +4,41 @@
 
 @php
   use Carbon\Carbon;
-  use Illuminate\Support\Str;
 
   $dt       = Carbon::parse($appointment->scheduled_at);
   $now      = Carbon::now();
   $bookedAt = $appointment->created_at ? Carbon::parse($appointment->created_at) : null;
 
+  $hasStarted = $now->gte($dt);
+  $status     = strtolower((string)$appointment->status);
+  $isOngoing  = ($status === 'ongoing');
+
+  // human countdown / since
   $when = $now->isBefore($dt)
-      ? 'Starts in '.$dt->diffForHumans($now, ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW])
-      : 'Started '.$dt->diffForHumans($now, ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW]);
+    ? 'Starts in '.$dt->diffForHumans($now, ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW])
+    : ($isOngoing
+        ? 'Started '.$dt->diffForHumans($now, ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW])
+        : 'Started '.$dt->diffForHumans($now, ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW])
+      );
 
-  $hasStarted  = $now->gte($dt);
-  $canConfirm  = ($appointment->status === 'pending');
-  $canDone     = ($appointment->status === 'confirmed') && $hasStarted;
-  $canFollowUp = ($appointment->status === 'completed');
+  // Actions
+  $canConfirm  = ($status === 'pending');
+  $canStart    = ($status === 'confirmed') && $now->gte($dt->copy()->subMinutes(10)); // grace start
+  $canDone     = (in_array($status, ['confirmed','ongoing'], true) && $hasStarted);
+  $canFollowUp = ($status === 'completed');
 
-  $doneTitle = $appointment->status !== 'confirmed'
-      ? 'You can only mark confirmed appointments as done'
-      : ($hasStarted ? 'Mark as completed' : 'You can only mark as done after the scheduled start time');
+  $doneTitle = !$hasStarted
+      ? 'You can only end the session after the scheduled start time'
+      : 'End this session';
 
-  // chips (include no_show)
+  // chips (added ongoing)
   $badgeMap = [
     'pending'   => 'bg-amber-100 text-amber-800',
     'confirmed' => 'bg-blue-100 text-blue-800',
     'canceled'  => 'bg-rose-100 text-rose-800',
     'completed' => 'bg-emerald-100 text-emerald-800',
     'no_show'   => 'bg-rose-100 text-rose-800',
+    'ongoing'   => 'bg-indigo-100 text-indigo-800',
   ];
   $dotMap = [
     'pending'   => 'bg-amber-500',
@@ -37,8 +46,8 @@
     'canceled'  => 'bg-rose-500',
     'completed' => 'bg-emerald-500',
     'no_show'   => 'bg-rose-500',
+    'ongoing'   => 'bg-indigo-600',
   ];
-  $status = strtolower((string)$appointment->status);
   $cls = $badgeMap[$status] ?? 'bg-slate-200 text-slate-700';
   $dot = $dotMap[$status] ?? 'bg-slate-500';
 @endphp
@@ -56,8 +65,16 @@
             <h2 class="text-[20px] font-semibold text-slate-900">Appointment #{{ $appointment->id }}</h2>
             <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium {{ $cls }}">
               <span class="inline-block w-1.5 h-1.5 rounded-full {{ $dot }} mr-1.5"></span>
-              {{ $appointment->status === 'no_show' ? 'No Show' : ucfirst($appointment->status) }}
+              {{ $status === 'no_show' ? 'No Show' : ucfirst($status) }}
             </span>
+
+            {{-- Live elapsed when ongoing --}}
+            @if($isOngoing)
+              <span class="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-50 ring-1 ring-indigo-200 px-2 py-1 rounded-full">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8v5l3.5 3.5 1.5-1.5-3-3V8z"/><path d="M12 22a10 10 0 110-20 10 10 0 010 20zm0-2a8 8 0 100-16 8 8 0 010 16z"/></svg>
+                <span id="js-elapsed">00:00</span>
+              </span>
+            @endif
           </div>
           <div class="mt-1 text-sm text-slate-500 flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
@@ -86,7 +103,7 @@
         </div>
       </div>
 
-      {{-- Actions (managed by counselor) --}}
+      {{-- Actions --}}
       <div class="mt-4 flex flex-wrap items-center gap-2">
         {{-- Confirm --}}
         <form method="POST"
@@ -102,7 +119,22 @@
           </button>
         </form>
 
-        {{-- Done --}}
+        {{-- Start Session (to Ongoing) --}}
+        <form method="POST"
+              action="{{ route('counselor.appointments.status', $appointment->id) }}"
+              @if(!$canStart || $isOngoing) onsubmit="return false" @else onsubmit="return askAction(event, this, 'start')" @endif
+              class="{{ ($canStart && !$isOngoing) ? '' : 'pointer-events-none' }}">
+          @csrf
+          @method('PATCH')
+          <input type="hidden" name="action" value="start">
+          <button type="submit"
+                  title="{{ $canStart ? 'Set status to Ongoing' : 'You can start near/after the scheduled time' }}"
+                  class="px-4 py-2 rounded-lg text-white {{ ($canStart && !$isOngoing) ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-indigo-600 opacity-50 cursor-not-allowed' }}">
+            Start Session
+          </button>
+        </form>
+
+        {{-- End Session (Done) --}}
         <form method="POST"
               action="{{ route('counselor.appointments.status', $appointment->id) }}"
               @if(!$canDone) onsubmit="return false" @else onsubmit="return askAction(event, this, 'done')" @endif
@@ -113,12 +145,12 @@
           <button type="submit"
                   title="{{ $doneTitle }}"
                   class="px-4 py-2 rounded-lg text-white {{ $canDone ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-emerald-600 opacity-50 cursor-not-allowed' }}">
-            Done
+            {{ $isOngoing ? 'End Session' : 'Done' }}
           </button>
         </form>
 
-        {{-- No-Show (allowed on pending/confirmed; your grace is handled in controller) --}}
-        @if(in_array($appointment->status, ['pending','confirmed']))
+        {{-- No-Show (pending/confirmed only; unchanged) --}}
+        @if(in_array($status, ['pending','confirmed']))
           <form method="POST" action="{{ route('counselor.appointments.no_show', $appointment->id) }}"
                 onsubmit="return askAction(event, this, 'no_show')">
             @csrf
@@ -128,10 +160,10 @@
           </form>
         @endif
 
-        {{-- Follow-up (only after completed) --}}
-        @if ($appointment->status === 'completed')
+        {{-- Follow-up --}}
+        @if ($canFollowUp)
           <a href="{{ route('counselor.appointments.follow.form', $appointment->id) }}"
-            class="inline-flex items-center rounded-lg bg-indigo-50 px-4 py-2 text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-100">
+             class="inline-flex items-center rounded-lg bg-indigo-50 px-4 py-2 text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-100">
             Create Follow-up
           </a>
         @endif
@@ -142,7 +174,6 @@
 
     {{-- Two columns --}}
     <div class="px-6 py-5 grid grid-cols-1 lg:grid-cols-2 gap-6">
-
       {{-- Student --}}
       <section class="rounded-2xl ring-1 ring-slate-200 bg-white">
         <header class="px-4 py-2.5 bg-slate-50/60 rounded-t-2xl">
@@ -162,7 +193,6 @@
           <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-600">Appointment Timing</h3>
         </header>
         <div class="p-4 space-y-6">
-          {{-- Booked On --}}
           <div class="flex gap-3">
             <div class="shrink-0 mt-0.5">
               <svg class="w-5 h-5 text-blue-600" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -178,7 +208,6 @@
             </div>
           </div>
 
-          {{-- Scheduled For --}}
           <div class="flex gap-3">
             <div class="shrink-0 mt-0.5">
               <svg class="w-5 h-5 text-emerald-600" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -195,11 +224,11 @@
       </section>
     </div>
 
-    {{-- Final Diagnosis (counselor saves) --}}
+    {{-- Final Diagnosis --}}
     <div class="px-6 pb-6">
       <div class="rounded-2xl bg-indigo-50/40 ring-1 ring-indigo-200/70 overflow-hidden">
         <div class="flex items-center justify-between px-4 py-3">
-          <div class="text-xs font-semibold tracking-wide uppercase text-slate-700">Final Diagnosis (Report)</div>
+          <div class="text-xs font-semibold tracking-wide uppercase text-slate-700">Diagnosis Remarks (Report)</div>
           @isset($latestReport)
             <div class="text-xs text-slate-500">
               Last saved {{ \Carbon\Carbon::parse($latestReport->updated_at)->format('M d, Y g:i A') }}
@@ -208,18 +237,18 @@
         </div>
 
         <div class="px-4 pb-4">
-          @if($appointment->status === 'completed')
+          @if($status === 'completed')
             <form method="POST" action="{{ route('counselor.appointments.report', $appointment->id) }}" class="space-y-5">
               @csrf
 
               <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1">
-                  Final Diagnosis <span class="text-rose-600">*</span>
+                  Diagnosis Remarks<span class="text-rose-600">*</span>
                 </label>
                 <div class="relative">
                   <textarea name="diagnosis" rows="4" required maxlength="4000"
                             class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3 js-counted"
-                            data-max="4000" placeholder="Write the final diagnosis...">{{ old('diagnosis') }}</textarea>
+                            data-max="4000" placeholder="Write the diagnosis remarks...">{{ old('diagnosis') }}</textarea>
                   <div class="absolute right-2 bottom-1.5 text-[11px] text-slate-400">
                     <span class="js-count">0</span>/4000
                   </div>
@@ -262,7 +291,7 @@
 
     <div class="px-6 pb-6 border-t border-slate-200 flex items-center justify-end">
       <div class="text-xs text-slate-500">
-        Status: <span class="font-medium">{{ $appointment->status === 'no_show' ? 'No Show' : ucfirst($appointment->status) }}</span>
+        Status: <span class="font-medium">{{ $status === 'no_show' ? 'No Show' : ucfirst($status) }}</span>
       </div>
     </div>
   </div>
@@ -277,7 +306,8 @@
     const disable = (v)=>{ if(btn){ btn.disabled=v; btn.classList.toggle('opacity-50',v);} };
     const cfg = {
       confirm:{ title:'Confirm Appointment?', text:'Are you sure?', icon:'question', confirmButtonColor:'#2563eb' },
-      done:{ title:'Mark as Completed?', text:'This will mark the appointment as done.', icon:'success', confirmButtonColor:'#059669' },
+      start:{   title:'Start Session?', text:'Status will change to Ongoing.', icon:'info', confirmButtonColor:'#4f46e5' },
+      done:{    title:'End Session?', text:'This will mark the appointment as Completed.', icon:'success', confirmButtonColor:'#059669' },
       no_show:{ title:'Mark as No-Show?', text:'This marks the student as a no-show.', icon:'warning', confirmButtonColor:'#dc2626' }
     }[action] || { title:'Are you sure?', text:'', icon:'info', confirmButtonColor:'#2563eb' };
 
@@ -290,7 +320,7 @@
     return false;
   }
 
-  // counters
+  // Character counters (unchanged)
   (function () {
     const fields = document.querySelectorAll('.js-counted');
     const clamp = (s, m) => s.length > m ? s.slice(0, m) : s;
@@ -310,6 +340,25 @@
       el.addEventListener('paste', () => requestAnimationFrame(paint));
     });
   })();
+
+  // Live elapsed timer when ongoing (HCI: status visibility, temporal feedback)
+  @if ($isOngoing)
+    (function(){
+      const el = document.getElementById('js-elapsed');
+      if(!el) return;
+      const startTs = new Date(@json($dt->format('Y-m-d\TH:i:sP'))).getTime();
+      function pad(n){ return String(n).padStart(2,'0'); }
+      function tick(){
+        const now = Date.now();
+        let sec = Math.max(0, Math.floor((now - startTs) / 1000));
+        const h = Math.floor(sec / 3600); sec %= 3600;
+        const m = Math.floor(sec / 60);  sec %= 60;
+        el.textContent = (h>0 ? `${pad(h)}:` : '') + `${pad(m)}:${pad(sec)}`;
+      }
+      tick();
+      setInterval(tick, 1000);
+    })();
+  @endif
 
   @if (session('swal'))
     Swal.fire(@json(session('swal')));

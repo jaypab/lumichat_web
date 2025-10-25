@@ -14,6 +14,8 @@ use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Crypt;
+use App\Models\ChatbotSessionRiskLog;
+use Illuminate\Support\Facades\Auth;
 
 
 class ChatbotSessionController extends Controller
@@ -194,12 +196,16 @@ if (!$highRisk->id) {
             break;
         }
     }
-}
+}               
+        $logs = ChatbotSessionRiskLog::where('chatbot_session_id', $session->id)
+            ->latest()->get();
 
-// Pass to the view
-
+        $lastRisk = $logs->first();
 
         return view('admin.chatbot_sessions.show', [
+            'highRisk'                   => $highRisk,
+            'riskLogs'                   => $logs,
+            'lastRisk'                   => $lastRisk,
             'session'                    => $session,
             'hasAnyActiveForStudent'     => $hasAnyActiveForStudent,
             'hasActiveAfterThisSession'  => $hasActiveAfterThisSession,
@@ -707,9 +713,73 @@ public function exportOne(Request $request, int $session)
 
     private function sessionsTable(): ?string
     {
-        foreach (['tbl_chatbot_sessions', 'chatbot_sessions', 'tbl_chatbot_session'] as $name) {
-            if (Schema::hasTable($name)) return $name;
+        foreach ([
+            // most likely first
+            'chat_sessions',
+            'tbl_chat_sessions',
+
+            // older names you’ve used elsewhere
+            'tbl_chatbot_sessions',
+            'chatbot_sessions',
+            'tbl_chatbot_session',
+        ] as $name) {
+            if (\Illuminate\Support\Facades\Schema::hasTable($name)) {
+                return $name;
+            }
         }
         return null;
+    }
+
+    public function setRisk(int $id, Request $request): JsonResponse
+    {
+        // Validate
+        $request->validate([
+            'risk_level' => ['required','in:low,moderate,high'],
+            'risk_score' => ['nullable','integer','between:0,100'],
+            'risk_note'  => ['nullable','string','max:2000'], // provided when downgrading from high
+        ]);
+
+        // Find session (via repository, includes user)
+        $session = $this->sessions->findById($id, ['user']);
+        if (!$session) return response()->json(['message' => 'Session not found.'], 404);
+
+        // Determine columns + table safely
+        $table = $this->sessionsTable() ?? 'chat_sessions';
+
+        // Read current
+        $currentLevel = strtolower((string)($session->risk_level ?? $session->risk ?? ''));
+        $newLevel     = (string) $request->input('risk_level');
+        $newScore     = (int) ($request->input('risk_score') ?? 0);
+        $note         = trim((string) $request->input('risk_note', ''));
+
+        // If demoting from high -> (low|moderate), require a short note
+        $isDemotion = in_array($currentLevel, ['high','high-risk','high_risk'], true)
+                && in_array($newLevel, ['moderate','low'], true);
+
+        if ($isDemotion && $note === '') {
+            return response()->json(['message' => 'Please provide a short reason for the downgrade.'], 422);
+        }
+
+        // Persist
+        \DB::transaction(function () use ($table, $id, $newLevel, $newScore, $currentLevel, $note) {
+            // Update session risk columns if they exist
+            $updates = ['updated_at' => now()];
+            if (\Schema::hasColumn($table, 'risk_level')) $updates['risk_level'] = $newLevel;
+            if (\Schema::hasColumn($table, 'risk'))       $updates['risk']       = $newLevel;
+            if (\Schema::hasColumn($table, 'risk_score')) $updates['risk_score'] = $newScore;
+            \DB::table($table)->where('id', $id)->update($updates);
+
+            // Log the change (always)
+            ChatbotSessionRiskLog::create([
+                'chatbot_session_id' => $id,
+                'admin_id'           => Auth::id(),
+                'from_level'         => $currentLevel ?: null,
+                'to_level'           => $newLevel,
+                'to_score'           => $newScore,
+                'note'               => $note ?: null,
+            ]);
+        });
+
+        return response()->json(['ok' => true]);
     }
 }

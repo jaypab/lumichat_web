@@ -27,4 +27,8 @@ class DiagnosisReport extends Model
         // tbl_counselors.id
         return $this->belongsTo(Counselor::class, 'counselor_id');
     }
+    public function getCodeAttribute(): string
+    {
+        return 'DRP-'.now()->format('Y').'-'.str_pad($this->id, 4, '0', STR_PAD_LEFT);
+    }
 }

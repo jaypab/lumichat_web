@@ -150,7 +150,8 @@
               $code          = 'DRP-' . now()->format('Y') . '-' . str_pad($r->id, 4, '0', STR_PAD_LEFT);
               $studentName   = $r->student->name ?? '—';
               $counselorName = $r->counselor->name ?? ('Counselor #' . ($r->counselor_id ?? '—'));
-              $date          = $r->created_at?->format('M d, Y') ?? '—';
+              $rawDate = $r->created_at ?? $r->updated_at ?? null;
+              $date = $rawDate? \Carbon\Carbon::parse($rawDate)->format('M d, Y'): '—';
               $diagLabel     = (string) ($r->diagnosis_result ?? '—');
             @endphp
             <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition">

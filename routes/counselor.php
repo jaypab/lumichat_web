@@ -22,7 +22,7 @@ Route::middleware(['auth', 'counselor'])->prefix('counselor')->name('counselor.'
 
     // After admin assigns, counselor manages:
     Route::patch('/appointments/{id}/status',
-        [CounselorAppointmentController::class, 'updateStatus']
+        [CounselorAppointmentController::class, 'status']
     )->whereNumber('id')->name('appointments.status');
 
     Route::post('/appointments/{id}/report',

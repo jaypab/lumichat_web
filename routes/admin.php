@@ -78,12 +78,16 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
         [ChatbotSessionController::class, 'exportOne']
     )->whereNumber('session')->name('chatbot-sessions.pdf');
 
+    // Risk override (PATCH) — put this near your other chatbot-session routes
+    Route::patch('chatbot-sessions/{session}/risk',
+        [\App\Http\Controllers\Admin\ChatbotSessionController::class, 'setRisk']
+    )->whereNumber('session')->name('chatbot-sessions.setRisk');
+
     /* Resource (index/show) AFTER the custom ones */
     Route::resource('chatbot-sessions', ChatbotSessionController::class)
         ->only(['index','show'])
         ->parameters(['chatbot-sessions' => 'session'])
         ->where(['session' => '[0-9]+']); // helps prevent 'export' being treated as {session}
-
 
   /* APPOINTMENTS (Admin) — view, export, assign only */
     Route::get('/appointments', [AdminAppointmentController::class, 'index'])
