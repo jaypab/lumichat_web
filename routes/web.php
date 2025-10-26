@@ -79,7 +79,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/chat/new',             [ChatController::class, 'newChat'])->name('chat.new');
     Route::get('/chat/history',         [ChatController::class, 'history'])->name('chat.history');
     Route::post('/chat',                [ChatController::class, 'store'])
-         ->middleware('throttle:chat-send')
+         ->middleware('throttle:60,1')
          ->name('chat.store');
     Route::get('/chat/view/{id}',       [ChatController::class, 'viewSession'])->name('chat.view');
     Route::delete('/chat/session/{id}', [ChatController::class, 'deleteSession'])->name('chat.deleteSession');
