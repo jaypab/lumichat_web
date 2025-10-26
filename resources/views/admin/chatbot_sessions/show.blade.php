@@ -47,40 +47,22 @@
 
   // ---- Lightweight stats for KPI chips
   try {
-    $messagesQuery = method_exists($session,'chatMessages') ? $session->chatMessages() : null;
-    $msgCount      = $messagesQuery ? (int) $messagesQuery->count() : null;
-    if ($messagesQuery) {
-      $firstAt = optional((clone $messagesQuery)->orderBy('sent_at')->orderBy('created_at')->first())->sent_at
-              ?? optional((clone $messagesQuery)->orderBy('created_at')->first())->created_at;
-      $lastAt  = optional((clone $messagesQuery)->orderByDesc('sent_at')->orderByDesc('created_at')->first())->sent_at
-              ?? optional((clone $messagesQuery)->orderByDesc('created_at')->first())->created_at;
-      $first   = \Carbon\Carbon::parse($firstAt ?? $session->created_at ?? now());
-      $last    = \Carbon\Carbon::parse($lastAt ?? $session->updated_at ?? now());
-      $minsDur = max(0, $first->diffInMinutes($last));
-      $lastAct = $last;
-    } else {
-      $msgCount = null; $minsDur = null; $lastAct = $session->updated_at;
-    }
+    // If your $session model doesn't provide a relation, don't call it.
+    // We’ll just use created/updated as a fallback for duration.
+    $msgCount = null; $minsDur = null; $lastAct = $session->updated_at;
   } catch (\Throwable $e) { $msgCount=null; $minsDur=null; $lastAct=$session->updated_at; }
 
   // ---- Latest high-risk trigger message (ONLY if controller passed it and not locked)
-  // Controller now passes: $highRisk (object|null) and $sensitiveLocked (bool)
+  // Controller passes: $highRisk (object|null) and $sensitiveLocked (bool)
   if (!($sensitiveLocked ?? false)) {
-    $lastHighRisk = $highRisk
-      ?? optional(
-           $session->chatMessages()
-             ->where(function($q){
-               $q->where('is_high_risk', 1)
-                 ->orWhere('risk_level', 'high');
-             })
-             ->latest('sent_at')
-             ->latest('created_at')
-             ->first()
-         );
+    // Use the controller-provided $highRisk; no model relations here.
+    $lastHighRisk = $highRisk;
+
     if ($lastHighRisk) {
       $hrId   = $lastHighRisk->id ?? null;
       $hrText = trim($lastHighRisk->text ?? $lastHighRisk->message ?? '');
-      $hrTime = \Carbon\Carbon::parse($lastHighRisk->sent_at ?? $lastHighRisk->created_at ?? now());
+      $ts     = $lastHighRisk->sent_at ?? $lastHighRisk->created_at ?? null;
+      $hrTime = $ts ? \Carbon\Carbon::parse($ts) : null;
     }
   }
 @endphp
@@ -289,8 +271,9 @@
               <div class="flex-1">
                 <div class="font-semibold text-rose-700">High-risk trigger (student message)</div>
                 <div class="mt-0.5 text-xs text-rose-800/80">
-                  {{ isset($highRisk) ? \Carbon\Carbon::parse($highRisk->sent_at)->format('F d, Y • h:i A')
-                                      : (isset($hrTime) ? $hrTime->format('F d, Y • h:i A') : '') }}
+                  {{ isset($highRisk)
+                        ? \Carbon\Carbon::parse($highRisk->sent_at ?? $highRisk->created_at)->format('F d, Y • h:i A')
+                        : (isset($hrTime) ? $hrTime->format('F d, Y • h:i A') : '') }}
                   @if(isset($highRisk->id) && $highRisk->id) <span class="ml-1 opacity-70">• Chat ID: #{{ $highRisk->id }}</span>@endif
                 </div>
                 <blockquote class="mt-1.5 rounded-xl bg-white ring-1 ring-rose-100 p-3 text-sm text-slate-800">“{{ $highRisk->text ?? $hrText ?? '' }}”</blockquote>
@@ -321,7 +304,7 @@
           <div class="absolute inset-0 pointer-events-none"
               style="backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);"></div>
 
-          {{-- unlock button (smaller icon + helper) --}}
+          {{-- unlock button --}}
           <button id="hrUnlock" type="button"
                   class="absolute inset-0 flex flex-col items-center justify-center gap-2 focus-visible:outline-none group"
                   aria-label="Unlock high-risk message"
@@ -546,7 +529,7 @@
     loadWeek(); setInterval(loadWeek, 30000);
   })();
 
-  // Risk chips + keyboard + history modal
+  // Risk chips + history modal
   (() => {
     const chips = document.querySelectorAll('.riskChip');
     const pill  = document.getElementById('riskPill');
