@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Route;
 
 class ChatController extends Controller
@@ -200,17 +201,18 @@ class ChatController extends Controller
         $showGreeting = !$activeId;
 
         $chats = collect();
-        if ($activeId) {
-            $chats = Chat::where('user_id', $userId)
-                ->where('chat_session_id', $activeId)
-                ->orderBy('sent_at')
-                ->get()
-                ->map(function ($chat) {
-                    try { $chat->message = \Illuminate\Support\Facades\Crypt::decryptString($chat->message); }
-                    catch (\Throwable $e) { $chat->message = '[Encrypted]'; }
-                    return $chat;
-                });
-        }
+    if ($activeId) {
+        $chats = Chat::where('chat_session_id', $activeId)
+            ->orderBy('sent_at')
+            ->orderBy('id')
+            ->get()
+            ->map(function ($chat) {
+                try { $chat->message = Crypt::decryptString($chat->message); }
+                catch (\Throwable $e) { $chat->message = '[Encrypted]'; }
+                return $chat;
+            });
+    }
+
 
         return view('chat', compact('chats', 'showGreeting'));
     }
@@ -295,22 +297,32 @@ class ChatController extends Controller
 public function store(Request $request)
 {
     // 1) Validation (+ idempotency) — unchanged
-    $validated = $request->validate([
-        'message' => ['required','string','max:2000', function ($attr, $val, $fail) {
-            $s = is_string($val) ? preg_replace('/\s+/u', ' ', $val) : '';
-            $s = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $s ?? '');
-            if (trim($s) === '') return $fail('Message cannot be empty.');
-            if ($s !== strip_tags($s)) return $fail('HTML is not allowed in messages.');
-        }],
-        '_idem'        => ['required','uuid','unique:chats,idempotency_key'],
-        'display_text' => ['nullable','string','max:2000'],   // <-- NEW
-    ]);
+    $request->validate([
+    'message'      => ['required','string','max:2000', function ($attr, $val, $fail) {
+        $s = is_string($val) ? preg_replace('/\s+/u', ' ', $val) : '';
+        $s = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $s ?? '');
+        if (trim($s) === '') return $fail('Message cannot be empty.');
+        if ($s !== strip_tags($s)) return $fail('HTML is not allowed in messages.');
+    }],
+    'display_text' => ['nullable','string','max:2000'],
+    // _idem is OPTIONAL now; we’ll generate server-side if missing/invalid
+]);
 
+$rawInput = (string) $request->input('message', '');
+$text = trim(preg_replace('/\s+/u', ' ', preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawInput) ?? ''));
 
-    $rawInput = (string) $validated['message'];       // payload (could be /intent...)
-    $text = preg_replace('/\s+/u', ' ', $rawInput);
-    $text = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $text ?? '');
-    $text = trim($text);
+// normalize display text
+$rawDisplay = (string) $request->input('display_text', '');
+$display = trim(preg_replace('/\s+/u', ' ', preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawDisplay) ?? ''));
+
+// prefer “human” text for heuristics
+$analysisText = $display !== '' ? $display : $text;
+
+// IMPORTANT: tolerate missing/invalid idempotency key
+$idem = (string) $request->input('_idem', '');
+if (!Str::isUuid($idem)) {
+    $idem = (string) Str::uuid(); // server-generated fallback
+}
 
     // Optional human label for storage/rendering
     $rawDisplay = (string)($request->input('display_text', ''));
@@ -368,15 +380,24 @@ $analysisText = $display !== '' ? $display : $text;
     $lang    = $this->inferLanguage($text);
     $msgRisk = $this->evaluateRiskLevel($text);
 
-    // 4) Save user message — unchanged
-    $userMsg = Chat::create([
-        'user_id'         => $userId,
-        'chat_session_id' => $sessionId,
-        'sender'          => 'user',
-        'message'         => Crypt::encryptString($text),
-        'sent_at'         => now(),
-        'idempotency_key' => $validated['_idem'],
-    ]);
+   // 4) Save user message — idempotent & race-safe
+    try {
+        $userMsg = Chat::firstOrCreate(
+            ['idempotency_key' => $idem],
+            [
+                'user_id'         => Auth::id(),            // can be null; that’s OK
+                'chat_session_id' => $sessionId,
+                'sender'          => 'user',
+                'message'         => Crypt::encryptString($text),
+                'sent_at'         => now(),
+            ]
+        );
+    } catch (QueryException $e) {
+        // If the DB has a unique index and a race snuck through, load the existing row
+        $userMsg = Chat::where('idempotency_key', $idem)->first();
+        if (!$userMsg) throw $e; // unexpected
+    }
+
 
     // Persist the FIRST high-risk trigger (id + excerpt + timestamp)
 try {
@@ -661,17 +682,15 @@ private function incrementEmotionCounts(array $counts, array $labels): array
         $session = ChatSession::where('id', $id)->where('user_id', Auth::id())->firstOrFail();
 
         $messages = Chat::where('chat_session_id', $id)
-            ->where('user_id', Auth::id())
-            ->orderBy('sent_at')
-            ->get()
-            ->map(function ($c) {
-                try {
-                    $c->message = Crypt::decryptString($c->message);
-                } catch (\Throwable $e) {
-                    $c->message = '[Unreadable]';
-                }
-                return $c;
-            });
+        ->orderBy('sent_at')
+        ->orderBy('id')
+        ->get()
+        ->map(function ($c) {
+            try { $c->message = Crypt::decryptString($c->message); }
+            catch (\Throwable $e) { $c->message = '[Unreadable]'; }
+            return $c;
+        });
+
 
         return view('chat-view', compact('session', 'messages'));
     }

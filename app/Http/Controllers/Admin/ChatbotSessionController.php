@@ -91,33 +91,63 @@ class ChatbotSessionController extends Controller
     /**
      * GET sensitive High-risk details (after sensitive re-auth)
      */
-public function sensitiveDetails(int $session): JsonResponse
-{
-    if (!$this->sensitiveOkay()) {
-        return response()->json(['message' => 'Second verification required.'], 403);
+    public function sensitiveDetails(int $session): JsonResponse
+    {
+        if (!$this->sensitiveOkay()) {
+            return response()->json(['message' => 'Second verification required.'], 403);
+        }
+
+        $row = $this->sessions->findWithOrderedChats($session);
+        if (!$row) return response()->json(['message' => 'Not found.'], 404);
+
+        // Build only the sensitive piece (same logic you use in show(), but isolated)
+        $highRisk = (object)['id'=>null, 'text'=>null, 'sent_at'=>null];
+
+        if (!empty($row->high_risk_chat_id)) {
+            $m = \DB::table('chats')
+                ->where('id', $row->high_risk_chat_id)
+                ->where('chat_session_id', $row->id)
+                ->first(['id','message','sent_at','sender']);
+            if ($m && ($m->sender ?? 'user') === 'user') {
+                try { $plain = \Crypt::decryptString($m->message); } catch (\Throwable) { $plain = '[Unreadable]'; }
+                $highRisk->id = $m->id; $highRisk->text = $plain; $highRisk->sent_at = $m->sent_at;
+            }
+        }
+
+        if (!$highRisk->id) {
+            $msgs = \DB::table('chats')
+                ->where('chat_session_id', $row->id)
+                ->where('sender', 'user')
+                ->orderBy('sent_at')
+                ->get(['id','message','sent_at']);
+            $patterns = [
+                '\bi\s*(?:wanna|want(?:\s*to)?|plan|planning|intend|need|will|gonna)\s*(?:to\s*)?(?:die|kill myself|end (?:it|my life)|commit suicide|unalive|disappear|be gone)\b',
+                '\b(?:kill myself|commit suicide|end it all|no reason to live|life is pointless)\b',
+                '\bi\s*(?:wish|want)\s*(?:i\s*)?(?:were|was)\s*dead\b',
+                '\bi\s*(?:can\'?t|cannot)\s*go on\b',
+                '\b(?:jump off|overdose|poison myself|hang myself)\b',
+                '\b(?:self[- ]harm|cut(?:ting)? myself)\b',
+                '\bgusto na ko mamatay\b','\bmaghikog\b','\bwala na koy paglaum\b','\bgusto ko mawala\b','\btapuson na nako tanan\b',
+            ];
+            foreach ($msgs as $m) {
+                try { $plain = \Crypt::decryptString($m->message); } catch (\Throwable) { continue; }
+                $t = mb_strtolower(preg_replace('/\s+/u',' ', $plain ?? ''));
+                foreach ($patterns as $p) {
+                    if (preg_match('/'.$p.'/iu', $t)) {
+                        $highRisk->id = $m->id; $highRisk->text = $plain; $highRisk->sent_at = $m->sent_at;
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        return response()->json([
+            'ok'  => true,
+            'id'  => $highRisk->id,
+            'at'  => $highRisk->sent_at ? \Carbon\Carbon::parse($highRisk->sent_at)->format('F d, Y • h:i A') : null,
+            'txt' => $highRisk->text,
+        ]);
     }
-
-    // Ensure the session exists (preserves previous behavior)
-    $exists = $this->sessions->findById($session);
-    if (!$exists) {
-        return response()->json(['message' => 'Not found.'], 404);
-    }
-
-    // Use unified finder (latest hit, includes co-occurrence heuristic and pointer)
-    $hit = $this->findHighRiskTrigger($session, /* latest */ true);
-
-    // format time with sent_at -> created_at fallback
-    $ts = $hit->sent_at ?? $hit->created_at ?? null;
-
-    return response()->json([
-        'ok'  => true,
-        'id'  => $hit->id   ?? null,
-        'at'  => $ts ? \Carbon\Carbon::parse($ts)->format('F d, Y • h:i A') : null,
-        'txt' => $hit->text ?? null,
-    ]);
-}
-
-
 
     /**
      * POST /admin/reauth/confirm (AJAX)
@@ -272,8 +302,55 @@ public function sensitiveDetails(int $session): JsonResponse
         // ----- Build high-risk trigger ONLY when unlocked
         $highRisk = null;
         if (!$sensitiveLocked) {
-            // latest trigger to match the UI label
-            $highRisk = $this->findHighRiskTrigger($session->id, /* latest */ true);
+            $highRisk = (object)['id'=>null, 'text'=>null, 'sent_at'=>null];
+
+            if (!empty($session->high_risk_chat_id)) {
+                $row = DB::table('chats')
+                    ->where('id', $session->high_risk_chat_id)
+                    ->where('chat_session_id', $session->id)
+                    ->first(['id','message','sent_at','sender']);
+
+                if ($row && ($row->sender ?? 'user') === 'user') {
+                    try { $plain = Crypt::decryptString($row->message); }
+                    catch (\Throwable $e) { $plain = '[Unreadable]'; }
+
+                    $highRisk->id      = $row->id;
+                    $highRisk->text    = $plain;
+                    $highRisk->sent_at = $row->sent_at;
+                }
+            }
+
+            if (!$highRisk->id) {
+                $msgs = DB::table('chats')
+                    ->where('chat_session_id', $session->id)
+                    ->where('sender', 'user')
+                    ->orderBy('sent_at')
+                    ->get(['id','message','sent_at']);
+
+                $patterns = [
+                    '\bi\s*(?:wanna|want(?:\s*to)?|plan|planning|intend|need|will|gonna)\s*(?:to\s*)?(?:die|kill myself|end (?:it|my life)|commit suicide|unalive|disappear|be gone)\b',
+                    '\b(?:kill myself|commit suicide|end it all|no reason to live|life is pointless)\b',
+                    '\bi\s*(?:wish|want)\s*(?:i\s*)?(?:were|was)\s*dead\b',
+                    '\bi\s*(?:can\'?t|cannot)\s*go on\b',
+                    '\b(?:jump off|overdose|poison myself|hang myself)\b',
+                    '\b(?:self[- ]harm|cut(?:ting)? myself)\b',
+                    '\bgusto na ko mamatay\b','\bmaghikog\b','\bwala na koy paglaum\b','\bgusto ko mawala\b','\btapuson na nako tanan\b',
+                ];
+
+                foreach ($msgs as $m) {
+                    try { $plain = Crypt::decryptString($m->message); }
+                    catch (\Throwable $e) { continue; }
+                    $t = mb_strtolower(preg_replace('/\s+/u', ' ', $plain ?? ''));
+                    foreach ($patterns as $p) {
+                        if (preg_match('/'.$p.'/iu', $t)) {
+                            $highRisk->id      = $m->id;
+                            $highRisk->text    = $plain;
+                            $highRisk->sent_at = $m->sent_at;
+                            break 2;
+                        }
+                    }
+                }
+            }
         }
 
         // ----- Always return the main view
@@ -540,7 +617,6 @@ public function sensitiveDetails(int $session): JsonResponse
     /** EXPORT: list */
    public function exportPdf(Request $request)
 {
-    $table = $this->sessionsTable() ?? 'chat_sessions';
     $q       = trim((string) $request->input('q', ''));
     $dateReq = (string) $request->input('date', self::DATE_KEY_ALL);
     $dateKey = in_array($dateReq, self::DATE_KEYS, true) ? $dateReq : self::DATE_KEY_ALL;
@@ -587,11 +663,8 @@ public function sensitiveDetails(int $session): JsonResponse
 
 public function exportOne(Request $request, int $session)
 {
-  $table = $this->sessionsTable() ?? 'chat_sessions';
-
-    // Pull via repository first, then fall back to raw row from the actual table.
     $row = $this->sessions->findWithOrderedChats($session)
-        ?? \DB::table($table)->where('id', $session)->first();
+        ?? (optional($this->sessionsTable()) ? DB::table($this->sessionsTable())->where('id', $session)->first() : null);
 
     abort_unless($row, 404);
 
@@ -601,23 +674,19 @@ public function exportOne(Request $request, int $session)
         $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
     }
 
-    // 🔧 Use helper for risk (supports risk_level or risk)
-    $riskLevel = $this->getRiskLevelFromRow($row);
-
-    // If you also store a numeric risk_score, keep your existing logic:
+    $riskLevel = strtolower((string)($row->risk_level ?? $row->risk ?? ''));
     $riskScore = (int)($row->risk_score ?? 0);
-    $isHigh    = ($riskLevel === 'high') || $riskScore >= 80;
+    $isHigh    = in_array($riskLevel, ['high','high-risk','high_risk'], true) || $riskScore >= 80;
 
     $year = $row->created_at ? \Carbon\Carbon::parse($row->created_at)->format('Y') : now()->format('Y');
     $code = 'LMC-' . $year . '-' . str_pad((string)$session, 4, '0', STR_PAD_LEFT);
 
-    // 🔧 Count sessions using the same table actually in use
     $sessionCounts = ['all' => null, 'd30' => null, 'd7' => null];
     if (!empty($row->user_id)) {
         $uid = (int) $row->user_id;
-        $sessionCounts['all'] = \DB::table($table)->where('user_id', $uid)->count();
-        $sessionCounts['d30'] = \DB::table($table)->where('user_id', $uid)->where('created_at', '>=', now()->subDays(30))->count();
-        $sessionCounts['d7']  = \DB::table($table)->where('user_id', $uid)->where('created_at', '>=', now()->subDays(7))->count();
+        $sessionCounts['all'] = DB::table('chat_sessions')->where('user_id', $uid)->count();
+        $sessionCounts['d30'] = DB::table('chat_sessions')->where('user_id', $uid)->where('created_at', '>=', now()->subDays(30))->count();
+        $sessionCounts['d7']  = DB::table('chat_sessions')->where('user_id', $uid)->where('created_at', '>=', now()->subDays(7))->count();
     }
 
     $pdf = app('dompdf.wrapper');
@@ -796,112 +865,85 @@ public function exportOne(Request $request, int $session)
             . "If this time won’t work, reply to this message or visit the Guidance Office and we’ll adjust it. You’re not alone—we’re here for you.";
     }
 
-    /** Prefer the real table name in production first. */
-private function sessionsTable(): ?string
-{
-    foreach ([
-        // Most common prod names first
-        'tbl_chatbot_sessions',
-        'tbl_chat_sessions',
-        'chatbot_sessions',
+    private function sessionsTable(): ?string
+    {
+        foreach ([
+            // most likely first
+            'chat_sessions',
+            'tbl_chat_sessions',
 
-        // Fallbacks / dev names
-        'chat_sessions',
-        'tbl_chatbot_session',
-    ] as $name) {
-        if (\Illuminate\Support\Facades\Schema::hasTable($name)) {
-            return $name;
+            // older names you’ve used elsewhere
+            'tbl_chatbot_sessions',
+            'chatbot_sessions',
+            'tbl_chatbot_session',
+        ] as $name) {
+            if (\Illuminate\Support\Facades\Schema::hasTable($name)) {
+                return $name;
+            }
         }
+        return null;
     }
-    return null;
-}
-/** Collapse whitespace + strip control chars then lowercase. */
-private function normTxt(?string $s): string
+    public function highRiskAll(int $sessionId): \Illuminate\Http\JsonResponse
 {
-    $s = (string) $s;
-    $s = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u','', $s) ?? '';
-    $s = preg_replace('/\s+/u',' ', $s) ?? '';
-    return mb_strtolower(trim($s));
-}
-
-/** HIGH-risk check matching ChatController::evaluateRiskLevel() HIGH logic (direct + co-occurrence). */
-private function isHighRiskUtterance(string $text): bool
-{
-    $t = $this->normTxt($text);
-
-    // Direct HIGH patterns
-    $high = [
-        '\bi\s*(?:wanna|want(?:\s*to)?|plan|planning|intend|need|will|gonna)\s*(?:to\s*)?(?:die|kill myself|end (?:it|my life)|commit suicide|unalive|disappear|be gone)\b',
-        '\b(?:kill myself|commit suicide|end it all|no reason to live|life is pointless)\b',
-        '\bi\s*(?:wish|want)\s*(?:i\s*)?(?:were|was)\s*dead\b',
-        '\bi\s*(?:can\'?t|cannot)\s*go on\b',
-        '\b(?:jump off|overdose|poison myself|hang myself)\b',
-        '\b(?:self[- ]harm|cut(?:ting)? myself)\b',
-        '\bgusto na ko mamatay\b',
-        '\bmaghikog\b',
-        '\bwala na koy paglaum\b',
-        '\bgusto ko mawala\b',
-        '\btapuson na nako tanan\b',
-    ];
-    foreach ($high as $p) {
-        if (preg_match('/'.$p.'/iu', $t)) return true;
+    if (!$this->sensitiveOkay()) {
+        return response()->json(['message' => 'Second verification required.'], 403);
     }
 
-    // Co-occurrence heuristic (intent x act)
-    $acts   = ['suicide','die','unalive','kill myself','end my life','end it','jump','overdose','poison','cut','disappear','be gone','mamatay','hikog','wala na koy paglaum','mawala'];
-    $intent = ['wanna','want','plan','planning','thinking','feel like','i should','i will','i might','really want','gonna','gusto','buot','tingali','murag'];
-    foreach ($acts as $a) foreach ($intent as $b) {
-        if (str_contains($t, $a) && str_contains($t, $b)) return true;
+    $row = $this->sessions->findWithOrderedChats($sessionId);
+    if (!$row) {
+        return response()->json(['message' => 'Not found.'], 404);
     }
 
-    return false;
-}
+    // Use the actual Chat model table (don’t hardcode 'chats')
+    $chatTable = app(\App\Models\Chat::class)->getTable();
 
-/** Find the (latest|first) high-risk user message for a session, preferring stored pointer. */
-private function findHighRiskTrigger(int $sessionId, bool $latest = true): ?object
-{
-    // 1) Prefer stored pointer if present
-    $row = $this->sessions->findById($sessionId) ?? null;
-    $pointer = $row->high_risk_chat_id ?? null;
-    if (!empty($pointer)) {
-        $m = \DB::table('chats')
-            ->where('id', $pointer)
-            ->where('chat_session_id', $sessionId)
-            ->first(['id','message','sent_at','created_at','sender']);
-        if ($m && ($m->sender ?? 'user') === 'user') {
-            try { $plain = \Crypt::decryptString($m->message); } catch (\Throwable) { $plain = '[Unreadable]'; }
-            return (object)['id'=>$m->id, 'text'=>$plain, 'sent_at'=>$m->sent_at, 'created_at'=>$m->created_at];
-        }
-    }
+    // Build a safe column list (only select columns that exist)
+    $cols = ['id', 'message', 'sent_at'];
+    if (Schema::hasColumn($chatTable, 'sender'))       $cols[] = 'sender';
+    if (Schema::hasColumn($chatTable, 'is_high_risk')) $cols[] = 'is_high_risk';
+    if (Schema::hasColumn($chatTable, 'risk_level'))   $cols[] = 'risk_level';
 
-    // 2) Fallback scan
-    $orderDir = $latest ? 'desc' : 'asc';
-    $msgs = \DB::table('chats')
-        ->where('chat_session_id', $sessionId)
-        ->where('sender', 'user')
-        ->orderBy('sent_at', $orderDir)
-        ->orderBy('id',   $orderDir)
-        ->get(['id','message','sent_at','created_at']);
+    $query = DB::table($chatTable)
+        ->where('chat_session_id', $row->id)
+        ->orderBy('sent_at')
+        ->orderBy('id');
 
+    // OPTIONAL: limit to user messages only. Uncomment if you don’t want bot rows.
+    // if (Schema::hasColumn($chatTable, 'sender')) {
+    //     $query->whereIn('sender', ['user','student','enduser','client']);
+    // }
+
+    $msgs = $query->get($cols);
+
+    $out = [];
     foreach ($msgs as $m) {
-        try { $plain = \Crypt::decryptString($m->message); }
-        catch (\Throwable) { continue; }
-        if ($this->isHighRiskUtterance($plain)) {
-            return (object)['id'=>$m->id, 'text'=>$plain, 'sent_at'=>$m->sent_at, 'created_at'=>$m->created_at];
+        $plain = $this->tryDecryptOrPlain($m->message);
+        if (!$plain) continue;
+
+        // DB flags (if present)
+        $flagged =
+            (isset($m->is_high_risk) && (int)$m->is_high_risk === 1) ||
+            (isset($m->risk_level)   && strtolower((string)$m->risk_level) === 'high');
+
+        // Heuristic fallback (always available)
+        if ($flagged || $this->containsHighRisk($plain)) {
+            $out[] = [
+                'id'     => $m->id,
+                'sender' => isset($m->sender) ? (string)$m->sender : null,
+                'at'     => $m->sent_at ? Carbon::parse($m->sent_at)->format('F d, Y • h:i A') : null,
+                'text'   => $plain,
+            ];
         }
     }
-    return null;
+
+    return response()->json([
+        'ok'       => true,
+        'count'    => count($out),
+        'items'    => $out,
+        'session'  => (int)$row->id,
+    ]);
 }
 
-
-/** Safely read current risk (handles either `risk_level` or `risk`). */
-private function getRiskLevelFromRow(object|array|null $row): string
-{
-    if (!$row) return 'low';
-    $v = is_array($row) ? ($row['risk_level'] ?? $row['risk'] ?? '') : ($row->risk_level ?? $row->risk ?? '');
-    $v = strtolower((string)$v);
-    return in_array($v, ['low','moderate','high'], true) ? $v : 'low';
-}
 
     public function setRisk(int $id, Request $request): JsonResponse
     {
@@ -955,4 +997,14 @@ private function getRiskLevelFromRow(object|array|null $row): string
 
         return response()->json(['ok' => true]);
     }
+    private function tryDecryptOrPlain(?string $v): ?string
+{
+    if ($v === null) return null;
+    try { return Crypt::decryptString($v); } catch (\Throwable) { return $v; }
+}
+// shared predicate
+private function containsHighRisk(string $text): bool
+{
+    return RiskHeuristics::containsHighRisk($text);
+}
 }

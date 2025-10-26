@@ -100,6 +100,10 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
         ->only(['index','show'])
         ->parameters(['chatbot-sessions' => 'session'])
         ->where(['session' => '[0-9]+']); // helps prevent 'export' being treated as {session}
+        Route::get('/admin/chatbot-sessions/{id}/high-risk/all',
+    [ChatbotSessionController::class, 'highRiskAll']
+    )->name('admin.sessions.highrisk.all');
+
 
   /* APPOINTMENTS (Admin) — view, export, assign only */
     Route::get('/appointments', [AdminAppointmentController::class, 'index'])
