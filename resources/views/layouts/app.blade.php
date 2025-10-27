@@ -354,7 +354,7 @@
 
             <div class="relative">
               <button id="user-btn" type="button"
-                      class="inline-flex items-center gap-2 h-10 px-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
+                class="inline-flex items-center gap-2 h-10 px-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
                 <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-xs font-bold">
                   {{ $initials ?: 'U' }}
                 </div>
@@ -364,11 +364,7 @@
                   </span>
                   <span class="text-[11px] text-gray-500 dark:text-gray-400">Student</span>
                 </div>
-                <svg class="w-4 h-4 text-gray-400 dark:text-gray-500" viewBox="0 0 24 24" fill="currentColor">
-                  <circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
-                </svg>
               </button>
-
               <div id="user-menu" class="dropdown">
                 <a href="{{ route('profile.edit') }}" class="dropdown-item">Profile</a>
                 @if(Route::has('settings.index'))
