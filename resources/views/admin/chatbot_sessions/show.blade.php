@@ -1,4 +1,3 @@
-{{-- resources/views/admin/chatbot_sessions/show.blade.php --}}
 @extends('layouts.admin')
 @section('title','Admin - Chatbot Details')
 @section('page_title', 'Chatbot Session Summary')
@@ -47,15 +46,11 @@
 
   // ---- Lightweight stats for KPI chips
   try {
-    // If your $session model doesn't provide a relation, don't call it.
-    // We’ll just use created/updated as a fallback for duration.
     $msgCount = null; $minsDur = null; $lastAct = $session->updated_at;
   } catch (\Throwable $e) { $msgCount=null; $minsDur=null; $lastAct=$session->updated_at; }
 
   // ---- Latest high-risk trigger message (ONLY if controller passed it and not locked)
-  // Controller passes: $highRisk (object|null) and $sensitiveLocked (bool)
   if (!($sensitiveLocked ?? false)) {
-    // Use the controller-provided $highRisk; no model relations here.
     $lastHighRisk = $highRisk;
 
     if ($lastHighRisk) {
@@ -258,91 +253,105 @@
         </div>
       </div>
     </div>
+{{-- ROW 2: High-risk + Emotions --}}
+@php $lockIcon = asset('images/icons/security.png'); @endphp
+<div id="hrWrap" class="relative lg:col-span-6">
+  <div id="hrCard"
+       class="hr-card card rounded-2xl border p-3 md:p-4 {{ ($sensitiveLocked ?? false) ? 'border-slate-200 bg-white' : 'border-rose-200 bg-rose-50' }}">
+    @if(!($sensitiveLocked ?? false))
+      @if(!empty($highRisk?->text ?? $hrText ?? null))
+        <div class="flex items-start gap-2.5">
+          <img src="{{ asset('images/icons/alert.png') }}" alt="High risk" class="h-5 w-5 mt-0.5 object-contain" />
+          <div class="flex-1">
 
-    {{-- ROW 2: High-risk + Emotions --}}
-    @php $lockIcon = asset('images/icons/security.png'); @endphp
-    <div id="hrWrap" class="relative lg:col-span-6">
-      <div id="hrCard"
-           class="hr-card card rounded-2xl border p-3 md:p-4 {{ ($sensitiveLocked ?? false) ? 'border-slate-200 bg-white' : 'border-rose-200 bg-rose-50' }}">
-        @if(!($sensitiveLocked ?? false))
-          @if(!empty($highRisk?->text ?? $hrText ?? null))
-            <div class="flex items-start gap-2.5">
-              <img src="{{ asset('images/icons/alert.png') }}" alt="High risk" class="h-5 w-5 mt-0.5 object-contain" />
-              <div class="flex-1">
-                <div class="font-semibold text-rose-700">High-risk trigger (student message)</div>
-                <div class="mt-0.5 text-xs text-rose-800/80">
-                  {{ isset($highRisk)
-                        ? \Carbon\Carbon::parse($highRisk->sent_at ?? $highRisk->created_at)->format('F d, Y • h:i A')
-                        : (isset($hrTime) ? $hrTime->format('F d, Y • h:i A') : '') }}
-                  @if(isset($highRisk->id) && $highRisk->id) <span class="ml-1 opacity-70">• Chat ID: #{{ $highRisk->id }}</span>@endif
-                </div>
-                <blockquote class="mt-1.5 rounded-xl bg-white ring-1 ring-rose-100 p-3 text-sm text-slate-800">“{{ $highRisk->text ?? $hrText ?? '' }}”</blockquote>
-              </div>
+            <div class="font-semibold text-rose-700">High-risk trigger (student message)</div>
+            <div class="mt-0.5 text-xs text-rose-800/80">
+              {{ isset($highRisk)
+                    ? \Carbon\Carbon::parse($highRisk->sent_at ?? $highRisk->created_at)->format('F d, Y • h:i A')
+                    : (isset($hrTime) ? $hrTime->format('F d, Y • h:i A') : '') }}
+              @if(isset($highRisk->id) && $highRisk->id) <span class="ml-1 opacity-70">• Chat ID: #{{ $highRisk->id }}</span>@endif
             </div>
-          @elseif(in_array($riskStr, ['high','high-risk','high_risk'], true))
-            <div class="flex items-start gap-2.5">
-              <svg class="h-5 w-5 mt-0.5 text-amber-700" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1010 10A10.012 10.012 0 0012 2zm1 15h-2v-2h2zm0-4h-2V7h2z"/></svg>
-              <div class="flex-1 text-amber-900">
-                Session is HIGH-risk, but the exact trigger message wasn’t located.
-              </div>
-            </div>
-          @else
-            <div class="text-sm text-slate-600">No recent high-risk trigger.</div>
-          @endif
-        @else
-
-        {{-- LOCKED view --}}
-        <div class="relative overflow-hidden">
-          <div class="h-28 md:h-32 rounded-xl bg-slate-100 ring-1 ring-slate-200 flex items-center justify-center">
-            <div class="text-center">
-              <div class="text-sm font-semibold text-slate-600">High-risk trigger (student message)</div>
-              <div class="mt-1 text-xs text-slate-500">Extra verification required</div>
-            </div>
-          </div>
-
-          {{-- blur layer --}}
-          <div class="absolute inset-0 pointer-events-none"
-              style="backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);"></div>
-
-          {{-- unlock button --}}
-          <button id="hrUnlock" type="button"
-                  class="absolute inset-0 flex flex-col items-center justify-center gap-2 focus-visible:outline-none group"
-                  aria-label="Unlock high-risk message"
-                  title="Click to unlock">
-            <img src="{{ asset('images/icons/security.png') }}"
-                alt="Security"
-                class="h-12 w-12 md:h-14 md:w-14 opacity-90 drop-shadow-sm transition-transform duration-150 group-hover:scale-105">
-
-            <span class="inline-flex items-center gap-1 rounded-full bg-white/80 text-slate-700 ring-1 ring-slate-200
-                        px-2.5 py-1 text-xs font-medium shadow-sm backdrop-blur-sm">
-              Click to unlock the student's high-risk trigger message
-              <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path d="M10.293 3.293a1 1 0 0 1 1.414 0l5 5a1 1 0 0 1-1.414 1.414L11 6.414V16a1 1 0 1 1-2 0V6.414L4.707 9.707A1 1 0 1 1 3.293 8.293l5-5Z"/>
-              </svg>
-            </span>
-          </button>
-        </div>
-        @endif
-      </div>
-    </div>
-
-    <div class="emo-card card rounded-2xl bg-white ring-1 ring-slate-200 p-4 lg:col-span-3">
-      <h3 class="text-sm font-semibold text-slate-900">Emotions Mentioned</h3>
-      <div class="mt-1.5">
-        @if($total === 0 || empty($top))
-          <div class="text-slate-500">—</div>
-        @else
-          <div class="flex flex-wrap gap-1.5">
-            @foreach($top as $name => $cnt)
-              @php $pct = $total ? round($cnt / $total * 100) : 0; @endphp
-              <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-medium bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200" title="{{ $cnt }} mention{{ $cnt===1?'':'s' }}">
-                {{ ucfirst($name) }} <span class="ml-1 text-[11px] opacity-70">({{ $pct }}%)</span>
+            <blockquote class="mt-1.5 rounded-xl bg-white ring-1 ring-rose-100 p-3 text-sm text-slate-800">“{{ $highRisk->text ?? $hrText ?? '' }}”</blockquote>
+            @if(!empty($allHighRisk))
+  <div class="mt-3">
+    <div class="text-sm font-semibold text-slate-900">All high-risk / critical lines</div>
+    <div class="mt-2 space-y-2">
+      @foreach($allHighRisk as $hr)
+        <div class="rounded-xl ring-1 ring-slate-200 p-3 bg-white">
+          <div class="text-[12px] text-slate-500">
+            {{ $hr['at'] ?? '' }}
+            @if(!empty($hr['sender']))
+              <span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] ring-1 {{ strtolower($hr['sender'])==='user' ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-slate-50 text-slate-700 ring-slate-200' }}">
+                {{ $hr['sender'] }}
               </span>
-            @endforeach
+            @endif
           </div>
-        @endif
-      </div>
+          <div class="mt-1 text-slate-900">#{{ $hr['id'] }}</div>
+          <blockquote class="mt-1 text-sm text-slate-800 leading-relaxed">{{ $hr['text'] }}</blockquote>
+        </div>
+      @endforeach
     </div>
+  </div>
+@endif
+
+          </div>
+        </div>
+      @elseif(in_array($riskStr, ['high','high-risk','high_risk'], true))
+        <div class="flex items-start gap-2.5">
+          <svg class="h-5 w-5 mt-0.5 text-amber-700" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1010 10A10.012 10.012 0 0012 2zm1 15h-2v-2h2zm0-4h-2V7h2z"/></svg>
+          <div class="flex-1 text-amber-900">
+            Session is HIGH-risk, but the exact trigger message wasn’t located.
+          </div>
+        </div>
+      @else
+        <div class="text-sm text-slate-600">No recent high-risk trigger.</div>
+      @endif
+    @else
+      {{-- LOCKED view --}}
+      <div class="relative overflow-hidden">
+        <div class="h-28 md:h-32 rounded-xl bg-slate-100 ring-1 ring-slate-200 flex items-center justify-center">
+          <div class="text-center">
+            <div class="text-sm font-semibold text-slate-600">High-risk trigger (student message)</div>
+            <div class="mt-1 text-xs text-slate-500">Extra verification required</div>
+          </div>
+        </div>
+
+        {{-- blur layer --}}
+        <div class="absolute inset-0 pointer-events-none"
+             style="backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);"></div>
+
+        {{-- unlock button --}}
+        <button id="hrUnlock" type="button"
+                class="absolute inset-0 flex flex-col items-center justify-center gap-2 focus-visible:outline-none group"
+                aria-label="Unlock high-risk message"
+                title="Click to unlock">
+          <img src="{{ asset('images/icons/security.png') }}"
+               alt="Security"
+               class="h-12 w-12 md:h-14 md:w-14 opacity-90 drop-shadow-sm transition-transform duration-150 group-hover:scale-105">
+          <span class="inline-flex items-center gap-1 rounded-full bg-white/80 text-slate-700 ring-1 ring-slate-200
+                      px-2.5 py-1 text-xs font-medium shadow-sm backdrop-blur-sm">
+            Click to unlock the student's high-risk trigger message
+            <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path d="M10.293 3.293a1 1 0 0 1 1.414 0l5 5a1 1 0 0 1-1.414 1.414L11 6.414V16a 1 1 0 1 1-2 0V6.414L4.707 9.707A1 1 0 1 1 3.293 8.293l5-5Z"/>
+            </svg>
+          </span>
+        </button>
+      </div>
+
+      {{-- 🔒 Locked: ALSO render this button so JS can trigger 2FA then load the list --}}
+      <div class="mt-3">
+        <button id="btnShowAllHRLocked"
+          class="inline-flex items-center gap-2 rounded-xl bg-slate-700 text-white px-3 py-1.5 hover:bg-slate-800">
+          <img src="{{ asset('images/icons/security.png') }}" class="w-4 h-4" alt="">
+          Unlock & view all high-risk lines
+        </button>
+      </div>
+    @endif
+  </div>
+</div>
+
+
+
 
     {{-- ROW 3: Session Counts --}}
     <div class="lg:col-span-9 space-y-4">
@@ -459,18 +468,21 @@
   </div>
 </div>
 
-{{-- ========= JS ========= --}}
 <script>
+  /* ===== Small util ===== */
   function copyText(selector){
     const el = document.querySelector(selector);
     if(!el) return;
-    const text = el.textContent.trim();
+    const text = (el.textContent || '').trim();
+    if (!text) return;
     navigator.clipboard.writeText(text).then(() => {
-      if (window.Swal) Swal.fire({ toast:true, position:'top-end', icon:'success', title:'Copied', timer:1400, showConfirmButton:false });
-    });
+      if (window.Swal) {
+        Swal.fire({ toast:true, position:'top-end', icon:'success', title:'Copied', timer:1400, showConfirmButton:false });
+      }
+    }).catch(()=>{ /* ignore */ });
   }
 
-  // Calendar (weekly counts)
+  /* ===== Calendar (weekly counts) ===== */
   (() => {
     const endpoint = @json(route('admin.chatbot-sessions.calendar', $session->id));
     const rangeEl = document.getElementById('calRange');
@@ -486,7 +498,8 @@
     function startOfWeek(d){ const x=new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate()-x.getDay()); return x; }
     function endOfWeek(d){ const s=startOfWeek(d), e=new Date(s); e.setDate(s.getDate()+6); return e; }
     function animateNumber(el, to){
-      const start = Number(el.textContent.replace(/[^\d]/g,'')) || 0;
+      if (!el) return;
+      const start = Number((el.textContent||'').replace(/[^\d]/g,'')) || 0;
       const end = Number(to) || 0;
       if(start===end){ el.textContent=end; return; }
       const dur = 600 + Math.min(600, Math.abs(end-start)*40);
@@ -495,13 +508,16 @@
     }
     function highlightToday(cells, from){
       const todayStr = ymdLocal(new Date());
-      cells.forEach((el,i)=>{ const cur=new Date(from); cur.setDate(from.getDate()+i);
-        el.parentElement.classList.toggle('bg-indigo-50', ymdLocal(cur)===todayStr);
+      cells.forEach((el,i)=>{ if(!el) return; const cur=new Date(from); cur.setDate(from.getDate()+i);
+        el.parentElement?.classList.toggle('bg-indigo-50', ymdLocal(cur)===todayStr);
       });
     }
 
     let anchor = new Date();
+    let inflight = false;
     async function loadWeek(){
+      if (inflight) return;
+      inflight = true;
       const from = startOfWeek(anchor);
       const to   = endOfWeek(anchor);
       rangeEl.textContent = `${fmtPretty(from)} – ${fmtPretty(to)}`;
@@ -509,7 +525,10 @@
         const url = new URL(endpoint, window.location.origin);
         url.searchParams.set('from', ymdLocal(from));
         url.searchParams.set('to',   ymdLocal(to));
-        const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' }});
+        const res = await fetch(url, { headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json'
+        }});
         const data = await res.json();
         for (let i=0;i<7;i++){
           const cur = new Date(from); cur.setDate(from.getDate()+i);
@@ -519,8 +538,10 @@
         document.getElementById('calSkeleton')?.remove();
         highlightToday(cntEls, from);
       }catch(e){
-        cntEls.forEach(el => el.textContent = '—');
+        cntEls.forEach(el => { if (el) el.textContent = '—'; });
         if (window.Swal) Swal.fire({toast:true, position:'top-end', icon:'warning', title:'Couldn’t load weekly counts', timer:1800, showConfirmButton:false});
+      } finally {
+        inflight = false;
       }
     }
     prevBtn?.addEventListener('click',()=>{ anchor.setDate(anchor.getDate()-7); loadWeek(); });
@@ -529,7 +550,7 @@
     loadWeek(); setInterval(loadWeek, 30000);
   })();
 
-  // Risk chips + history modal
+  /* ===== Risk chips + history modal ===== */
   (() => {
     const chips = document.querySelectorAll('.riskChip');
     const pill  = document.getElementById('riskPill');
@@ -548,7 +569,12 @@
     const scoreMap = { high:90, moderate:60, low:20 };
 
     function applyPill(level){
-      pill.className = pill.className.replace(/bg-\w+-100\s+text-\w+-\d+\s+ring-\w+-200/g, '').trim();
+      [
+        'bg-rose-100','text-rose-700','ring-rose-200',
+        'bg-amber-100','text-amber-800','ring-amber-200',
+        'bg-emerald-100','text-emerald-800','ring-emerald-200',
+        'bg-slate-100','text-slate-700','ring-slate-200'
+      ].forEach(c => pill.classList.remove(c));
       pill.classList.add(...clsFor(level).split(' '));
       txt.textContent = level.charAt(0).toUpperCase() + level.slice(1);
       const img = pill.querySelector('img');
@@ -608,7 +634,11 @@
 
       try{
         const res = await fetch(endpoint, { method:'POST', body:fd, headers:{'X-Requested-With':'XMLHttpRequest'} });
-        if (!res.ok) throw new Error((await res.json().catch(()=>({})))?.message || 'Update failed.');
+        if (!res.ok) {
+          let msg = 'Update failed.';
+          try { const j = await res.json(); if (j?.message) msg = j.message; } catch {}
+          throw new Error(msg);
+        }
         if (window.Swal) Swal.fire({toast:true, position:'top-end', icon:'success', title:'Risk updated', timer:1200, showConfirmButton:false});
         setTimeout(() => window.location.reload(), 250);
       }catch(e){
@@ -627,20 +657,20 @@
     });
 
     const modal = document.getElementById('riskHistoryModal');
-    document.getElementById('btnRiskHistory')?.addEventListener('click', () => modal?.classList.remove('hidden'));
-    document.getElementById('riskHistoryClose')?.addEventListener('click', () => modal?.classList.add('hidden'));
-    document.getElementById('riskHistoryClose2')?.addEventListener('click', () => modal?.classList.add('hidden'));
+    document.getElementById('btnRiskHistory')?.addEventListener('click', () => { if (modal) modal.classList.remove('hidden'); });
+    document.getElementById('riskHistoryClose')?.addEventListener('click', () => { if (modal) modal.classList.add('hidden'); });
+    document.getElementById('riskHistoryClose2')?.addEventListener('click', () => { if (modal) modal.classList.add('hidden'); });
   })();
 
-  // ====== High-risk sensitive unlock (second 2FA) ======
+  /* ===== High-risk sensitive unlock (second 2FA) ===== */
   (() => {
-    const locked    = @json($sensitiveLocked ?? false);
+    const locked = @json($sensitiveLocked ?? false);
     if (!locked) return;
 
     const hrUnlock  = document.getElementById('hrUnlock');
     const card      = document.getElementById('hrCard');
 
-    const modal = document.getElementById('hrModal');
+    const modal   = document.getElementById('hrModal');
     const overlay = modal?.firstElementChild;
     const panel   = modal?.lastElementChild;
     const close   = document.getElementById('hrClose');
@@ -658,8 +688,13 @@
 
     const epConfirm   = @json(route('admin.reauth.confirm_sensitive'));
     const epSensitive = @json(route('admin.chatbot-sessions.sensitive', $session->id));
+    const epAll       = @json(route('admin.chatbot-sessions.highrisk_all', $session->id));
+
+    // make sure unlock button is above any blur stacking context
+    if (hrUnlock) hrUnlock.style.zIndex = '10';
 
     function open(){
+      if (!modal || !overlay || !panel) return;
       modal.classList.remove('hidden');
       requestAnimationFrame(() => {
         overlay.classList.remove('opacity-0');
@@ -668,46 +703,59 @@
       });
     }
     function closeModal(){
+      if (!modal || !overlay || !panel) return;
       overlay.classList.add('opacity-0');
       panel.classList.add('opacity-0','scale-95','translate-y-2');
       setTimeout(() => {
         modal.classList.add('hidden');
-        err?.classList.add('hidden'); err.textContent = '';
-        pwd.value = '';
+        err?.classList.add('hidden'); if (err) err.textContent = '';
+        if (pwd) pwd.value = '';
       }, 180);
     }
     function busy(b){
+      if (!submit || !spin || !label) return;
       submit.disabled = b;
       if (b){ spin.classList.remove('hidden'); label.textContent = 'Verifying…'; }
       else  { spin.classList.add('hidden');     label.textContent = 'Confirm'; }
     }
-    function shake(el){ el.classList.remove('ux-shake'); void el.offsetWidth; el.classList.add('ux-shake'); }
+    function shake(el){ if(!el) return; el.classList.remove('ux-shake'); void el.offsetWidth; el.classList.add('ux-shake'); }
 
     eyeBtn?.addEventListener('click', () => {
+      if (!pwd || !eyeImg) return;
       const isPw = pwd.getAttribute('type') === 'password';
       pwd.setAttribute('type', isPw ? 'text' : 'password');
       eyeImg.src = isPw ? eyeOff : eyeOn; eyeImg.alt = isPw ? 'Hide' : 'Show';
     });
 
     hrUnlock?.addEventListener('click', open);
+    document.getElementById('btnShowAllHRLocked')?.addEventListener('click', open); // secondary button
     close?.addEventListener('click', closeModal);
     cancel?.addEventListener('click', closeModal);
     overlay?.addEventListener('click', closeModal);
 
+    async function fetchAllHighRisk() {
+      try {
+        const res = await fetch(epAll, { headers: { 'X-Requested-With': 'XMLHttpRequest' }});
+        const data = await res.json().catch(()=> ({}));
+        if (!res.ok || !data?.ok) throw new Error(data?.message || 'Failed to load.');
+        return data.items || [];
+      } catch { return []; }
+    }
+
     form?.addEventListener('submit', async (e) => {
       e.preventDefault();
-      err.classList.add('hidden'); err.textContent = '';
+      if (err){ err.classList.add('hidden'); err.textContent = ''; }
       busy(true);
 
       try {
         // step 1: sensitive confirm
-        const fd = new FormData(form);
-        let res  = await fetch(epConfirm, { method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body: fd });
-        let data = await res.json().catch(()=> ({}));
+        const fd  = new FormData(form);
+        let res   = await fetch(epConfirm, { method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body: fd });
+        let data  = await res.json().catch(()=> ({}));
         if (!res.ok || !data?.ok) {
           const msg = data?.message || 'Verification failed.';
           if (window.Swal) Swal.fire({ icon:'error', title:'Try again', text: msg });
-          else { err.textContent = msg; err.classList.remove('hidden'); shake(panel); }
+          else { if (err){ err.textContent = msg; err.classList.remove('hidden'); } shake(panel); }
           busy(false); return;
         }
 
@@ -717,26 +765,48 @@
         if (!res.ok || !data?.ok) {
           const msg = data?.message || 'Could not load sensitive details.';
           if (window.Swal) Swal.fire({ icon:'error', title:'Error', text: msg });
-          else { err.textContent = msg; err.classList.remove('hidden'); shake(panel); }
+          else { if (err){ err.textContent = msg; err.classList.remove('hidden'); } shake(panel); }
           busy(false); return;
         }
 
-        // step 3: render into card
-        card.innerHTML = `
-          <div class="flex items-start gap-2.5">
-            <img src="{{ asset('images/icons/alert.png') }}" alt="High risk" class="h-5 w-5 mt-0.5 object-contain" />
-            <div class="flex-1">
-              <div class="font-semibold text-rose-700">High-risk trigger (student message)</div>
-              <div class="mt-0.5 text-xs text-rose-800/80">
-                ${data.at ? data.at : ''}
-                ${data.id ? `<span class="ml-1 opacity-70">• Chat ID: #${data.id}</span>` : ''}
-              </div>
-              <blockquote class="mt-1.5 rounded-xl bg-white ring-1 ring-rose-100 p-3 text-sm text-slate-800">“${(data.txt || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}”</blockquote>
+        // step 3: also fetch ALL matched high-risk lines
+        const items = await fetchAllHighRisk();
+        const listHtml = items.length ? `
+          <div class="mt-3">
+            <div class="text-sm font-semibold text-slate-900">All high-risk / critical lines</div>
+            <div class="mt-2 space-y-2">
+              ${items.map(item => `
+                <div class="rounded-xl ring-1 ring-slate-200 p-3 bg-white">
+                  <div class="text-[12px] text-slate-500">
+                    ${item.at || ''}
+                    ${item.sender ? `<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] ring-1 ${String(item.sender).toLowerCase()==='user'?'bg-rose-50 text-rose-700 ring-rose-200':'bg-slate-50 text-slate-700 ring-slate-200'}">${item.sender}</span>` : ''}
+                  </div>
+                  <div class="mt-1 text-slate-900">#${item.id}</div>
+                  <blockquote class="mt-1 text-sm text-slate-800 leading-relaxed">${(item.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</blockquote>
+                </div>
+              `).join('')}
             </div>
           </div>
-        `;
-        card.classList.remove('border-slate-200','bg-white');
-        card.classList.add('border-rose-200','bg-rose-50');
+        ` : '';
+
+        // step 4: render into card
+        if (card){
+          card.innerHTML = `
+            <div class="flex items-start gap-2.5">
+              <img src="{{ asset('images/icons/alert.png') }}" alt="High risk" class="h-5 w-5 mt-0.5 object-contain" />
+              <div class="flex-1">
+                <div class="font-semibold text-rose-700">High-risk trigger (student message)</div>
+                <div class="mt-0.5 text-xs text-rose-800/80">
+                  ${data.at ? data.at : ''} ${data.id ? `<span class="ml-1 opacity-70">• Chat ID: #${data.id}</span>` : ''}
+                </div>
+                <blockquote class="mt-1.5 rounded-xl bg-white ring-1 ring-rose-100 p-3 text-sm text-slate-800">“${(data.txt || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}”</blockquote>
+                ${listHtml}
+              </div>
+            </div>
+          `;
+          card.classList.remove('border-slate-200','bg-white');
+          card.classList.add('border-rose-200','bg-rose-50');
+        }
 
         if (window.Swal) {
           Swal.fire({ toast:true, position:'top-end', icon:'success', title:'Unlocked', timer:900, showConfirmButton:false });
@@ -745,7 +815,7 @@
       } catch (ex) {
         const msg = ex?.message || String(ex) || 'Something went wrong.';
         if (window.Swal) Swal.fire({ icon:'error', title:'Error', text: msg });
-        else { err.textContent = msg; err.classList.remove('hidden'); shake(panel); }
+        else { if (err){ err.textContent = msg; err.classList.remove('hidden'); } shake(panel); }
       } finally {
         busy(false);
       }
@@ -753,15 +823,13 @@
   })();
 </script>
 
+
+
 {{-- ===== Styles ===== --}}
 <style>
   #hrUnlock span { transform: translateY(2px); opacity: .95; }
   #hrUnlock:hover span { transform: translateY(0); opacity: 1; transition: all .15s ease; }
-  /* Generic card shadow */
   .card{ box-shadow:0 1px 2px rgba(15,23,42,.06),0 1px 1px rgba(15,23,42,.04); }
-
-  /* Do NOT equalize row heights */
-  .kpi-grid{ }
 
   .kpi{ min-height:132px; }
   .hr-card{  min-height:150px; }
