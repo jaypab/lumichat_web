@@ -25,15 +25,15 @@
   {{-- Table --}}
   <div class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
     <div class="relative overflow-x-auto">
-      <table class="min-w-full text-sm leading-6 table-auto">
+      <table class="min-w-full text-sm leading-6 table-fixed">
         <thead class="bg-slate-100 border-b border-slate-200 text-slate-700">
           <tr class="align-middle">
-            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px]">Counselor</th>
-            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px]">Contact</th>
-            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px]">Status / Load</th>
+            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] w-[14rem]">Counselor</th>
+            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] w-[16rem]">Contact</th>
+            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] w-[12rem]">Status / Load</th>
             <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] w-[18rem] md:w-[20rem]">Upcoming Appointment</th>
-            <th class="px-6 lg:pl-12 py-3 text-left font-semibold uppercase tracking-wide text-[11px]">Weekly Availability</th>
-            <th class="px-6 py-3 text-right font-semibold uppercase tracking-wide text-[11px]">Action</th>
+            <th class="px-6 lg:pl-12 py-3 text-left font-semibold uppercase tracking-wide text-[11px] w-[24rem]">Weekly Availability</th>
+            <th class="px-6 py-3 text-right font-semibold uppercase tracking-wide text-[11px] w-[7rem]">Action</th>
           </tr>
         </thead>
 
@@ -41,7 +41,7 @@
           @forelse ($counselors as $c)
             <tr class="align-top even:bg-slate-50 hover:bg-slate-100/60 transition">
               {{-- Counselor --}}
-              <td class="px-6 py-4 min-w-[14rem]">
+              <td class="px-6 py-4">
                 <div class="font-semibold text-slate-900 truncate">{{ $c->name }}</div>
                 <div class="mt-1">
                   @if($c->is_active)
@@ -57,19 +57,19 @@
               </td>
 
               {{-- Contact --}}
-              <td class="px-6 py-4 max-w-[16rem]">
+              <td class="px-6 py-4">
                 <div class="truncate" title="{{ $c->email }}">
                   <a class="hover:underline" href="mailto:{{ $c->email }}">{{ $c->email }}</a>
                 </div>
                 @if($c->phone)
-                  <div class="text-slate-500">
+                  <div class="text-slate-500 truncate">
                     <a class="hover:underline" href="tel:{{ $c->phone }}">{{ $c->phone }}</a>
                   </div>
                 @endif
               </td>
 
               {{-- Status / Load --}}
-              <td class="px-6 py-4 min-w-[11rem]">
+              <td class="px-6 py-4">
                 @if(!empty($c->is_busy_now))
                   <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 text-[12px]">
                     <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Busy now
@@ -87,7 +87,7 @@
               </td>
 
               {{-- UPCOMING APPOINTMENT --}}
-              <td class="px-6 py-4 w-[18rem] md:w-[20rem] align-top">
+              <td class="px-6 py-4 align-top">
                 <div class="flex flex-col gap-1">
                   @if(!empty($c->next_appt_id) && !empty($c->next_at_c))
                     <a href="{{ route('admin.appointments.show', $c->next_appt_id) }}"
@@ -108,28 +108,31 @@
               </td>
 
               {{-- Weekly availability (recurring only) --}}
-              <td class="px-6 py-4">
+              <td class="px-6 lg:pl-12 py-4 align-top">
                 @php
-                  // Accept both 0..6 (Sun..Sat) and 1..7 (Mon..Sun) inputs
-                  $dayLabel = [
-                    0=>'Sun', 1=>'Mon', 2=>'Tue', 3=>'Wed', 4=>'Thu', 5=>'Fri', 6=>'Sat', 7=>'Sun'
-                  ];
-                  // keep only recurring rows (weekday not null)
-                  $weekly = ($c->availabilities ?? collect())->filter(fn($a) => !is_null($a->weekday));
+                  $dayLabel = [0=>'Sun',1=>'Mon',2=>'Tue',3=>'Wed',4=>'Thu',5=>'Fri',6=>'Sat',7=>'Sun'];
+                  $weekly   = ($c->availabilities ?? collect())->filter(fn($a) => !is_null($a->weekday));
                 @endphp
 
-                <div class="grid grid-cols-2 gap-1.5 w-max ml-6">
-                  @forelse ($weekly->groupBy('weekday') as $weekday => $slots)
-                    @php $label = $dayLabel[(int)$weekday] ?? '—'; @endphp
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 whitespace-nowrap">
-                      <strong>{{ $label }}:</strong>
-                      @foreach ($slots as $slot)
-                        {{ substr((string)$slot->start_time,0,5) }}–{{ substr((string)$slot->end_time,0,5) }}@if(!$loop->last),@endif
-                      @endforeach
-                    </span>
-                  @empty
-                    <span class="text-slate-400 text-xs">No slots</span>
-                  @endforelse
+                {{-- Fixed column width; children fill 100% --}}
+                <div class="w-[22rem] md:w-[24rem] min-w-0">
+                  <div class="flex flex-col gap-2">
+                    @forelse ($weekly->groupBy('weekday') as $weekday => $slots)
+                      @php $label = $dayLabel[(int)$weekday] ?? '—'; @endphp
+
+                      {{-- Day card (full width) --}}
+                      <div class="w-full rounded-xl bg-indigo-50 ring-1 ring-indigo-200 p-2.5">
+                        <div class="text-[12px] font-semibold text-indigo-700 mb-1">{{ $label }}:</div>
+                        <div class="text-[12px] text-indigo-700 leading-5 break-words">
+                          @foreach ($slots as $slot)
+                            {{ substr((string)$slot->start_time,0,5) }}–{{ substr((string)$slot->end_time,0,5) }}@if(!$loop->last), @endif
+                          @endforeach
+                        </div>
+                      </div>
+                    @empty
+                      <span class="text-slate-400 text-xs">No slots</span>
+                    @endforelse
+                  </div>
                 </div>
               </td>
 
@@ -163,6 +166,16 @@
     @endif
   </div>
 </div>
+
+<style>
+  .availability-chip { 
+    display: inline-flex; 
+    flex-wrap: wrap; 
+    align-items: center; 
+    gap: 0.4rem; 
+    border-radius: 0.5rem; 
+  }
+</style>
 
 {{-- Alerts --}}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
