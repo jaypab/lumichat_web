@@ -226,7 +226,43 @@
         </button>
         <h1 class="text-lg font-semibold">@yield('page_title','Dashboard')</h1>
       </div>
-      <div class="text-sm text-slate-600">{{ auth()->user()->name ?? 'Counselor' }}</div>
+      @php
+        $u = auth()->user();
+        $name = $u->name ?? 'Counselor';
+        $initials = collect(preg_split('/\s+/', trim($name)))
+                      ->take(2)->map(fn($p)=>mb_substr($p,0,1))->implode('');
+      @endphp
+
+      <div class="flex items-center">
+        <div class="relative">
+          <button id="cslUserBtn"
+        class="inline-flex items-center gap-2 h-10 px-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
+            <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-xs font-bold">
+              {{ $initials ?: 'U' }}
+            </div>
+            <div class="hidden sm:flex flex-col text-left leading-tight mr-1">
+              <span class="text-[13px] font-semibold text-gray-800 dark:text-gray-100 truncate max-w-[8rem]">
+                @auth {{ Auth::user()->name }} @endauth
+              </span>
+              <span class="text-[11px] text-gray-500 dark:text-gray-400">Counselor</span>
+            </div>
+          </button>
+
+          {{-- Dropdown --}}
+          <div id="cslUserMenu"
+              class="hidden absolute right-0 mt-2 w-44 rounded-xl bg-white shadow-lg ring-1 ring-black/5 overflow-hidden z-20">
+            <a href="{{ route('profile.edit') }}" class="block px-3 py-2.5 text-sm hover:bg-slate-50">Profile</a>
+            @if(Route::has('settings.index'))
+              <a href="{{ route('settings.index') }}" class="block px-3 py-2.5 text-sm hover:bg-slate-50">Settings</a>
+            @endif
+            <div class="h-px bg-slate-200 my-1"></div>
+            <form method="POST" action="{{ route('logout') }}">
+              @csrf
+              <button type="submit" class="w-full text-left px-3 py-2.5 text-sm text-rose-600 hover:bg-rose-50">Logout</button>
+            </form>
+          </div>
+        </div>
+      </div>
     </div>
   </header>
 
