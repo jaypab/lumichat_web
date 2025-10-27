@@ -288,7 +288,27 @@
           </button>
           <h1 class="text-lg font-semibold">@yield('page_title','Dashboard')</h1>
         </div>
-        <div class="text-sm text-slate-600">{{ auth()->user()->name ?? 'Master Admin' }}</div>
+
+        @php
+          $adminInitials = '';
+          if (Auth::check()) {
+            $parts = preg_split('/\s+/', trim(Auth::user()->name ?? ''));
+            $adminInitials = strtoupper(collect($parts)->take(2)->map(fn($s)=>mb_substr($s,0,1))->implode(''));
+          }
+        @endphp
+
+        {{-- Profile chip (no dark-mode toggle, no "..." menu) --}}
+        <div class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-2 py-1.5 shadow-sm">
+          <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-xs font-bold">
+            {{ $adminInitials ?: 'A' }}
+          </div>
+          <div class="leading-tight pr-1">
+            <div class="text-sm font-semibold text-slate-800">
+              {{ auth()->user()->name ?? 'Master Admin' }}
+            </div>
+            <div class="text-[11px] text-slate-500">Admin</div>
+          </div>
+        </div>
       </div>
     </header>
 
