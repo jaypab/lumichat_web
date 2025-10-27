@@ -203,7 +203,7 @@
     <div class="px-3 py-3 border-t border-white/15 hide-when-collapsed">
       <form method="POST" action="{{ route('logout') }}">
         @csrf
-        <button class="w-full text-left px-3 py-2.5 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white font-medium">
+        <button type="submit" class="w-full text-left px-3 py-2.5 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white font-medium">
           Logout
         </button>
       </form>

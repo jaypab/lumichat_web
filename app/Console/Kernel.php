@@ -14,6 +14,7 @@ class Kernel extends ConsoleKernel
     {
         $schedule->command('chats:cleanup')->dailyAt('02:10');
         $schedule->command('lumichat:sweep-no-shows --grace=30 --slot=60')->hourly();
+        $schedule->command('availability:purge-past')->dailyAt('02:30');
     }
 
     /**
