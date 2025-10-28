@@ -469,6 +469,9 @@ public function store(Request $request)
     $skipRasaThisTurn = session($doorKey, false);
     $forceCopingNow   = (bool) preg_match('/^\/show_coping\b/i', $analysisText);
     $declineCoping    = (bool) preg_match('/^\/skip_coping\b/i', $analysisText);
+    // NEW: tracks whether we *built* a consent prompt this turn
+    $builtConsent     = false;
+
     if ($forceCopingNow || $declineCoping) {
         $skipRasaThisTurn = false; // if they clicked a button, process normally
     }
@@ -478,7 +481,7 @@ public function store(Request $request)
     $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk) + [
         'user' => ['id' => $userId, 'name' => $name, 'first' => $first],
     ];
-    $timeout  = 8; // fallback; keep your own if you have it elsewhere
+    $timeout  = 8;
     $verify   = true;
 
     $botReplies = []; // array of ['text'=>..., 'buttons'=>[]]
@@ -540,10 +543,12 @@ public function store(Request $request)
                     ['title' => 'No, thanks',     'payload' => '/skip_coping'],
                 ],
             ];
+            // NEW: remember we built a consent prompt this turn
+            $builtConsent = true;
         }
     }
 
-    // 7) Risk elevation + crisis marker (log only; your crisis flow may add content elsewhere)
+    // 7) Risk elevation + logging
     $current = $session->risk_level ?: 'low';
     $order   = ['low' => 0, 'moderate' => 1, 'high' => 2];
     $new     = ($order[$msgRisk] > $order[$current]) ? $msgRisk : $current;
@@ -596,7 +601,7 @@ public function store(Request $request)
         session([$doorKey => true]); // set for next user message
     }
 
-    // 10) If we’re on the “consent turn” (set by doorKey previously), only ask consent now
+    // 10) If we’re on the “consent turn”, only ask consent now
     if (session($doorKey, false) && !$forceCopingNow && !$declineCoping) {
         $botReplies = [[
             'text' =>
@@ -607,6 +612,9 @@ public function store(Request $request)
                 ['title' => 'No, thanks',     'payload' => '/skip_coping'],
             ],
         ]];
+        // NEW: consent was built this turn
+        $builtConsent = true;
+
         session()->forget($doorKey);
     }
 
@@ -643,8 +651,8 @@ public function store(Request $request)
         ]);
     }
 
-    // 13) Early-turn coping strip (unless explicitly asked)
-    if (!$forceCopingNow && $count <= 3) {
+    // 13) Early-turn coping strip (unless explicitly asked OR we just built consent)
+    if (!$forceCopingNow && $count <= 3 && !$builtConsent) {
         $botReplies = array_values(array_filter(
             $botReplies,
             fn($piece) => !$this->looksLikeCoping((array)$piece)
