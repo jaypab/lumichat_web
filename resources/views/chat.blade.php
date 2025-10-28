@@ -120,11 +120,9 @@
 
     {{-- ===================== Chat Panel ===================== --}}
     <div id="chat-wrapper"
-     class="card-shell rounded-2xl overflow-hidden flex flex-col w-full"
-     style="height:80vh"
-     data-thread-id="{{ $thread->id ?? ('draft-'.\Illuminate\Support\Str::uuid()) }}"
-     data-user-name="{{ e(auth()->user()?->first_name ?? auth()->user()?->preferred_name ?? auth()->user()?->name ?? 'there') }}">
-
+         class="card-shell rounded-2xl overflow-hidden flex flex-col w-full"
+         style="height:80vh"
+         data-thread-id="{{ $thread->id ?? ('draft-'.\Illuminate\Support\Str::uuid()) }}">
 
       {{-- ===================== Header ===================== --}}
       <div class="flex items-center gap-3 bg-gradient-to-r from-indigo-600 to-purple-600
@@ -637,11 +635,9 @@
       try { last = JSON.parse(sessionStorage.getItem(KEY))?.ts || 0; } catch {}
       const elapsedMin = (now - last) / 60000;
       if (!hasMessages && (!last || elapsedMin >= 60)){
-      sessionStorage.setItem(KEY, JSON.stringify({ ts: now }));
-      const wrap = document.getElementById('chat-wrapper');
-      const uname = (wrap?.dataset.userName || 'there').trim();
-      runQ(() => appendBotBubble(`Hi ${uname}! I’m Lumi — how can I help you today?`, ""));
-    }
+        sessionStorage.setItem(KEY, JSON.stringify({ ts: now }));
+        runQ(() => appendBotBubble("Hi! I’m Lumi — how can I help you today?", ""));
+      }
     } catch {}
   });
 })();
