@@ -352,6 +352,7 @@ public function store(Request $request)
 
     // Prefer “human” text for heuristics
     $analysisText = $display !== '' ? $display : $text;
+    $copingCmd = $this->parseCopingCommand($analysisText);
 
     // Idempotency key (tolerate missing/invalid)
     $idem = (string) $request->input('_idem', '');
@@ -470,9 +471,20 @@ public function store(Request $request)
         }
     } catch (\Throwable $e) { /* noop */ }
 
-    // ---- NEW turn/door flags
-    $skipOnceKey      = 'skip_rasa_once_'.$sessionId;    // next user turn will skip Rasa once
-    $skipRasaThisTurn = (bool) session($skipOnceKey, false);
+   // Turn/door flags
+    $skipOnceKey       = 'skip_rasa_once_'.$sessionId;   // set after Turn-2, used once
+    $skipRasaThisTurn  = (bool) session($skipOnceKey, false);
+
+    // If user explicitly clicked "Yes, show tips" → clear the once-flag and don't gate
+    $forceCopingNow = ($copingCmd === 'yes');
+    $declineCoping  = ($copingCmd === 'no');
+
+    if ($forceCopingNow || $declineCoping) {
+        // This user turn is **not** the “offer coping” synthetic turn anymore
+        session()->forget($skipOnceKey);
+        $skipRasaThisTurn = false; // let this message flow normally to Rasa (or simple ack if 'no')
+    }
+
 
     // 5) Call Rasa (guarded by skip flag)
     $rasaUrl  = $this->rasaWebhookUrl();
@@ -518,15 +530,16 @@ public function store(Request $request)
         }
 
         // ---- Door right AFTER Rasa on Turn 2 (ask a question, then next turn → coping)
-        if ($count === 2 && !empty($botReplies)) {
-            $botReplies[] = [
-                'text' =>
-                    "Did any part of that help even a little, {USER_FIRST}? What feels most pressing right now? / " .
-                    "Nakatabang ba bisag gamay to, {USER_FIRST}? Asa ang pinakalisod karon?",
-                'buttons' => [],
-            ];
-            session([$skipOnceKey => true]);  // next user message => skip Rasa and offer coping
-        }
+        if ($count === 2 && !empty($botReplies) && !$forceCopingNow && !$declineCoping) {
+        $botReplies[] = [
+            'text' =>
+                "Did any part of that help even a little, {USER_FIRST}? What feels most pressing right now? / " .
+                "Nakatabang ba bisag gamay to, {USER_FIRST}? Asa ang pinakalisod karon?",
+            'buttons' => [],
+        ];
+        session([$skipOnceKey => true]); // next user turn would show the coping offer
+    }
+
     }
 
     // Fallback if nothing came back
@@ -575,19 +588,38 @@ public function store(Request $request)
     }
 
     // 6.7) Empathy preface (Turn 1 only replaces; Turn ≥2 only prepends)
-    $primaryEmotion = $this->choosePrimaryEmotion($labels);
-    if ($this->shouldPreface($sessionId, $labels, $msgRisk)) {
-        $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
+    // --- Concern preface (add BEFORE building $botPayload)
+$primaryEmotion = $this->choosePrimaryEmotion($labels);
 
-        if ($count === 1) {
-            // Turn 1: empathy ONLY (defer Rasa fully)
-            $botReplies = [['text' => $preface, 'buttons' => []]];
-        } else {
-            // Turn ≥2: put empathy first, keep Rasa + door question intact
-            array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
-            // (if the next item has buttons, you can merge buttons if desired)
+if (!$forceCopingNow && !$declineCoping && $this->shouldPreface($sessionId, $labels, $msgRisk)) {
+    $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
+
+    if ($count === 1) {
+        // Turn 1: empathy ONLY
+        $botReplies = [
+            ['text' => $preface, 'buttons' => []],
+        ];
+    } elseif ($count === 2) {
+        // Turn 2: empathy ONLY as well (fully defer Rasa again)
+        $botReplies = [
+            ['text' => $preface, 'buttons' => []],
+        ];
+    } elseif ($count === 3) {
+        // Turn 3: empathy first, then allow Rasa (coping still gated elsewhere)
+        array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
+    } else {
+        // Turn ≥4: empathy first; keep first Rasa's buttons but drop its text
+        array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
+        if (isset($botReplies[1])) {
+            $firstRasa = $botReplies[1];
+            if (!empty($firstRasa['buttons']) && is_array($firstRasa['buttons'])) {
+                $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $firstRasa['buttons']);
+            }
+            array_splice($botReplies, 1, 1);
         }
     }
+}
+
 
     // 7) Appointment link + personalization + (maybe) skip-turn coping
     $link = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
@@ -598,7 +630,7 @@ public function store(Request $request)
     $ctaHtml = '<a href="' . e($link) . '">Book an appointment</a>';
 
     // ===== Turn 3 (or whenever the once-flag is set): Skip Rasa and OFFER COPING
-    if ($skipRasaThisTurn) {
+      if ($skipRasaThisTurn && !$forceCopingNow && !$declineCoping) {
         $botReplies = [[
             'text' =>
                 "If you want, I can share coping tips based on how you're feeling. Want them now? / " .
@@ -608,13 +640,15 @@ public function store(Request $request)
                 ['title' => 'No, thanks',     'payload' => '/skip_coping'],
             ],
         ]];
-        session()->forget($skipOnceKey);
+        session()->forget($skipOnceKey); // consumed
     }
 
-    // Final safety: only strip coping-looking replies on early turns IF we are not in the skip-coping turn
-    if (!$skipRasaThisTurn && $count <= 3) {
+    $botPayload = [];
+    // Final safety: on turns 1–3, strip coping pieces — unless the user explicitly asked for tips
+    if (!$forceCopingNow && $count <= 3) {
         $botReplies = array_values(array_filter($botReplies, fn($piece) => !$this->looksLikeCoping((array)$piece)));
     }
+
 
     // Build response payload + persist bot lines
     $botPayload = [];
@@ -1002,4 +1036,17 @@ private function bridgeFollowup(?string $emotion, string $nameFirst): string
 
     return $byEmotion[strtolower((string)$emotion)] ?? $generic[array_rand($generic)];
 }
+// Detect explicit coping commands coming from quick-reply buttons or typed text.
+private function parseCopingCommand(string $text): ?string
+{
+    $t = trim(mb_strtolower($text));
+    // Button payloads or common variants
+    $yes = ['yes, show tips', 'show tips', '/show_coping', 'yes'];
+    $no  = ['no, thanks', 'no thanks', '/skip_coping', 'no'];
+
+    if (in_array($t, $yes, true)) return 'yes';
+    if (in_array($t, $no,  true)) return 'no';
+    return null;
+}
+
 }
