@@ -25,7 +25,10 @@ class ChatSession extends Model
         'emotions'     => 'array',   // ← NEW (JSON <-> array)
         'created_at'   => 'datetime',
         'updated_at'   => 'datetime',
+        'emotions' => 'array',
+        'high_risk_at' => 'datetime',
     ];
+    
 
     public function chats()
     {
