@@ -575,6 +575,44 @@ public function store(Request $request)
         ];
     }
 
+            // ===== Gate coping until after the user's second reply =====
+        $pendingCopingKey = 'pending_coping_'.$sessionId;
+        $blockedCopingThisTurn = false;
+
+        if ($count <= 2) { // turns 1–2: suppress coping offers
+            $filtered = [];
+            foreach ($botReplies as $piece) {
+                if ($this->looksLikeCoping($piece)) {
+                    $blockedCopingThisTurn = true;
+                    continue;
+                }
+                $filtered[] = $piece;
+            }
+            $botReplies = $filtered;
+            if ($blockedCopingThisTurn) {
+                session([$pendingCopingKey => true]); // remember to offer next turn
+            }
+        } else {
+            // turn ≥3: if coping wasn't offered by Rasa and we blocked earlier, inject a small offer
+            $hasCoping = false;
+            foreach ($botReplies as $piece) {
+                if ($this->looksLikeCoping($piece)) { $hasCoping = true; break; }
+            }
+            if (!$hasCoping && session($pendingCopingKey, false)) {
+                $botReplies[] = [
+                    'text' =>
+                        "If you want, I can share coping tips based on how you're feeling. Want them now? / " .
+                        "Kung gusto nimo, makashare ko og coping tips base sa imong gibati. Gusto nimo karon?",
+                    'buttons' => [
+                        ['title' => 'Yes, show tips', 'payload' => '/show_coping'],
+                        ['title' => 'No, thanks',     'payload' => '/skip_coping'],
+                    ],
+                ];
+            }
+            session()->forget($pendingCopingKey);
+        }
+
+
     // 6) Risk elevation + crisis prompt
     $current = $session->risk_level ?: 'low';
     $order   = ['low' => 0, 'moderate' => 1, 'high' => 2];
@@ -617,34 +655,32 @@ public function store(Request $request)
 
     }
  
-        // --- Concern preface (add BEFORE building $botPayload)
-        $primaryEmotion = $this->choosePrimaryEmotion($labels);
-        $prefaceAdded = false;
-        if ($this->shouldPreface($sessionId, $labels, $msgRisk)) {
-            $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
+            // --- Concern preface (add BEFORE building $botPayload)
+            $primaryEmotion = $this->choosePrimaryEmotion($labels);
+            if ($this->shouldPreface($sessionId, $labels, $msgRisk)) {
+                $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
 
-            // If this is the FIRST user message in the session, show ONLY the empathy preface.
-            // Defer ALL Rasa outputs (text + buttons) until the next user reply.
-            if ($count === 1) {
-                $botReplies = [
-                    ['text' => $preface, 'buttons' => []],
-                ];
-            } else {
-                // For later turns, prepend the preface,
-                // keep buttons from the first Rasa message, and drop that first Rasa text bubble.
-                array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
-
-                if (isset($botReplies[1])) {
-                    $firstRasa = $botReplies[1];
-                    if (!empty($firstRasa['buttons']) && is_array($firstRasa['buttons'])) {
-                        $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $firstRasa['buttons']);
+                if ($count === 1) {
+                    // Turn 1: empathy ONLY; fully defer Rasa (no text, no buttons)
+                    $botReplies = [
+                        ['text' => $preface, 'buttons' => []],
+                    ];
+                } elseif ($count === 2) {
+                    // Turn 2: empathy first, then keep all Rasa messages (we already gated coping above)
+                    array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
+                } else {
+                    // Turn ≥3: empathy first; keep first Rasa's buttons but drop its text to avoid double talk
+                    array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
+                    if (isset($botReplies[1])) {
+                        $firstRasa = $botReplies[1];
+                        if (!empty($firstRasa['buttons']) && is_array($firstRasa['buttons'])) {
+                            $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $firstRasa['buttons']);
+                        }
+                        array_splice($botReplies, 1, 1); // drop first Rasa text bubble
                     }
-                    array_splice($botReplies, 1, 1); // drop first Rasa text
                 }
             }
 
-            $prefaceAdded = true;
-        }
 
 
         /* If we inserted a preface, suppress the first Rasa text but keep its buttons.
@@ -1036,4 +1072,24 @@ private function shouldPreface(int $sessionId, array $labels, string $risk): boo
 
     return $should;
 }
+private function looksLikeCoping(array $piece): bool
+{
+    $t = trim((string)($piece['text'] ?? ''));
+    $btns = (array)($piece['buttons'] ?? []);
+
+    // Text heuristics
+    if ($t !== '' && preg_match('/\b(coping|coping tips|tips|grounding|breathing|relaxation|self[- ]care|techniques?)\b/i', $t)) {
+        return true;
+    }
+
+    // Button heuristics
+    foreach ($btns as $b) {
+        $title = (string)($b['title'] ?? '');
+        if ($title !== '' && preg_match('/\b(tips|coping|show|grounding|breathing)\b/i', $title)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 }
