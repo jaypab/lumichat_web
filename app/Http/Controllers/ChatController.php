@@ -622,9 +622,30 @@ public function store(Request $request)
         $prefaceAdded = false;
         if ($this->shouldPreface($sessionId, $labels, $msgRisk)) {
             $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
-            array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
+
+            // If this is the FIRST user message in the session, show ONLY the empathy preface.
+            // Defer ALL Rasa outputs (text + buttons) until the next user reply.
+            if ($count === 1) {
+                $botReplies = [
+                    ['text' => $preface, 'buttons' => []],
+                ];
+            } else {
+                // For later turns, prepend the preface,
+                // keep buttons from the first Rasa message, and drop that first Rasa text bubble.
+                array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
+
+                if (isset($botReplies[1])) {
+                    $firstRasa = $botReplies[1];
+                    if (!empty($firstRasa['buttons']) && is_array($firstRasa['buttons'])) {
+                        $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $firstRasa['buttons']);
+                    }
+                    array_splice($botReplies, 1, 1); // drop first Rasa text
+                }
+            }
+
             $prefaceAdded = true;
         }
+
 
         /* If we inserted a preface, suppress the first Rasa text but keep its buttons.
         Result: only ONE text bubble shows (the preface), with any quick-reply buttons preserved. */
