@@ -528,13 +528,13 @@ public function store(Request $request)
         $foundCoping = false;
         foreach ($botReplies as $i => $piece) {
             if ($this->looksLikeCoping((array)$piece)) {
-                unset($botReplies[$i]); // strip coping content
+                unset($botReplies[$i]);     // remove coping text/buttons from this turn
                 $foundCoping = true;
             }
         }
         if ($foundCoping) {
             $botReplies = array_values($botReplies);
-            $botReplies[] = [
+                $botReplies[] = [
                 'text' =>
                     "If you want, I can share coping tips based on how you're feeling. Want them now? / " .
                     "Kung gusto nimo, makashare ko og coping tips base sa imong gibati. Gusto nimo karon?",
