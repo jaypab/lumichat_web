@@ -582,33 +582,33 @@ if (!$forceCopingNow && !$declineCoping) {
         ]);
     }
 
-    // 9) Door after Rasa (turn 2): invite quick reply; next turn we’ll ask consent
-    if (!$skipRasaThisTurn && $count === 2 && !empty($botReplies)) {
-        $botReplies[] = [
-            'text' =>
-                "Did any part of that help even a little, {USER_FIRST}? What feels most pressing right now? / " .
-                "Nakatabang ba gamay bisan usa, {USER_FIRST}? Asa ang pinakalisod karon?",
-            'buttons' => [],
-        ];
-        session([$doorKey => true]); // set for next user message
-    }
+   // 9) Door after Rasa (turn 2): invite quick reply; arm consent for NEXT turn
+if (!$skipRasaThisTurn && $count === 2 && !empty($botReplies)) {
+    $botReplies[] = [
+        'text' =>
+            "Did any part of that help even a little, {USER_FIRST}? What feels most pressing right now? / " .
+            "Nakatabang ba gamay bisan usa, {USER_FIRST}? Asa ang pinakalisod karon?",
+        'buttons' => [],
+    ];
+    // Arm the consent door with the CURRENT count (2). We'll only fire when the count increases.
+    session([$doorKey => $count]);
+}
 
-    // 10) If we’re on the “consent turn”, only ask consent now
-    if (session($doorKey, false) && !$forceCopingNow && !$declineCoping) {
-        $botReplies = [[
-            'text' =>
-                "If you want, I can share coping tips based on how you're feeling. Want them now? / " .
-                "Kung gusto nimo, makashare ko og coping tips base sa imong gibati. Gusto nimo karon?",
-            'buttons' => [
-                ['title' => 'Yes, show tips', 'payload' => '/show_coping'],
-                ['title' => 'No, thanks',     'payload' => '/skip_coping'],
-            ],
-        ]];
-        // NEW: consent was built this turn
-        $builtConsent = true;
-
-        session()->forget($doorKey);
-    }
+// 10) If the consent door was armed on a PREVIOUS turn, ask consent now
+$armedAt = session($doorKey, null);
+if ($armedAt !== null && $count > (int)$armedAt && !$forceCopingNow && !$declineCoping) {
+    $botReplies = [[
+        'text' =>
+            "If you want, I can share coping tips based on how you're feeling. Want them now? / " .
+            "Kung gusto nimo, makashare ko og coping tips base sa imong gibati. Gusto nimo karon?",
+        'buttons' => [
+            ['title' => 'Yes, show tips', 'payload' => '/show_coping'],
+            ['title' => 'No, thanks',     'payload' => '/skip_coping'],
+        ],
+    ]];
+    $builtConsent = true;
+    session()->forget($doorKey); // fire once
+}
 
     // 11) Empathy preface (do not override consent flow)
     $primaryEmotion = $this->choosePrimaryEmotion($labels);
