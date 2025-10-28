@@ -1,4 +1,3 @@
-{{-- resources/views/Counselor_Interface/dashboard.blade.php --}}
 @extends('layouts.counselor')
 @section('title','Counselor - Dashboard')
 @section('page_title','Counselor Dashboard')
@@ -7,7 +6,7 @@
 <div class="max-w-7xl mx-auto p-6 lg:p-8 space-y-7 select-none">
 
   {{-- HERO / QUICK ACTIONS --}}
-  <div class="relative overflow-hidden rounded-3xl ring-1 ring-slate-200/80 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 text-white">
+  <div id="c-dash-hero" class="relative overflow-hidden rounded-3xl ring-1 ring-slate-200/80 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 text-white">
     <div class="absolute inset-0 opacity-20 pointer-events-none" aria-hidden="true">
       <svg class="w-full h-full" viewBox="0 0 1200 600" preserveAspectRatio="none">
         <defs>
@@ -33,33 +32,33 @@
           </p>
 
           {{-- QUICK ACTIONS (unified style + PNG icons) --}}
-        <div class="mt-4 inline-flex flex-wrap gap-3">
-          {{-- Manage Availability --}}
-          <a href="{{ route('counselor.availability.index') }}"
-            class="inline-flex items-center gap-2 rounded-xl bg-white/10 hover:bg-white/15 backdrop-blur px-4 py-2.5 font-semibold ring-1 ring-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60">
-            <span class="inline-grid place-items-center h-7 w-7 rounded-lg bg-white/10 ring-1 ring-white/20">
-              <img src="{{ asset('images/icons/calendar.png') }}"
-              class="h-4 w-4 object-contain filter invert brightness-200"
-              alt="">
-            </span>
-            Manage Availability
-          </a>
+          <div class="mt-4 inline-flex flex-wrap gap-3">
+            {{-- Manage Availability --}}
+            <a id="c-quick-availability" href="{{ route('counselor.availability.index') }}"
+              class="inline-flex items-center gap-2 rounded-xl bg-white/10 hover:bg-white/15 backdrop-blur px-4 py-2.5 font-semibold ring-1 ring-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60">
+              <span class="inline-grid place-items-center h-7 w-7 rounded-lg bg-white/10 ring-1 ring-white/20">
+                <img src="{{ asset('images/icons/calendar.png') }}"
+                class="h-4 w-4 object-contain filter invert brightness-200"
+                alt="">
+              </span>
+              Manage Availability
+            </a>
 
-          {{-- View Appointments --}}
-          <a href="{{ route('counselor.appointments.index') }}"
-            class="inline-flex items-center gap-2 rounded-xl bg-white/10 hover:bg-white/15 backdrop-blur px-4 py-2.5 font-semibold ring-1 ring-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60">
-            <span class="inline-grid place-items-center h-7 w-7 rounded-lg bg-white/10 ring-1 ring-white/20">
-              <img src="{{ asset('images/icons/appointment.png') }}" class="h-4 w-4 object-contain filter invert brightness-200"
-              alt="">
-            </span>
-            View Appointments
-          </a>
-        </div>
+            {{-- View Appointments --}}
+            <a id="c-quick-appointments" href="{{ route('counselor.appointments.index') }}"
+              class="inline-flex items-center gap-2 rounded-xl bg-white/10 hover:bg-white/15 backdrop-blur px-4 py-2.5 font-semibold ring-1 ring-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60">
+              <span class="inline-grid place-items-center h-7 w-7 rounded-lg bg-white/10 ring-1 ring-white/20">
+                <img src="{{ asset('images/icons/appointment.png') }}" class="h-4 w-4 object-contain filter invert brightness-200"
+                alt="">
+              </span>
+              View Appointments
+            </a>
+          </div>
         </div>
 
         {{-- Live clock --}}
         <div class="shrink-0">
-          <div class="rounded-2xl bg-white/10 ring-1 ring-white/30 p-5 backdrop-blur min-w-[220px] text-center">
+          <div id="c-dash-clockbox" class="rounded-2xl bg-white/10 ring-1 ring-white/30 p-5 backdrop-blur min-w-[220px] text-center">
             <div id="dashClock" class="text-3xl font-black tabular-nums tracking-tight drop-shadow-sm">--:--</div>
             <div id="dashDate" class="mt-1 text-xs font-medium text-white/85">—</div>
           </div>
@@ -74,17 +73,14 @@
     $todaysDelta   = $todaysDelta   ?? 0;
     $pendingCount  = $pendingCount  ?? 0;
     $pendingDelta  = $pendingDelta  ?? 0;
-
-    // ⬇️ use queue, not risk
-    $queueCount    = $queueCount    ?? 0;
+    $queueCount    = $queueCount    ?? 0;  // use queue, not risk
     $queueDelta    = $queueDelta    ?? 0;
-
     $openHours     = $openHours     ?? 0;
   @endphp
 
   <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
     {{-- Today’s Appointments --}}
-    <div class="group relative overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/80 shadow-sm hover:shadow-md transition">
+    <div id="c-kpi-today" class="group relative overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/80 shadow-sm hover:shadow-md transition">
       <div class="absolute right-0 -top-6 opacity-10 group-hover:opacity-20 transition">
         <div class="h-24 w-24 rounded-full bg-indigo-500 blur-2xl"></div>
       </div>
@@ -105,12 +101,11 @@
         </div>
         <div class="text-[11px] text-slate-500 mt-1">All statuses today</div>
       </div>
-      
       <div class="h-0.5 w-0 group-hover:w-full bg-indigo-500/70 transition-all duration-500"></div>
     </div>
 
     {{-- Pending --}}
-    <div class="group relative overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/80 shadow-sm hover:shadow-md transition">
+    <div id="c-kpi-pending" class="group relative overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/80 shadow-sm hover:shadow-md transition">
       <div class="absolute right-0 -top-6 opacity-10 group-hover:opacity-20 transition">
         <div class="h-24 w-24 rounded-full bg-amber-500 blur-2xl"></div>
       </div>
@@ -133,33 +128,33 @@
       <div class="h-0.5 w-0 group-hover:w-full bg-amber-500/70 transition-all duration-500"></div>
     </div>
 
-    {{-- Placeholder: Queue (keep or remove) --}}
-    <div class="group relative overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/80 shadow-sm hover:shadow-md transition">
-    <div class="absolute right-0 -top-6 opacity-10 group-hover:opacity-20 transition">
-      <div class="h-24 w-24 rounded-full bg-rose-500 blur-2xl"></div>
-    </div>
-    <div class="p-5">
-      <div class="flex items-center gap-3">
-        <span class="inline-grid place-items-center h-10 w-10 rounded-xl bg-rose-50 text-rose-600 ring-1 ring-rose-200">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-width="2" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-          </svg>
-        </span>
-        <div class="text-sm font-semibold text-slate-600">Queue</div>
+    {{-- Queue --}}
+    <div id="c-kpi-queue" class="group relative overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/80 shadow-sm hover:shadow-md transition">
+      <div class="absolute right-0 -top-6 opacity-10 group-hover:opacity-20 transition">
+        <div class="h-24 w-24 rounded-full bg-rose-500 blur-2xl"></div>
       </div>
-      <div class="mt-3 flex items-baseline gap-2">
-        <div class="text-3xl font-black tabular-nums text-slate-900">{{ $queueCount }}</div>
-        <div class="text-xs font-semibold {{ ($queueDelta ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-600' }}">
-          {{ ($queueDelta ?? 0) >= 0 ? '▲' : '▼' }} {{ abs($queueDelta ?? 0) }}%
+      <div class="p-5">
+        <div class="flex items-center gap-3">
+          <span class="inline-grid place-items-center h-10 w-10 rounded-xl bg-rose-50 text-rose-600 ring-1 ring-rose-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-width="2" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            </svg>
+          </span>
+          <div class="text-sm font-semibold text-slate-600">Queue</div>
         </div>
+        <div class="mt-3 flex items-baseline gap-2">
+          <div class="text-3xl font-black tabular-nums text-slate-900">{{ $queueCount }}</div>
+          <div class="text-xs font-semibold {{ ($queueDelta ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-600' }}">
+            {{ ($queueDelta ?? 0) >= 0 ? '▲' : '▼' }} {{ abs($queueDelta ?? 0) }}%
+          </div>
+        </div>
+        <div class="text-[11px] text-slate-500 mt-1">Pending • Confirmed • Ongoing</div>
       </div>
-      <div class="text-[11px] text-slate-500 mt-1">Pending • Confirmed • Ongoing</div>
+      <div class="h-0.5 w-0 group-hover:w-full bg-rose-500/70 transition-all duration-500"></div>
     </div>
-    <div class="h-0.5 w-0 group-hover:w-full bg-rose-500/70 transition-all duration-500"></div>
-  </div>
 
     {{-- Open Hours (This Week) --}}
-    <div class="group relative overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/80 shadow-sm hover:shadow-md transition">
+    <div id="c-kpi-openhours" class="group relative overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/80 shadow-sm hover:shadow-md transition">
       <div class="absolute right-0 -top-6 opacity-10 group-hover:opacity-20 transition">
         <div class="h-24 w-24 rounded-full bg-emerald-500 blur-2xl"></div>
       </div>
@@ -181,21 +176,21 @@
     </div>
   </div>
 
-  {{-- TWO COLUMNS: Upcoming + (spacer) --}}
+  {{-- TWO COLUMNS: Upcoming + Notes --}}
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     {{-- UPCOMING --}}
     <div class="lg:col-span-2 rounded-2xl bg-white ring-1 ring-slate-200/80 shadow-sm overflow-hidden">
-      <div class="flex items-center justify-between px-5 py-4 border-b border-slate-200/70">
+      <div id="c-upcoming-head" class="flex items-center justify-between px-5 py-4 border-b border-slate-200/70">
         <div class="flex items-center gap-2">
           <span class="inline-grid place-items-center h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-width="2" d="M8 7V3m8 4V3M3 11h18M5 5h14M5 19h14"/></svg>
           </span>
           <h3 class="font-bold text-slate-900">Upcoming Appointments</h3>
         </div>
-        <a href="{{ route('counselor.appointments.index') }}" class="text-sm font-semibold text-indigo-600 hover:text-indigo-700">View all →</a>
+        <a id="c-upcoming-viewall" href="{{ route('counselor.appointments.index') }}" class="text-sm font-semibold text-indigo-600 hover:text-indigo-700">View all →</a>
       </div>
 
-      <div class="divide-y divide-slate-100">
+      <div id="c-upcoming-list" class="divide-y divide-slate-100">
         @forelse(($upcoming ?? []) as $row)
           @php
             $t12 = \Carbon\Carbon::parse($row['when'])->format('M d, Y • g:i A');
@@ -228,8 +223,8 @@
       </div>
     </div>
 
-    {{-- Spacer / you can place another box here if needed --}}
-    <div class="rounded-2xl bg-white ring-1 ring-slate-200/80 shadow-sm overflow-hidden">
+    {{-- Notes --}}
+    <div id="c-dash-notes" class="rounded-2xl bg-white ring-1 ring-slate-200/80 shadow-sm overflow-hidden">
       <div class="px-5 py-4 border-b border-slate-200/70">
         <h3 class="font-bold text-slate-900">Notes</h3>
       </div>
@@ -240,7 +235,7 @@
   </div>
 
   {{-- TIP --}}
-  <div class="rounded-2xl bg-white ring-1 ring-slate-200/80 shadow-sm p-5">
+  <div id="c-dash-tip" class="rounded-2xl bg-white ring-1 ring-slate-200/80 shadow-sm p-5">
     <div class="flex flex-wrap items-center gap-3 text-slate-600">
       <span class="inline-grid place-items-center h-8 w-8 rounded-lg bg-slate-100 ring-1 ring-slate-200">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-700" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-4 12.87V18a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-3.13A7 7 0 0 0 12 2zm1 17h-2v-2h2v2zm1.07-7.75-.9.92A1.5 1.5 0 0 0 12 13v1h-2v-1a3.5 3.5 0 0 1 1.02-2.49l1.24-1.26A1.5 1.5 0 1 0 9.5 7H8a3 3 0 0 1 6 0c0 .8-.32 1.56-.93 2.25z"/></svg>
@@ -263,8 +258,8 @@
     const hh = now.getHours() % 12 || 12;
     const mm = String(now.getMinutes()).padStart(2,'0');
     const ap = now.getHours() >= 12 ? 'PM' : 'AM';
-    clock.textContent = `${hh}:${mm} ${ap}`;
-    date.textContent = new Intl.DateTimeFormat(undefined,{weekday:'long', month:'long', day:'numeric', year:'numeric'}).format(now);
+    if (clock) clock.textContent = `${hh}:${mm} ${ap}`;
+    if (date)  date.textContent = new Intl.DateTimeFormat(undefined,{weekday:'long', month:'long', day:'numeric', year:'numeric'}).format(now);
   }
   tick(); setInterval(tick, 1000);
 })();

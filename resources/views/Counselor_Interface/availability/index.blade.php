@@ -553,7 +553,7 @@ const isWeekend = (d)=>[0,6].includes(d.getDay());
 .cal-day{ height:40px; border-radius:12px; border:1px solid #e5e7eb; background:#fff; font-weight:700; color:#0f172a;
   box-shadow:0 1px 0 rgba(0,0,0,.02); transition:transform .08s ease, box-shadow .15s ease, border-color .15s ease, background-color .15s ease; }
 .cal-day:hover{ background:#eef2ff; border-color:#c7d2fe; box-shadow:0 3px 10px rgba(99,102,241,.15); transform:translateY(-1px);}
-cal-day:focus-visible{ outline:2px solid #6366f1; outline-offset:2px;}
+.cal-day:focus-visible{ outline:2px solid #6366f1; outline-offset:2px;}
 .cal-day--selected{ background:#4f46e5; color:#fff; border-color:#4f46e5; box-shadow:0 0 0 2px rgba(99,102,241,.35), 0 6px 18px rgba(99,102,241,.35);}
 .cal-day--disabled{ background:#f3f4f6; color:#9ca3af; border-color:#e5e7eb; cursor:not-allowed;}
 @media (min-width: 1024px){ .cal-grid .cal-day{ height: 52px; font-size: 15px; } }

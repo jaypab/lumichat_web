@@ -1,14 +1,16 @@
 {{-- resources/views/layouts/counselor.blade.php --}}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-app="counselor">
 <head>
   <meta charset="utf-8">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ trim($__env->yieldContent('title')) ?: 'Counselor • Dashboard' }}</title>
 
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   @vite(['resources/css/app.css','resources/js/app.js'])
   @include('layouts.partials.favicons')
+  @include('layouts.partials.tour')
 
   <style>
     :root{
@@ -18,6 +20,7 @@
       --sidebar-grad-a: #4f46e5;
       --sidebar-grad-b: #7c3aed;
     }
+    body.no-scroll { overflow: hidden; }
     html,body{height:100%}
     body{overflow-x:hidden;-webkit-tap-highlight-color:transparent}
 
@@ -326,7 +329,10 @@
   applyMode();
 })();
 </script>
-
+<button id="lumi-tour-fab"
+        type="button"
+        title="Help – Restart tutorial"
+        aria-label="Restart tutorial">?</button>
 @stack('scripts')
 </body>
 </html>
