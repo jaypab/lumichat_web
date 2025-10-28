@@ -579,7 +579,7 @@ public function store(Request $request)
         $pendingCopingKey = 'pending_coping_'.$sessionId;
         $blockedCopingThisTurn = false;
 
-        if ($count <= 2) { // turns 1–2: suppress coping offers
+        if ($count <= 3) { // turns 1–2: suppress coping offers
             $filtered = [];
             foreach ($botReplies as $piece) {
                 if ($this->looksLikeCoping($piece)) {
@@ -655,32 +655,37 @@ public function store(Request $request)
 
     }
  
-            // --- Concern preface (add BEFORE building $botPayload)
-            $primaryEmotion = $this->choosePrimaryEmotion($labels);
-            if ($this->shouldPreface($sessionId, $labels, $msgRisk)) {
-                $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
+ // --- Concern preface (add BEFORE building $botPayload)
+$primaryEmotion = $this->choosePrimaryEmotion($labels);
 
-                if ($count === 1) {
-                    // Turn 1: empathy ONLY; fully defer Rasa (no text, no buttons)
-                    $botReplies = [
-                        ['text' => $preface, 'buttons' => []],
-                    ];
-                } elseif ($count === 2) {
-                    // Turn 2: empathy first, then keep all Rasa messages (we already gated coping above)
-                    array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
-                } else {
-                    // Turn ≥3: empathy first; keep first Rasa's buttons but drop its text to avoid double talk
-                    array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
-                    if (isset($botReplies[1])) {
-                        $firstRasa = $botReplies[1];
-                        if (!empty($firstRasa['buttons']) && is_array($firstRasa['buttons'])) {
-                            $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $firstRasa['buttons']);
-                        }
-                        array_splice($botReplies, 1, 1); // drop first Rasa text bubble
-                    }
-                }
-                
+if ($this->shouldPreface($sessionId, $labels, $msgRisk)) {
+    $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
+
+    if ($count === 1) {
+        // Turn 1: empathy ONLY
+        $botReplies = [
+            ['text' => $preface, 'buttons' => []],
+        ];
+    } elseif ($count === 2) {
+        // Turn 2: empathy ONLY as well (fully defer Rasa again)
+        $botReplies = [
+            ['text' => $preface, 'buttons' => []],
+        ];
+    } elseif ($count === 3) {
+        // Turn 3: empathy first, then allow Rasa (coping still gated by step #1)
+        array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
+    } else {
+        // Turn ≥4: empathy first; keep first Rasa's buttons but drop its text to avoid double talk
+        array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
+        if (isset($botReplies[1])) {
+            $firstRasa = $botReplies[1];
+            if (!empty($firstRasa['buttons']) && is_array($firstRasa['buttons'])) {
+                $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $firstRasa['buttons']);
             }
+            array_splice($botReplies, 1, 1); // drop first Rasa text bubble
+        }
+    }
+}
 
 
 
@@ -695,6 +700,11 @@ public function store(Request $request)
     $ctaHtml = '<a href="' . e($link) . '">Book an appointment</a>';
 
     $botPayload = [];
+    // Final safety: on turns 1–3, strip ANY coping-looking piece that slipped through
+    if ($count <= 3) {
+        $botReplies = array_values(array_filter($botReplies, fn($piece) => !$this->looksLikeCoping((array)$piece)));
+    }
+
     foreach ($botReplies as $replyObj) {
         $replyText = (string) ($replyObj['text'] ?? '');
         $replyBtns = (isset($replyObj['buttons']) && is_array($replyObj['buttons'])) ? $replyObj['buttons'] : [];
