@@ -679,23 +679,9 @@ public function store(Request $request)
                         array_splice($botReplies, 1, 1); // drop first Rasa text bubble
                     }
                 }
+                
             }
 
-
-
-        /* If we inserted a preface, suppress the first Rasa text but keep its buttons.
-        Result: only ONE text bubble shows (the preface), with any quick-reply buttons preserved. */
-        if ($prefaceAdded && isset($botReplies[1])) {
-            $firstRasa = $botReplies[1];
-
-            // Merge buttons (if any) into the preface
-            if (!empty($firstRasa['buttons']) && is_array($firstRasa['buttons'])) {
-                $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $firstRasa['buttons']);
-            }
-
-            // Drop that first Rasa text bubble entirely
-            array_splice($botReplies, 1, 1);
-        }
 
 
 
