@@ -260,91 +260,120 @@ class ChatController extends Controller
     /* =========================================================================
      | Store a user message, call Rasa, risk/booking/crisis logic
      * =========================================================================*/
-    private function detectEmotions(string $text): array
-    {
-        $rules = [
-            // Core “big six”
-            'sad|down|blue|unhappy|depress(ed)?|depression|cry(ing)?|tearful|heartbroken|grief|grieving|mourning|nagool' => 'sad',
-            'angry|mad|furious|rage|irate|annoy(ed)?|irritat(ed)?|frustrat(ed)?|resentful|outraged|cross' => 'angry',
-            'anxious|anxiety|panic|panicky|afraid|fear|scared|terrified|nervous|uneasy|worried|apprehensive|kulba' => 'anxious',
-            'disgust|disgusted|gross(ed)? out|revolted|nauseated|repulsed' => 'disgust',
-            'surprise(d)?|shocked|astonished|amazed|startled|stunned' => 'surprised',
+ private function detectEmotions(string $text): array
+{
+    // Normalize once for simpler matching
+    $t = mb_strtolower($text);
 
-            // Common nuanced states
-            'stress|stressed|pressure|overwhelm(ed)?|burnout|overloaded' => 'stressed',
-            'tired|exhausted|fatigue|fatigued|drained|worn out|kapoy' => 'tired',
-            'lonely|loneliness|alone|isolated|isolat(ed)?|left out' => 'lonely',
-            'bored|boredom|apathetic|meh|indifferent|listless' => 'bored',
-            'confus(ed)?|confusing|unsure|uncertain|lost|perplexed' => 'confused',
-            'ashamed|shame|embarrass(ed)?|mortified|humiliated' => 'ashamed',
-            'guilt(y)?|guilty' => 'guilty',
-            'jealous|jealousy|envy|envious' => 'jealous',
-            'hurt|pained|pangs|wounded feelings' => 'hurt',
-            'disappoint(ed)?|let down' => 'disappointed',
-            'hopeless|no hope|give up|giving up|pointless|worthless|Surrender' => 'hopeless',
-            'insecure|not enough|inferior|self-conscious' => 'insecure',
-            'calm|peaceful|serene|at ease|relaxed|okay|fine|ok(ay)?' => 'calm',
-            'determined|motivated|driven|resolute|committed' => 'determined',
-            'regret|regretful|remorse' => 'regret',
-            'love|loved|loving|affection|caring|fond' => 'love',
-            'homesick|miss home|miss my family' => 'homesick',
-            'nervous breakdown|can’t cope|cannot cope' => 'overwhelmed',
-            'not ok(ay)?|not fine|not okey|not okay' => 'not_ok',
+    // ===== Expanded lexicons (EN + Cebuano/Tagalog + slang + a few emojis) =====
+    $rules = [
+        // Core emotions
+        '(?:sad|down(?:\s*bad)?|blue|unhappy|low\s*(?:mood|energy)|depress(?:ion|ed|ing)?|cry(?:ing)?|teary|tearful|heartbroken|grief|grieving|mourning|empty|numb|broken|nagool|hilak|masubo)' => 'sad',
 
-            // local language cues
-            'kulba' => 'anxious',
-            'kapoy' => 'tired',
-            'nalipay' => 'happy',
-            'nagool|hilak' => 'sad',
-        ];
+        '(?:angry|mad|furious|rage|irate|pissed(?:\s*off)?|annoy(?:ed|ing)?|irritat(?:ed|ing)?|frustrat(?:ed|ing)?|resentful|outraged|cross|nasuko|suko|kasuko|sapot|gikalagot|galit)' => 'angry',
 
-        $emotions = [];
-        foreach ($rules as $pattern => $label) {
-            if (preg_match('/\b(?:' . $pattern . ')\b/iu', $text)) {
-                $emotions[] = $label;
-            }
-        }
+        '(?:anxious|anxiety|panic|panicky|afraid|fear(?:ful)?|scared|terrified|nervous|uneasy|on\s*edge|restless|worried|worry(?:ing)?|apprehensive|paranoid|kabado|balisa|nabalaka|kulba(?:an)?|kulbaan)' => 'anxious',
 
-        // ===== Self-threat detection (suicidal / self-harm indicators) =====
-        $selfThreat = false;
-        $selfThreatPatterns = [
-            '\bkill myself\b',
-            '\bend my life\b',
-            '\bcommit suicide\b',
-            '\bno reason to live\b',
-            '\blife is pointless\b',
-            '\bi(?:\s|\'m| am)? (?:tired of living|want to die|wish i (?:were|was) dead)\b',
-            '\bi can\'?t go on\b',
-            '\b(?:overdose|hang myself|jump off|cut myself|poison myself)\b',
-            '\bgusto (?:na\s)?ko mamatay\b',
-            '\bmaghikog\b',
-            '\bwala na koy paglaum\b',
-            '\bgusto ko mawala\b',
-            '\btapuson na nako tanan\b'
-        ];
+        '(?:disgust|disgusted|gross(?:ed)?\s*out|revolted|nauseat(?:ed|ing)|repulsed|yuck|eww|icky|kasuka|luod|suka)' => 'disgust',
 
-        foreach ($selfThreatPatterns as $regex) {
-            if (preg_match('/' . $regex . '/iu', $text)) {
-                $selfThreat = true;
-                break;
-            }
-        }
+        '(?:surpris(?:e|ed)|shocked|astonish(?:ed|ing)|amazed|wow|whoa|startled|stunned|hala\!?)' => 'surprised',
 
-        // De-duplicate emotion list
-        $emotions = array_values(array_unique($emotions));
+        // Nuanced states
+        '(?:stress|stressed|stressing|pressure|under\s*pressure|overwhelm(?:ed|ing)?|burn(?:out|t\s*out)|overloaded|swamped|cramming|cram|dagsang\s*trabaho|daghan\s*kaayong\s*buhaton)' => 'stressed',
 
-        // Gentle fallback if nothing matched
-        if (empty($emotions)) {
-            if (preg_match('/\b(help|problem|struggle|issue|hard|difficult)\b/i', $text)) {
-                $emotions[] = 'stressed';
-            }
-        }
+        '(?:tired|sleepy|exhaust(?:ed|ion)|fatigue(?:d)?|drained|burnt\s*out|worn\s*out|low\s*energy|hapo|kapoy|kapuy|gikapoy|hutdan\s*ug\s*kusog)' => 'tired',
 
-        return [
-            'emotions'     => $emotions,
-            'self_threat'  => $selfThreat,
-        ];
+        '(?:lonely|loneliness|alone|isolat(?:ed|ion)?|left\s*out|no\s*one\s*(?:cares|to\s*talk)|mingaw|mingawon|walay\s*kuyog|walang\s*kausap)' => 'lonely',
+
+        '(?:bored|boredom|apathetic|meh|indifferent|listless|nothing\s*to\s*do|dull|bored\s*af|saputon\s*sa\s*kakapoy)' => 'bored',
+
+        '(?:confus(?:e|ed|ing)|unsure|uncertain|mixed\s*up|lost|perplexed|dilemma|libog|nalilito)' => 'confused',
+
+        '(?:ashamed|shame|embarrass(?:ed|ing)?|mortified|humiliat(?:ed|ing)?|hiya|ulaw)' => 'ashamed',
+
+        '(?:guilt(?:y)?|my\s*fault|to\s*blame|kasalanan\s*ko|sala\s*nako)' => 'guilty',
+
+        '(?:jealous|jealousy|envy|envious|inggit|suya|nasuya)' => 'jealous',
+
+        '(?:hurt|pained|painful\s*inside|wounded\s*feelings|nasakitan|masakit\s*ang\s*loob)' => 'hurt',
+
+        '(?:disappoint(?:ed|ing)|let\s*down|nadismaya|na\-?disappoint)' => 'disappointed',
+
+        '(?:hopeless|no\s*hope|give\s*up|giving\s*up|pointless|meaningless|worthless|stuck|wala[y]?\s*paglaum|surrender)' => 'hopeless',
+
+        '(?:insecure|not\s*(?:good\s*enough|enough)|inferior|self\-?conscious|ugly|fat|dumb|stupid|failure)' => 'insecure',
+
+        '(?:calm|peaceful|serene|at\s*ease|relax(?:ed|ing)?|okay|ok(?:ay)?|fine|chill|better\s*now)' => 'calm',
+
+        '(?:determin(?:ed|ation)|motivated|driven|resolute|committed|focused|game\s*plan)' => 'determined',
+
+        '(?:regret|regretful|remorse|shouldn\'?t\s*have|my\s*mistake|sayop\s*nako)' => 'regret',
+
+        '(?:love|loved|loving|affection|care(?:s|d)?|fond|❤️|<3)' => 'love',
+
+        '(?:homesick|miss\s*home|miss\s*my\s*family|mingaw\s*sa\s*balay|mingaw\s*ko\s*sa\s*pamilya)' => 'homesick',
+
+        '(?:can(?:not|\'?t)\s*cope|nervous\s*breakdown|too\s*much|overwhelming|dilikado\s*na|di\s*kaya|di\s*ko\s*kaya)' => 'overwhelmed',
+
+        '(?:not\s*(?:ok|okay|fine|okey)|hindi\s*ok(?:ay)?|dili\s*okay)' => 'not_ok',
+
+        // ===== Emoji shortcuts (additive) =====
+        '[\x{1F62D}\x{1F622}\x{1F614}\x{1F625}\x{1F641}]' => 'sad',        // 😭😢😔😥🙁
+        '[\x{1F620}\x{1F621}]'                              => 'angry',      // 😠😡
+        '[\x{1F630}\x{1F628}\x{1F627}]'                    => 'anxious',    // 😰😨😧
+        '[\x{1F62E}\x{1F632}]'                              => 'surprised',  // 😮😲
+        '[\x{1F4A4}]'                                       => 'tired',      // 💤
+        '[\x{1F922}\x{1F92E}]'                              => 'disgust',    // 🤢🤮
+        '[\x{1F612}\x{1F611}]'                              => 'bored',      // 😒😑
+        '[\x{1F615}\x{1F641}\x{1F914}]'                    => 'confused',   // 😕🙁🤔
+        '[\x{2764}\x{1F496}\x{1F495}]'                      => 'love',       // ❤ 💖 💕
+    ];
+
+    $emotions = [];
+    foreach ($rules as $pattern => $label) {
+    // word/emoji friendly boundaries; unicode mode ON
+    if (preg_match('/(?:^|\b|[_\-\#\(])(?:' . $pattern . ')(?:\b|$|[!\.\?,\)])/u', $t)) {
+        $emotions[] = $label;
     }
+}
+
+
+    // ===== Self-threat detection (keep yours + add a few phrasing variants) =====
+    $selfThreat = false;
+    $selfThreatPatterns = [
+        '\bkill myself\b',
+        '\bend my life\b',
+        '\bcommit suicide\b',
+        '\bno reason to live\b',
+        '\blife is pointless\b',
+        '\bi(?:\s|\'m| am)? (?:tired of living|want to die|wish i (?:were|was) dead|should just die)\b',
+        '\bi can\'?t go on\b',
+        '\b(?:overdose|hang myself|jump off|cut myself|poison myself)\b',
+        '\bgusto (?:na\s)?ko mamatay\b',
+        '\bmaghikog\b',
+        '\bwala na koy paglaum\b',
+        '\bgusto ko mawala\b',
+        '\btapuson na nako tanan\b',
+        '\bdi(?:li)?\s*na\s*ko\s*gusto\s*mabuhi\b',
+    ];
+    foreach ($selfThreatPatterns as $regex) {
+        if (preg_match('/' . $regex . '/iu', $t)) { $selfThreat = true; break; }
+    }
+
+    // De-duplicate and gentle fallback
+    $emotions = array_values(array_unique($emotions));
+    if (empty($emotions)) {
+        if (preg_match('/\b(help|problem|struggle|issue|hard|difficult|challenge|can\'?t\s*cope)\b/u', $t)) {
+            $emotions[] = 'stressed';
+        }
+    }
+
+    // Return result
+    return [
+        'emotions'    => $emotions,
+        'self_threat' => $selfThreat,
+    ];
+}
 
 public function store(Request $request)
 {
@@ -585,7 +614,33 @@ public function store(Request $request)
         $this->logActivity('appointment_detected', 'User asked to schedule; CTA injected', $sessionId, [
             'preview' => Str::limit($text, 120),
         ]);
+
     }
+ 
+        // --- Concern preface (add BEFORE building $botPayload)
+        $primaryEmotion = $this->choosePrimaryEmotion($labels);
+        $prefaceAdded = false;
+        if ($this->shouldPreface($sessionId, $labels, $msgRisk)) {
+            $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
+            array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
+            $prefaceAdded = true;
+        }
+
+        /* If we inserted a preface, suppress the first Rasa text but keep its buttons.
+        Result: only ONE text bubble shows (the preface), with any quick-reply buttons preserved. */
+        if ($prefaceAdded && isset($botReplies[1])) {
+            $firstRasa = $botReplies[1];
+
+            // Merge buttons (if any) into the preface
+            if (!empty($firstRasa['buttons']) && is_array($firstRasa['buttons'])) {
+                $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $firstRasa['buttons']);
+            }
+
+            // Drop that first Rasa text bubble entirely
+            array_splice($botReplies, 1, 1);
+        }
+
+
 
     // 7) Build appointment link + response payload
     $link = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
@@ -809,4 +864,155 @@ public function store(Request $request)
             // best-effort only
         }
     }
+/* =========================================================================
+ | Empathic preface helpers (updated)
+ * =========================================================================*/
+
+// Weighted priority so we always pick the most useful detected emotion.
+// 3 = very strong (crisis-adjacent), 2 = strong, 1 = helpful, 0 = neutral/positive.
+private const EMOTION_PRIORITY = [
+    'hopeless'=>3, 'sad'=>2, 'anxious'=>2, 'overwhelmed'=>2,
+    'stressed'=>1, 'tired'=>1, 'lonely'=>1, 'confused'=>1, 'angry'=>1, 'not_ok'=>1,
+    'disappointed'=>1, 'hurt'=>1, 'ashamed'=>1, 'guilty'=>1, 'insecure'=>1,
+    'jealous'=>1, 'regret'=>1, 'bored'=>1, 'disgust'=>1, 'surprised'=>1,
+    'homesick'=>1, 'love'=>0, 'determined'=>0, 'calm'=>0,
+];
+
+private function choosePrimaryEmotion(array $labels): ?string
+{
+    $labels = array_map('strtolower', $labels ?? []);
+    $best = null; $bestScore = -1;
+    foreach ($labels as $e) {
+        $score = self::EMOTION_PRIORITY[$e] ?? 0;
+        if ($score > $bestScore) { $bestScore = $score; $best = $e; }
+    }
+    return $best ?? ($labels[0] ?? null);
+}
+
+private function empathyTemplate(?string $emotion, string $risk): string
+{
+    // Dual-language lines (EN / CEB). Keep them short and opening.
+    $generic = [
+        "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?",
+        "{USER_FIRST}, thanks for telling me. You’re not alone—I’m with you. What feels toughest right now? / Salamat sa pag-sulti, {USER_FIRST}. Dili ka nag-inusara—ania ko. Unsay pinakalisod karon?",
+        "I hear you, {USER_FIRST}. Let’s take this one step at a time. / Nadungog tika, {USER_FIRST}. Hinay-hinay lang ta.",
+    ];
+
+    $byEmotion = [
+        'sad' => [
+            "I’m sorry this is heavy, {USER_FIRST}. What do you think is adding to it lately? / Gikasubo nako, {USER_FIRST}. Unsay nakapabug-at ani karon?",
+        ],
+        'anxious' => [
+            "That sounds tense, {USER_FIRST}. Want a 60-second grounding tip before we talk it through? / Kuyaw paminawon, {USER_FIRST}. Gusto ka og 60-second pa-calm sa wala pa ta mo-istorya?",
+        ],
+        'stressed' => [
+            "You’ve been carrying a lot, {USER_FIRST}. What’s the first thing stressing you today? / Daghan ka’g gidala, {USER_FIRST}. Unsay una nga naka-stress nimo?",
+        ],
+        'tired' => [
+            "You sound drained, {USER_FIRST}. What’s been taking most of your energy? / Murag gikapoy kaayo ka, {USER_FIRST}. Unsay pinakadako nga gaka-kuha sa imong kusog?",
+        ],
+        'lonely' => [
+            "Feeling alone can hurt, {USER_FIRST}. I’m here with you now. / Masakit kung mag-inusa, {USER_FIRST}. Ania ko karon.",
+        ],
+        'confused' => [
+            "It’s okay to be unsure, {USER_FIRST}. Want to sort it out together step by step? / Okay ra malibog, {USER_FIRST}. Atong himay-himayun?",
+        ],
+        'angry' => [
+            "Your feelings are valid, {USER_FIRST}. Want to unpack what crossed the line? / Balido imong gibati, {USER_FIRST}. Atong hisgutan unsay nakalapas?",
+        ],
+        'overwhelmed' => [
+            "When everything piles up, it’s hard to breathe, {USER_FIRST}. Let’s pick one small next step. / Kung nagtapok tanan, lisod gyud. Mangita ta’g usa ka gamay nga lakang.",
+        ],
+        'not_ok' => [
+            "Thanks for being honest, {USER_FIRST}. Not feeling okay is okay. Where is it hardest right now? / Salamat sa pagkamatinuoron, {USER_FIRST}. Okay ra nga dili okay. Asa pinakalisod karon?",
+        ],
+        'disappointed' => [
+            "It hurts to be let down, {USER_FIRST}. Want to tell me what happened? / Sakit ma-let down, {USER_FIRST}. Pwede nimo isulti unsay nahitabo?",
+        ],
+        'hurt' => [
+            "That sounded painful, {USER_FIRST}. I’m here—what part stung the most? / Murag masakit, {USER_FIRST}. Asa bahin ang pinaka-sakit?",
+        ],
+        'ashamed' => [
+            "Shame can feel heavy, {USER_FIRST}. You’re still worthy. Want to talk it through? / Bug-at ang ulaw, {USER_FIRST}. Bililhon gihapon ka. Istorya ta?",
+        ],
+        'guilty' => [
+            "Guilt can be tough, {USER_FIRST}. We can sort facts from feelings together. / Lisod ang kasubo/kasala, {USER_FIRST}. Atong buwagon ang facts ug feelings.",
+        ],
+        'insecure' => [
+            "That self-doubt is loud sometimes, {USER_FIRST}. Want to check the evidence together? / Kusog usahay ang pagduha-duha, {USER_FIRST}. Ato tan-awon ang ebidensya?",
+        ],
+        'jealous' => [
+            "Jealousy happens to everyone, {USER_FIRST}. Want to explore what it’s telling you? / Masinahon usahay tanan, {USER_FIRST}. Ato sabton unsay pasabot ani?",
+        ],
+        'regret' => [
+            "Regret stings, {USER_FIRST}. What would ‘making it a bit better’ look like now? / Masakit ang pagmahay, {USER_FIRST}. Unsa’y gamay nga pa-ayo karon?",
+        ],
+        'bored' => [
+            "Sounds dull and empty, {USER_FIRST}. Want a tiny activity to break the loop? / Murag way kalipay, {USER_FIRST}. Gusto kag gamay nga buhat aron maputol ang loop?",
+        ],
+        'disgust' => [
+            "That really turned you off, {USER_FIRST}. Want to vent a bit about it? / Grabe ka luod paminawon, {USER_FIRST}. Ganahan ka mo-vent gamay?",
+        ],
+        'surprised' => [
+            "That was unexpected, {USER_FIRST}. How did it hit you? / Wala damha, {USER_FIRST}. Unsa’y imong nabati?",
+        ],
+        'homesick' => [
+            "Missing home is tough, {USER_FIRST}. What do you miss most right now? / Lisod ang mingaw sa balay, {USER_FIRST}. Unsa’y pinaka-gimingaw nimo?",
+        ],
+        'love' => [
+            "That warmth matters, {USER_FIRST}. Want to build on what’s helping? / Maayo nang kainit, {USER_FIRST}. Ato palambuon ang nakatabang?",
+        ],
+        'determined' => [
+            "I see your drive, {USER_FIRST}. What’s a clear next step? / Kita nako imong determinasyon, {USER_FIRST}. Unsay klarong sunod nga lakang?",
+        ],
+        'calm' => [
+            "Glad you’re finding some calm, {USER_FIRST}. Would you like gentle tips to keep it? / Maayo nga nakapahuway ka, {USER_FIRST}. Gusto ka’g tips para mapadayon?",
+        ],
+    ];
+
+    // Risk-aware openings override emotion
+    $highRisk = [
+        "I’m really glad you told me this, {USER_FIRST}. You matter. I’m here with you—let’s keep talking. If you want, I can also help you connect to a counselor. / Salamat gyud sa pagsulti, {USER_FIRST}. Importante ka. Ania ko—padayon ta. Pwede tika tabangan makig-connect sa counselor.",
+    ];
+    $moderate = [
+        "That sounds heavy, {USER_FIRST}. You’re not a burden. We’ll face this together—can you tell me a bit more? / Bug-at paminawon, {USER_FIRST}. Dili ka pabigat. Atubangon nato ni—pila ka detalye pa?",
+    ];
+
+    if ($risk === 'high')    return $highRisk[array_rand($highRisk)];
+    if ($risk === 'moderate')return $moderate[array_rand($moderate)];
+    if ($emotion && isset($byEmotion[$emotion])) {
+        return $byEmotion[$emotion][array_rand($byEmotion[$emotion])];
+    }
+    return $generic[array_rand($generic)];
+}
+
+private function shouldPreface(int $sessionId, array $labels, string $risk): bool
+{
+    // Show preface on: first turn, risk >= moderate, emotion change,
+    // or every 3rd user turn (cooldown protected).
+    $key  = 'preface_meta_'.$sessionId;
+    $meta = session($key, ['last_emotion'=>null, 'turns'=>0, 'last_time'=>0]);
+
+    $primary = $this->choosePrimaryEmotion($labels);
+    $meta['turns'] = (int)$meta['turns'] + 1;
+
+    $emotionChanged = $primary && $primary !== ($meta['last_emotion'] ?? null);
+    $firstTurn      = ($meta['turns'] === 1);
+    $timeOk         = (time() - (int)$meta['last_time']) >= 40; // cooldown ~40s
+    $everyThird     = ($meta['turns'] % 3 === 1);
+
+    // Prefer preface more when emotion priority is strong (>=2)
+    $prioScore = self::EMOTION_PRIORITY[$primary ?? ''] ?? 0;
+    $strongEmotion = ($prioScore >= 2);
+
+    $should = $firstTurn || $risk !== 'low' || $emotionChanged || $strongEmotion || $everyThird;
+    $should = $should && $timeOk;
+
+    // persist meta
+    $meta['last_emotion'] = $primary ?: ($meta['last_emotion'] ?? null);
+    if ($should) $meta['last_time'] = time();
+    session([$key => $meta]);
+
+    return $should;
+}
 }
