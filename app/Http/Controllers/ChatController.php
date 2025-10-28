@@ -523,30 +523,22 @@ public function store(Request $request)
         ]];
     }
 
-    // === Intercept coping: always ask consent first (convert any tips into consent prompt)
-    if (!$forceCopingNow && !$declineCoping) {
-        $foundCoping = false;
-        foreach ($botReplies as $i => $piece) {
-            if ($this->looksLikeCoping((array)$piece)) {
-                unset($botReplies[$i]);     // remove coping text/buttons from this turn
-                $foundCoping = true;
-            }
-        }
-        if ($foundCoping) {
-            $botReplies = array_values($botReplies);
-                $botReplies[] = [
-                'text' =>
-                    "If you want, I can share coping tips based on how you're feeling. Want them now? / " .
-                    "Kung gusto nimo, makashare ko og coping tips base sa imong gibati. Gusto nimo karon?",
-                'buttons' => [
-                    ['title' => 'Yes, show tips', 'payload' => '/show_coping'],
-                    ['title' => 'No, thanks',     'payload' => '/skip_coping'],
-                ],
-            ];
-            // NEW: remember we built a consent prompt this turn
-            $builtConsent = true;
+// === Intercept coping: strip any coping this turn; ask consent NEXT turn via door flow.
+if (!$forceCopingNow && !$declineCoping) {
+    $foundCoping = false;
+    foreach ($botReplies as $i => $piece) {
+        if ($this->looksLikeCoping((array)$piece)) {
+            unset($botReplies[$i]);   // remove coping text/buttons for THIS turn
+            $foundCoping = true;
         }
     }
+    if ($foundCoping) {
+        $botReplies = array_values($botReplies);
+        // Do NOT append a consent prompt here.
+        // Step 9 will append the follow-up question and set $doorKey,
+        // Step 10 will show the consent prompt on the next user turn.
+    }
+}
 
     // 7) Risk elevation + logging
     $current = $session->risk_level ?: 'low';
