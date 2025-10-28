@@ -329,10 +329,11 @@ class ChatController extends Controller
 
 public function store(Request $request)
 {
+    // --- Personalization
     $name  = $this->preferredName();
     $first = preg_split('/\s+/', $name, 2)[0] ?? $name;
 
-    // 1) Validate (+ idempotency)
+    // 1) Validate + normalize (with idempotency)
     $request->validate([
         'message'      => ['required', 'string', 'max:2000', function ($attr, $val, $fail) {
             $s = is_string($val) ? preg_replace('/\s+/u', ' ', $val) : '';
@@ -343,24 +344,18 @@ public function store(Request $request)
         'display_text' => ['nullable', 'string', 'max:2000'],
     ]);
 
-    $rawInput = (string) $request->input('message', '');
-    $text     = trim(preg_replace('/\s+/u', ' ', preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawInput) ?? ''));
-
-    // Normalize display text
-    $rawDisplay = (string) $request->input('display_text', '');
-    $display    = trim(preg_replace('/\s+/u', ' ', preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawDisplay) ?? ''));
-
-    // Prefer “human” text for heuristics
+    $rawInput  = (string) $request->input('message', '');
+    $text      = trim(preg_replace('/\s+/u', ' ', preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawInput) ?? '')) ;
+    $rawDisp   = (string) $request->input('display_text', '');
+    $display   = trim(preg_replace('/\s+/u', ' ', preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawDisp) ?? ''));
     $analysisText = $display !== '' ? $display : $text;
-    $copingCmd = $this->parseCopingCommand($analysisText);
 
-    // Idempotency key (tolerate missing/invalid)
     $idem = (string) $request->input('_idem', '');
-    if (!\Illuminate\Support\Str::isUuid($idem)) {
-        $idem = (string) \Illuminate\Support\Str::uuid();
+    if (!Str::isUuid($idem)) {
+        $idem = (string) Str::uuid();
     }
 
-    // --- Detect emotions ONCE (labels + selfThreat)
+    // 2) Detect emotions + self-threat once
     $emoResult  = $this->detectEmotions($analysisText);
     $labels     = (array)($emoResult['emotions'] ?? []);
     $selfThreat = (bool)($emoResult['self_threat'] ?? false);
@@ -371,12 +366,10 @@ public function store(Request $request)
     $userId    = Auth::id();
     $sessionId = session('chat_session_id');
 
-    // 2) Ensure session
+    // 3) Ensure session exists (and initialize emotions)
     $session = null;
     if ($sessionId) {
-        $session = ChatSession::where('id', $sessionId)
-            ->where('user_id', $userId)
-            ->first();
+        $session = ChatSession::where('id', $sessionId)->where('user_id', $userId)->first();
     }
     if (!$session) {
         $session = ChatSession::create([
@@ -386,28 +379,29 @@ public function store(Request $request)
             'risk_level'    => 'low',
         ]);
         session(['chat_session_id' => $session->id]);
+        $sessionId = $session->id;
 
-        // best-effort emotion seed
         try {
             if (!empty($labels)) {
                 $session->emotions = $this->incrementEmotionCounts([], $labels);
                 $session->save();
             }
-        } catch (\Throwable $e) { /* noop */ }
+        } catch (\Throwable $e) { /* best-effort */ }
 
         $this->logActivity('chat_session_created', 'New chat session auto-created', $session->id, [
             'is_anonymous' => false,
             'reused'       => false,
         ]);
+    } else {
+        $sessionId = $session->id;
     }
-    $sessionId = $session->id;
 
-    // 3) Language + risk
+    // 4) Lang + risk
     $lang    = $this->inferLanguage($text);
     $msgRisk = $this->evaluateRiskLevel($analysisText);
     if ($selfThreat) $msgRisk = 'high';
 
-    // 4) Persist user message (idempotent)
+    // 5) Save user message idempotently
     try {
         $userMsg = Chat::firstOrCreate(
             ['idempotency_key' => $idem],
@@ -419,18 +413,17 @@ public function store(Request $request)
                 'sent_at'         => now(),
             ]
         );
-    } catch (\Illuminate\Database\QueryException $e) {
+    } catch (QueryException $e) {
         $userMsg = Chat::where('idempotency_key', $idem)->first();
         if (!$userMsg) throw $e;
     }
 
-    // Stamp first high-risk trigger
+    // Persist FIRST high-risk trigger pointers
     try {
         if ($msgRisk === 'high') {
             $session->refresh();
             if (empty($session->high_risk_chat_id)) {
                 $excerpt = \Illuminate\Support\Str::limit($text, 180, '…');
-
                 $sessTable = app(\App\Http\Controllers\Admin\ChatbotSessionController::class)->sessionsTable();
                 if ($sessTable && \Illuminate\Support\Facades\Schema::hasColumn($sessTable, 'high_risk_chat_id')) {
                     \Illuminate\Support\Facades\DB::table($sessTable)
@@ -449,17 +442,17 @@ public function store(Request $request)
                 }
             }
         }
-    } catch (\Throwable $e) { /* noop */ }
+    } catch (\Throwable $e) { /* non-fatal */ }
 
-    // Topic summary for first user line
+    // Generate topic summary on first user turn
     $count = Chat::where('chat_session_id', $sessionId)->where('sender', 'user')->count();
     if ($count === 1) {
         preg_match('/\b(sad|depress|help|anxious|angry|lonely|stress|tired|happy|excited|not okay|nagool|kapoy|kulba|nalipay)\b/i', $text, $m);
-        $summary = $m[0] ?? \Illuminate\Support\Str::limit($text, 40, '…');
+        $summary = $m[0] ?? Str::limit($text, 40, '…');
         $session->update(['topic_summary' => ucfirst($summary)]);
     }
 
-    // Update emotion tallies (best-effort)
+    // Accumulate emotion counts
     try {
         if (!empty($labels)) {
             $current = $this->emotionsAsCounts($session->emotions ?? []);
@@ -469,34 +462,28 @@ public function store(Request $request)
                 $session->save();
             }
         }
-    } catch (\Throwable $e) { /* noop */ }
+    } catch (\Throwable $e) { /* best-effort */ }
 
-   // Turn/door flags
-    $skipOnceKey       = 'skip_rasa_once_'.$sessionId;   // set after Turn-2, used once
-    $skipRasaThisTurn  = (bool) session($skipOnceKey, false);
-
-    // If user explicitly clicked "Yes, show tips" → clear the once-flag and don't gate
-    $forceCopingNow = ($copingCmd === 'yes');
-    $declineCoping  = ($copingCmd === 'no');
-
+    // --- Coping consent / flow flags
+    $doorKey          = 'door_after_rasa_' . $sessionId; // ask a follow-up, then next turn ask consent
+    $skipRasaThisTurn = session($doorKey, false);
+    $forceCopingNow   = (bool) preg_match('/^\/show_coping\b/i', $analysisText);
+    $declineCoping    = (bool) preg_match('/^\/skip_coping\b/i', $analysisText);
     if ($forceCopingNow || $declineCoping) {
-        // This user turn is **not** the “offer coping” synthetic turn anymore
-        session()->forget($skipOnceKey);
-        $skipRasaThisTurn = false; // let this message flow normally to Rasa (or simple ack if 'no')
+        $skipRasaThisTurn = false; // if they clicked a button, process normally
     }
 
-
-    // 5) Call Rasa (guarded by skip flag)
+    // 6) Call Rasa (preserving buttons), unless we're skipping this turn
     $rasaUrl  = $this->rasaWebhookUrl();
     $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk) + [
-        'user' => ['id' => auth()->id(), 'name' => $name, 'first' => $first],
+        'user' => ['id' => $userId, 'name' => $name, 'first' => $first],
     ];
+    $timeout  = 8; // fallback; keep your own if you have it elsewhere
+    $verify   = true;
 
-    $botReplies = [];
+    $botReplies = []; // array of ['text'=>..., 'buttons'=>[]]
+
     if (!$skipRasaThisTurn) {
-        $timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
-        $verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
-
         try {
             $r = Http::timeout($timeout)
                 ->withOptions(['verify' => $verify])
@@ -511,46 +498,52 @@ public function store(Request $request)
                 $payload = $r->json() ?? [];
                 foreach ($payload as $piece) {
                     if (is_array($piece)) {
-                        $txt = isset($piece['text']) ? (string) $piece['text'] : '';
+                        $txt = isset($piece['text']) ? (string)$piece['text'] : '';
                         $btn = (isset($piece['buttons']) && is_array($piece['buttons'])) ? $piece['buttons'] : [];
-                        if ($txt !== '' || !empty($btn)) {
-                            $botReplies[] = ['text' => $txt, 'buttons' => $btn];
-                        }
+                        if ($txt !== '' || !empty($btn)) $botReplies[] = ['text' => $txt, 'buttons' => $btn];
                     } else {
-                        $txt = trim((string) $piece);
+                        $txt = trim((string)$piece);
                         if ($txt !== '') $botReplies[] = ['text' => $txt, 'buttons' => []];
                     }
                 }
             }
         } catch (\Throwable $e) {
             $botReplies = [[
-                'text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?",
-                'buttons' => [],
+                'text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?"
             ]];
         }
-
-        // ---- Door right AFTER Rasa on Turn 2 (ask a question, then next turn → coping)
-        if ($count === 2 && !empty($botReplies) && !$forceCopingNow && !$declineCoping) {
-        $botReplies[] = [
-            'text' =>
-                "Did any part of that help even a little, {USER_FIRST}? What feels most pressing right now? / " .
-                "Nakatabang ba bisag gamay to, {USER_FIRST}? Asa ang pinakalisod karon?",
-            'buttons' => [],
-        ];
-        session([$skipOnceKey => true]); // next user turn would show the coping offer
     }
 
-    }
-
-    // Fallback if nothing came back
     if (empty($botReplies)) {
         $botReplies = [[
-            'text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?",
-            'buttons' => [],
+            'text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?"
         ]];
     }
 
-    // 6) Risk elevation log
+    // === Intercept coping: always ask consent first (convert any tips into consent prompt)
+    if (!$forceCopingNow && !$declineCoping) {
+        $foundCoping = false;
+        foreach ($botReplies as $i => $piece) {
+            if ($this->looksLikeCoping((array)$piece)) {
+                unset($botReplies[$i]); // strip coping content
+                $foundCoping = true;
+            }
+        }
+        if ($foundCoping) {
+            $botReplies = array_values($botReplies);
+            $botReplies[] = [
+                'text' =>
+                    "If you want, I can share coping tips based on how you're feeling. Want them now? / " .
+                    "Kung gusto nimo, makashare ko og coping tips base sa imong gibati. Gusto nimo karon?",
+                'buttons' => [
+                    ['title' => 'Yes, show tips', 'payload' => '/show_coping'],
+                    ['title' => 'No, thanks',     'payload' => '/skip_coping'],
+                ],
+            ];
+        }
+    }
+
+    // 7) Risk elevation + crisis marker (log only; your crisis flow may add content elsewhere)
     $current = $session->risk_level ?: 'low';
     $order   = ['low' => 0, 'moderate' => 1, 'high' => 2];
     $new     = ($order[$msgRisk] > $order[$current]) ? $msgRisk : $current;
@@ -558,21 +551,26 @@ public function store(Request $request)
 
     $this->logActivity('risk_detected', "Risk level: {$msgRisk}", $sessionId, [
         'risk_level'      => $msgRisk,
-        'message_preview' => \Illuminate\Support\Str::limit($text, 120),
+        'message_preview' => Str::limit($text, 120),
     ]);
 
-    $crisisAlreadyShown = session('crisis_prompted_for_session_' . $sessionId, false);
-    if (!$crisisAlreadyShown && $msgRisk === 'high') {
-        session(['crisis_prompted_for_session_' . $sessionId => true]);
-        $this->logActivity('crisis_prompt', 'Crisis context sent to Rasa', $sessionId, null);
-    }
-
-    // 6.5) Appointment CTA when user asks
+    // 8) Appointment CTA injection when requested/confirmed
     $askedForAppt = $this->wantsAppointment($text) || $this->confirmedAfterOffer($text, $sessionId);
+
+    // Determine appointment link early
+    $link = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
+        ? \Illuminate\Support\Facades\URL::signedRoute('features.enable_appointment')
+        : (\Illuminate\Support\Facades\Route::has('appointment.index')
+            ? route('appointment.index')
+            : url('/appointment'));
+    $ctaHtml = '<a href="' . e($link) . '">Book an appointment</a>';
+
+    // Only add CTA if not already placeholder'ed
     $hasApptPlaceholder = false;
     foreach ($botReplies as $rpl) {
         if (is_array($rpl) && isset($rpl['text']) && is_string($rpl['text']) && str_contains($rpl['text'], '{APPOINTMENT_LINK}')) {
-            $hasApptPlaceholder = true; break;
+            $hasApptPlaceholder = true;
+            break;
         }
     }
     if ($askedForAppt && !$hasApptPlaceholder) {
@@ -583,54 +581,23 @@ public function store(Request $request)
             array_unshift($botReplies, ['text' => $ctaReply, 'buttons' => []]);
         }
         $this->logActivity('appointment_detected', 'User asked to schedule; CTA injected', $sessionId, [
-            'preview' => \Illuminate\Support\Str::limit($text, 120),
+            'preview' => Str::limit($text, 120),
         ]);
     }
 
-    // 6.7) Empathy preface (Turn 1 only replaces; Turn ≥2 only prepends)
-    // --- Concern preface (add BEFORE building $botPayload)
-$primaryEmotion = $this->choosePrimaryEmotion($labels);
-
-if (!$forceCopingNow && !$declineCoping && $this->shouldPreface($sessionId, $labels, $msgRisk)) {
-    $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
-
-    if ($count === 1) {
-        // Turn 1: empathy ONLY
-        $botReplies = [
-            ['text' => $preface, 'buttons' => []],
+    // 9) Door after Rasa (turn 2): invite quick reply; next turn we’ll ask consent
+    if (!$skipRasaThisTurn && $count === 2 && !empty($botReplies)) {
+        $botReplies[] = [
+            'text' =>
+                "Did any part of that help even a little, {USER_FIRST}? What feels most pressing right now? / " .
+                "Nakatabang ba gamay bisan usa, {USER_FIRST}? Asa ang pinakalisod karon?",
+            'buttons' => [],
         ];
-    } elseif ($count === 2) {
-        // Turn 2: empathy ONLY as well (fully defer Rasa again)
-        $botReplies = [
-            ['text' => $preface, 'buttons' => []],
-        ];
-    } elseif ($count === 3) {
-        // Turn 3: empathy first, then allow Rasa (coping still gated elsewhere)
-        array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
-    } else {
-        // Turn ≥4: empathy first; keep first Rasa's buttons but drop its text
-        array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
-        if (isset($botReplies[1])) {
-            $firstRasa = $botReplies[1];
-            if (!empty($firstRasa['buttons']) && is_array($firstRasa['buttons'])) {
-                $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $firstRasa['buttons']);
-            }
-            array_splice($botReplies, 1, 1);
-        }
+        session([$doorKey => true]); // set for next user message
     }
-}
 
-
-    // 7) Appointment link + personalization + (maybe) skip-turn coping
-    $link = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
-        ? \Illuminate\Support\Facades\URL::signedRoute('features.enable_appointment')
-        : (\Illuminate\Support\Facades\Route::has('appointment.index')
-            ? route('appointment.index')
-            : url('/appointment'));
-    $ctaHtml = '<a href="' . e($link) . '">Book an appointment</a>';
-
-    // ===== Turn 3 (or whenever the once-flag is set): Skip Rasa and OFFER COPING
-      if ($skipRasaThisTurn && !$forceCopingNow && !$declineCoping) {
+    // 10) If we’re on the “consent turn” (set by doorKey previously), only ask consent now
+    if (session($doorKey, false) && !$forceCopingNow && !$declineCoping) {
         $botReplies = [[
             'text' =>
                 "If you want, I can share coping tips based on how you're feeling. Want them now? / " .
@@ -640,28 +607,76 @@ if (!$forceCopingNow && !$declineCoping && $this->shouldPreface($sessionId, $lab
                 ['title' => 'No, thanks',     'payload' => '/skip_coping'],
             ],
         ]];
-        session()->forget($skipOnceKey); // consumed
+        session()->forget($doorKey);
     }
 
-    $botPayload = [];
-    // Final safety: on turns 1–3, strip coping pieces — unless the user explicitly asked for tips
+    // 11) Empathy preface (do not override consent flow)
+    $primaryEmotion = $this->choosePrimaryEmotion($labels);
+    if (!$forceCopingNow && !$declineCoping && $this->shouldPreface($sessionId, $labels, $msgRisk)) {
+        $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
+
+        if ($count === 1) {
+            $botReplies = [ ['text' => $preface, 'buttons' => []] ];
+        } elseif ($count === 2) {
+            $botReplies = [ ['text' => $preface, 'buttons' => []] ];
+        } elseif ($count === 3) {
+            array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
+        } else {
+            array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
+            if (isset($botReplies[1])) {
+                $firstRasa = $botReplies[1];
+                if (!empty($firstRasa['buttons']) && is_array($firstRasa['buttons'])) {
+                    $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $firstRasa['buttons']);
+                }
+                array_splice($botReplies, 1, 1); // drop first Rasa text bubble
+            }
+        }
+    }
+
+    // 12) Acknowledge decline gently
+    if ($declineCoping) {
+        array_unshift($botReplies, [
+            'text' =>
+                "No worries, {USER_FIRST}. I’m here to listen—what would you like to talk through next? / " .
+                "Sige, {USER_FIRST}. Naa ra ko maminaw—unsa imong gusto hisgutan sunod?",
+            'buttons' => [],
+        ]);
+    }
+
+    // 13) Early-turn coping strip (unless explicitly asked)
     if (!$forceCopingNow && $count <= 3) {
-        $botReplies = array_values(array_filter($botReplies, fn($piece) => !$this->looksLikeCoping((array)$piece)));
+        $botReplies = array_values(array_filter(
+            $botReplies,
+            fn($piece) => !$this->looksLikeCoping((array)$piece)
+        ));
     }
 
+    // 14) Bridge follow-up on turn 3 (non-coping question if last wasn't a question)
+    if ($count === 3) {
+        $lastTxt = trim((string)($botReplies[count($botReplies)-1]['text'] ?? ''));
+        $alreadyQ = str_ends_with($lastTxt, '?');
+        if (!$alreadyQ) {
+            $botReplies[] = [
+                'text'    => $this->bridgeFollowup($primaryEmotion, $first),
+                'buttons' => [],
+            ];
+        }
+    }
 
-    // Build response payload + persist bot lines
+    // 15) Build final payload (language pick + placeholders + save bot items)
     $botPayload = [];
     foreach ($botReplies as $replyObj) {
         $replyText = (string) ($replyObj['text'] ?? '');
         $replyBtns = (isset($replyObj['buttons']) && is_array($replyObj['buttons'])) ? $replyObj['buttons'] : [];
 
-        // language pick + inline link replace
         $replyText = $this->pickLanguageVariant($replyText, $lang);
+
+        // Replace appointment link placeholder
         if (str_contains($replyText, '{APPOINTMENT_LINK}')) {
             $replyText = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $replyText);
         }
-        // personalization
+
+        // Personalization placeholders
         $safeName  = e($name);
         $safeFirst = e($first);
         $replyText = str_replace(
@@ -670,7 +685,7 @@ if (!$forceCopingNow && !$declineCoping && $this->shouldPreface($sessionId, $lab
             $replyText
         );
 
-        // normalize buttons (support {APPOINTMENT_LINK})
+        // Normalize button payloads (convert "{APPOINTMENT_LINK}" to url)
         $normalizedBtns = [];
         foreach ($replyBtns as $b) {
             $title   = (string)($b['title'] ?? 'Open');
@@ -681,13 +696,13 @@ if (!$forceCopingNow && !$declineCoping && $this->shouldPreface($sessionId, $lab
                 $normalizedBtns[] = ['title' => $title, 'url' => $link];
             } else {
                 $one = ['title' => $title];
-                if ($url)     $one['url'] = $url;
+                if ($url)     $one['url']     = $url;
                 if ($payload) $one['payload'] = $payload;
                 $normalizedBtns[] = $one;
             }
         }
 
-        // persist bot message
+        // Save bot message (encrypted)
         $bot = Chat::create([
             'user_id'         => $userId,
             'chat_session_id' => $sessionId,
@@ -705,6 +720,7 @@ if (!$forceCopingNow && !$declineCoping && $this->shouldPreface($sessionId, $lab
         ];
     }
 
+    // 16) Return
     return response()->json([
         'user_message' => [
             'text'       => $text,
