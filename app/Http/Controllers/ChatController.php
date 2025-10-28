@@ -36,6 +36,29 @@ class ChatController extends Controller
         return (bool) preg_match('/\b(counsel(?:or|ling)|appointment|schedule|book|connect)\b/i', $last);
     }
 
+    private function preferredName(): string
+{
+    $u = auth()->user();
+    if (!$u) return 'there';
+
+    // Try common fields you might have; fall back to "name" or email local part
+    $candidates = [
+        $u->preferred_name ?? null,
+        $u->first_name     ?? null,
+        $u->given_name     ?? null,
+        $u->name           ?? null,
+    ];
+    foreach ($candidates as $c) {
+        $c = trim((string) $c);
+        if ($c !== '') return $c;
+    }
+    // email local-part fallback
+    $email = (string) ($u->email ?? '');
+    if (str_contains($email, '@')) return strtok($email, '@');
+    return 'there';
+}
+
+
     private function inferLanguage(string $t): string
     {
         $x = mb_strtolower($t);
@@ -325,6 +348,8 @@ class ChatController extends Controller
 
 public function store(Request $request)
 {
+    $name  = $this->preferredName();
+    $first = preg_split('/\s+/', $name, 2)[0] ?? $name;
     // 1) Validation (+ idempotency)
     $request->validate([
         'message'      => ['required', 'string', 'max:2000', function ($attr, $val, $fail) {
@@ -470,8 +495,15 @@ public function store(Request $request)
 
     // 5) Call Rasa — PRESERVE buttons
     $rasaUrl  = $this->rasaWebhookUrl();
-    $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk);
+    $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk) + [
+    'user' => [
+        'id'    => auth()->id(),
+        'name'  => $name,
+        'first' => $first,
+    ],
+];
     $botReplies = []; // each item: ['text'=>string, 'buttons'=>array]
+    
 
     $timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
     $verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
@@ -503,14 +535,14 @@ public function store(Request $request)
             }
         }
     } catch (\Throwable $e) {
-        $botReplies = [
-            ['text' => "It’s okay to feel that way. I’m here to listen. Would you like to share more? / Sige ra na, ania ko maminaw. Gusto nimo isulti pa ug dugang?", 'buttons' => []]
+    $botReplies = [
+        ['text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?"],
         ];
     }
 
     if (empty($botReplies)) {
-        $botReplies = [
-            ['text' => "I’m here to support you. Would you like to share more about how you’re feeling? / Ania ko para motabang. Gusto nimo isulti pa ug dugang kung unsa imong gibati?", 'buttons' => []]
+       $botReplies = [
+        ['text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?"],
         ];
     }
 
@@ -574,6 +606,14 @@ public function store(Request $request)
         if (str_contains($replyText, '{APPOINTMENT_LINK}')) {
             $replyText = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $replyText);
         }
+         // 🔽🔽🔽 ADD THIS PERSONALIZATION BLOCK 🔽🔽🔽
+        $safeName  = e($name);
+        $safeFirst = e($first);
+        $replyText = str_replace(
+            ['{USER_NAME}', '{USER_FIRST}', '{USER}', '{NAME}'],
+            [$safeName,     $safeFirst,     $safeFirst, $safeName],
+            $replyText
+        );
 
         // buttons: turn payload "{APPOINTMENT_LINK}" into url $link
         $normalizedBtns = [];

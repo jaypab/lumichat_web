@@ -126,7 +126,7 @@
             </th>
 
             <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">
-              Initial Result
+              Detected Emotions
             </th>
 
             <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">
@@ -201,7 +201,7 @@
                 {{ $s->user->name ?? '—' }}
               </td>
 
-              {{-- INITIAL RESULT (emotions) --}}
+              {{-- Detected Emotions (emotions) --}}
               <td class="px-6 py-4 text-slate-700">
                 @if(empty($top))
                   —

@@ -358,7 +358,7 @@
     {{-- Emotions Mentioned --}}
     <div class="emo-card card rounded-2xl bg-white ring-1 ring-slate-200 p-3 md:p-4 lg:col-span-3">
       <div class="flex items-center justify-between">
-        <h3 class="text-sm font-semibold text-slate-900">Emotions Mentioned</h3>
+        <h3 class="text-sm font-semibold text-slate-900">Detected Emotions</h3>
         @if($total>0)
           <span class="text-[11px] text-slate-500">{{ $total }} total</span>
         @endif
