@@ -704,6 +704,22 @@ if ($this->shouldPreface($sessionId, $labels, $msgRisk)) {
     if ($count <= 3) {
         $botReplies = array_values(array_filter($botReplies, fn($piece) => !$this->looksLikeCoping((array)$piece)));
     }
+    
+    // --- Bridge follow-up after Rasa on Turn 3 (invite a simple reply; NOT coping)
+    if ($count === 3) {
+        // If Rasa already ended with a question, skip to avoid double-asking
+        $lastTxt = trim((string)($botReplies[count($botReplies)-1]['text'] ?? ''));
+        $alreadyQuestion = str_ends_with($lastTxt, '?');
+
+        $primaryEmotion = $this->choosePrimaryEmotion($labels);
+        if (!$alreadyQuestion) {
+            $botReplies[] = [
+                'text' => $this->bridgeFollowup($primaryEmotion, $first),
+                'buttons' => [], // keep it open-ended
+            ];
+        }
+    }
+ 
 
     foreach ($botReplies as $replyObj) {
         $replyText = (string) ($replyObj['text'] ?? '');
@@ -1087,5 +1103,25 @@ private function looksLikeCoping(array $piece): bool
     }
     return false;
 }
+
+private function bridgeFollowup(?string $emotion, string $nameFirst): string
+{
+    // EN / CEB — keep it neutral, no “tips/grounding/breathing” words
+    $generic = [
+        "Does that sound right, {$nameFirst}? What part feels hardest right now? / Sakto ba ni, {$nameFirst}? Asa ang pinakalisod karon?",
+        "Thanks for sharing that, {$nameFirst}. What would you like to unpack first? / Salamat sa pag-share, {$nameFirst}. Unsay gusto nimo una hisgutan?",
+        "I hear you, {$nameFirst}. What’s one small detail you want me to understand better? / Nadungog tika, {$nameFirst}. Unsay usa ka detalye nga gusto nimo masabtan nako?",
+    ];
+
+    $byEmotion = [
+        'stressed' => "Makes sense, {$nameFirst}. Which task or thought piles up fastest? / Masabtan ra, {$nameFirst}. Asa nga buluhaton o huna-huna ang dali kaayo magtapok?",
+        'anxious'  => "Got it, {$nameFirst}. What’s the worry that pops up first? / Sige, {$nameFirst}. Unsay unang kabalaka nga mosulod?",
+        'sad'      => "I’m with you, {$nameFirst}. What’s been adding to the heaviness most? / Ania ko, {$nameFirst}. Unsay pinakadugang sa kabug-at?",
+        'overwhelmed' => "Let’s take it piece by piece, {$nameFirst}. Where should we start? / Hinay-hinay lang, {$nameFirst}. Asa ta magsugod?",
+    ];
+
+    return $byEmotion[strtolower((string)$emotion)] ?? $generic[array_rand($generic)];
+}
+
 
 }
