@@ -4,6 +4,19 @@
 @section('page_title', 'Chatbot Session Summary')
 
 @section('content')
+
+@php
+  // ==== SAFE DEFAULTS (avoid undefined notices) ====
+  $sensitiveLocked             = $sensitiveLocked        ?? false;
+  $highRisk                    = $highRisk               ?? null;      // latest high-risk Chat row (object)
+  $allHighRisk                 = $allHighRisk            ?? [];        // array of all high-risk lines
+  $riskLogs                    = $riskLogs               ?? collect(); // Collection of risk change logs
+  $lastRisk                    = $lastRisk               ?? null;      // last risk-change log
+  $nextAppt                    = $nextAppt               ?? null;      // upcoming appointment (object)
+  $hasAnyActiveForStudent      = $hasAnyActiveForStudent ?? false;     // bool
+  $hasCompletedForThisSession  = $hasCompletedForThisSession ?? false; // bool
+@endphp
+
 @php
   // ---- Normalize emotions -> counts
   $raw = $session->emotions ?? [];
@@ -38,10 +51,13 @@
   $isHighRisk = in_array($riskStr, ['high','high-risk','high_risk'], true)
                 || (int)($session->risk_score ?? 0) >= 80;
 
-  // ---- Booking rules (may be used elsewhere later)
-  $canBook        = $isHighRisk && !$hasAnyActiveForStudent && !$hasCompletedForThisSession;
-  $wasExpedited   = (bool) ($wasExpedited ?? ($session->expedited_at ?? false));
-  $canMoveEarlier = $isHighRisk && $hasAnyActiveForStudent && !$hasCompletedForThisSession && !$wasExpedited;
+  // ---- Booking rules
+  $__hasActive  = (bool) ($hasAnyActiveForStudent ?? false);
+  $__doneThis   = (bool) ($hasCompletedForThisSession ?? false);
+  $__expedited  = (bool) ($wasExpedited ?? ($session->expedited_at ?? false));
+
+  $canBook        = $isHighRisk && !$__hasActive && !$__doneThis;
+  $canMoveEarlier = $isHighRisk && $__hasActive && !$__doneThis && !$__expedited;
 
   $studentName = trim($session->user->name ?? '') ?: 'Unknown Student';
 
@@ -261,7 +277,7 @@
     {{-- High-risk trigger --}}
     <div id="hrWrap" class="relative lg:col-span-6">
       <div id="hrCard"
-           class="hr-card card rounded-2xl border p-3 md:p-4 {{ ($sensitiveLocked ?? false) ? 'border-slate-200 bg-white' : 'border-rose-200 bg-rose-50' }}">
+          class="hr-card card rounded-2xl border p-3 md:p-4 {{ ($sensitiveLocked ?? false) ? 'border-slate-200 bg-white' : 'border-rose-200 bg-rose-50' }}">
         @if(!($sensitiveLocked ?? false))
           @if(!empty($highRisk?->text ?? $hrText ?? null))
             <div class="flex items-start gap-2.5">
@@ -276,49 +292,104 @@
                     <span class="ml-1 opacity-70">• Chat ID: #{{ $highRisk->id }}</span>
                   @endif
                 </div>
+
+                {{-- Latest trigger preview --}}
                 <blockquote class="mt-1.5 rounded-xl bg-white ring-1 ring-rose-100 p-3 text-sm text-slate-800">
                   “{{ $highRisk->text ?? $hrText ?? '' }}”
                 </blockquote>
 
-                @php $hrCount = is_countable($allHighRisk ?? []) ? count($allHighRisk) : 0; @endphp
-                @if($hrCount > 0)
-                  <div class="mt-3">
-                    <div class="flex items-center justify-between">
-                      <div class="text-sm font-semibold text-slate-900">
-                        All high-risk / critical lines
-                        <span class="ml-1 text-slate-500 font-normal">({{ $hrCount }})</span>
-                      </div>
-                      <button
-                        id="btnShowAllHR"
-                        type="button"
-                        class="text-xs font-medium text-indigo-600 hover:text-indigo-700"
-                        data-state="closed"
-                        aria-expanded="false"
-                        aria-controls="hrAllList">
-                        View all ({{ $hrCount }})
-                      </button>
-                    </div>
+                {{-- === Upcoming appointment banner + disabled action (if already booked) === --}}
+                @if($__hasActive && !empty($nextAppt))
+                  @php
+                    $__start  = \Carbon\Carbon::parse($nextAppt->scheduled_at);
+                    $__mins   = now()->diffInMinutes($__start, false);
+                    $__when   = $__mins > 0
+                      ? 'in '.\Carbon\Carbon::now()->diffForHumans($__start, ['parts'=>2,'short'=>true,'syntax'=>\Carbon\Carbon::DIFF_ABSOLUTE])
+                      : 'soon';
+                    $__pillBg = $__mins <= 60*24 ? 'ring-amber-200 bg-amber-50 text-amber-900'
+                                                : 'ring-emerald-200 bg-emerald-50 text-emerald-900';
+                  @endphp
 
-                    <div id="hrAllList" class="mt-2 space-y-2 hidden">
-                      @foreach($allHighRisk as $hr)
-                        <div class="rounded-xl ring-1 ring-slate-200 p-3 bg-white">
-                          <div class="text-[12px] text-slate-500">
-                            {{ $hr['at'] ?? '' }}
-                            @if(!empty($hr['sender']))
-                              <span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] ring-1 {{ strtolower($hr['sender'])==='user' ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-slate-50 text-slate-700 ring-slate-200' }}">
-                                {{ $hr['sender'] }}
-                              </span>
-                            @endif
-                          </div>
-                          <div class="mt-1 text-slate-900">#{{ $hr['id'] }}</div>
-                          <blockquote class="mt-1 text-sm text-slate-800 leading-relaxed">{{ $hr['text'] }}</blockquote>
-                        </div>
-                      @endforeach
-                    </div>
+                  <div class="mt-3 rounded-xl ring-1 {{ $__pillBg }} p-3 text-sm">
+                    <div class="font-semibold">Upcoming appointment {{ $__when }}</div>
+                    <div class="text-slate-700/90">{{ $__start->format('F d, Y • h:i A') }}</div>
+                  </div>
+
+                  <div class="mt-2 no-print">
+                    <button type="button"
+                            class="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2
+                                  text-slate-500 ring-1 ring-slate-200 cursor-not-allowed"
+                            disabled
+                            title="Student already has an active appointment">
+                      You’ve booked an appointment already
+                    </button>
                   </div>
                 @endif
+
+                @php $hrCount = is_countable($allHighRisk ?? []) ? count($allHighRisk) : 0; @endphp
+                <div class="mt-3">
+                  <div class="flex items-center justify-between">
+                    <div class="text-sm font-semibold text-slate-900">
+                      All high-risk / critical lines
+                      @if($hrCount > 0)
+                        <span class="ml-1 text-slate-500 font-normal">({{ $hrCount }})</span>
+                      @endif
+                    </div>
+                    <button
+                      id="btnShowAllHR"
+                      type="button"
+                      class="text-xs font-medium text-indigo-600 hover:text-indigo-700"
+                      data-state="closed"
+                      aria-expanded="false"
+                      aria-controls="hrAllList"
+                      data-preloaded="{{ $hrCount > 0 ? '1' : '0' }}"
+                    >
+                      View all{{ $hrCount > 0 ? ' ('.$hrCount.')' : '' }}
+                    </button>
+                  </div>
+
+                  <!-- hidden list shell; may be empty initially -->
+                  <div id="hrAllList" class="mt-2 space-y-2 hidden">
+                    @foreach($allHighRisk as $hr)
+                      <div class="rounded-xl ring-1 ring-slate-200 p-3 bg-white">
+                        <div class="text-[12px] text-slate-500">
+                          {{ $hr['at'] ?? '' }}
+                          @if(!empty($hr['sender']))
+                            @php $isUser = strtolower($hr['sender'])==='user'; @endphp
+                            <span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] ring-1 {{ $isUser ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-slate-50 text-slate-700 ring-slate-200' }}">
+                              {{ $hr['sender'] }}
+                            </span>
+                          @endif
+                        </div>
+                        <div class="mt-1 text-slate-900">#{{ $hr['id'] }}</div>
+                        <blockquote class="mt-1 text-sm text-slate-800 leading-relaxed">{{ $hr['text'] }}</blockquote>
+                      </div>
+                    @endforeach
+
+                    <div id="hrActionsWrap" class="mt-3 {{ $hrCount>0 ? '' : 'hidden' }}">
+                      <div class="no-print flex flex-wrap items-center gap-2">
+                        @if($isHighRisk)
+                          @if($canBook)
+                            <button id="btnBookHR" type="button"
+                                    class="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-white hover:bg-indigo-700">
+                              Book urgent appointment
+                            </button>
+                          @endif
+                          @if($canMoveEarlier)
+                            <button id="btnReschedHR" type="button"
+                                    class="inline-flex items-center gap-2 rounded-xl ring-1 ring-slate-200 bg-white px-3 py-2 text-slate-800 hover:bg-slate-50">
+                              Move to earlier slot
+                            </button>
+                          @endif
+                        @endif
+                        <div id="hrActionMsg" class="text-sm text-slate-600"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
+
           @elseif(in_array($riskStr, ['high','high-risk','high_risk'], true))
             <div class="flex items-start gap-2.5">
               <svg class="h-5 w-5 mt-0.5 text-amber-700" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1010 10A10.012 10.012 0 0012 2zm1 15h-2v-2h2zm0-4h-2V7h2z"/></svg>
@@ -326,9 +397,11 @@
                 Session is HIGH-risk, but the exact trigger message wasn’t located.
               </div>
             </div>
+
           @else
             <div class="text-sm text-slate-600">No recent high-risk trigger.</div>
           @endif
+
         @else
           {{-- LOCKED view --}}
           <div class="relative overflow-hidden">
@@ -344,7 +417,7 @@
                     aria-label="Unlock high-risk message"
                     title="Click to unlock">
               <img src="{{ asset('images/icons/security.png') }}" alt="Security"
-                   class="h-12 w-12 md:h-14 md:w-14 opacity-90 drop-shadow-sm transition-transform duration-150 group-hover:scale-105">
+                  class="h-12 w-12 md:h-14 md:w-14 opacity-90 drop-shadow-sm transition-transform duration-150 group-hover:scale-105">
               <span class="inline-flex items-center gap-1 rounded-full bg-white/80 text-slate-700 ring-1 ring-slate-200
                           px-2.5 py-1 text-xs font-medium shadow-sm backdrop-blur-sm">
                 Click to unlock the student's high-risk trigger message
@@ -467,6 +540,94 @@
   </div>
 </div>
 
+{{-- ===== Book / Reschedule modal (centered + custom calendar) ===== --}}
+<div id="hrActionModal" class="fixed inset-0 z-[74] hidden flex items-center justify-center">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-[2px]"></div>
+
+  <div class="relative z-[75] w-full max-w-3xl rounded-2xl bg-white p-5 md:p-6 shadow-2xl ring-1 ring-black/5">
+    <div class="flex items-start justify-between">
+      <h3 id="hrActionTitle" class="text-base font-semibold text-slate-900">Book urgent appointment</h3>
+        <button id="hrActionClose" type="button" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100">✕</button>
+        </div>
+
+        <form id="hrActionForm" class="mt-4 space-y-5" novalidate>
+          @csrf
+
+          <!-- Hidden date field set by calendar -->
+          <input id="hrDate" name="date" type="hidden" required>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {{-- LEFT: Calendar picker (weekdays only) --}}
+        <section class="rounded-2xl ring-1 ring-slate-200 bg-white p-4">
+          <div class="flex items-center justify-between">
+            <button id="bkCalPrev" type="button"
+              class="px-2.5 py-1.5 rounded-lg ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50">‹</button>
+            <div class="text-center">
+              <div id="bkCalMonth" class="text-indigo-600 font-bold tracking-wide"></div>
+              <div class="text-[11px] text-slate-500">Weekends are closed (Mon–Fri)</div>
+            </div>
+            <button id="bkCalNext" type="button"
+              class="px-2.5 py-1.5 rounded-lg ring-1 ring-slate-200 text-slate-600 hover:bg-slate-50">›</button>
+          </div>
+
+          <div class="mt-3 grid grid-cols-7 text-center text-[11px] font-semibold text-slate-500">
+            <div>S</div><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div>
+          </div>
+
+          <div id="bkCalGrid" class="mt-2 grid grid-cols-7 gap-2 select-none"></div>
+
+          <p class="mt-3 text-[11px] text-slate-500" id="bkCalHint">Choose a weekday. Past dates disabled.</p>
+        </section>
+
+        {{-- RIGHT: Counselor / Time + pooled capacity --}}
+        <section class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Counselor</label>
+            <select id="hrCounselor" name="counselor_id"
+                    class="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 focus:ring-2 focus:ring-indigo-500"
+                    required></select>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Time</label>
+
+            <!-- kept for form submit; driven by pills -->
+            <select id="hrTime" name="time" class="sr-only" tabindex="-1" aria-hidden="true"></select>
+
+            <!-- Pills render here -->
+            <div id="hrTimePills" class="mt-2 time-pills"></div>
+
+            <!-- “No slots” helper + ref suggestion -->
+            <div id="hrNoSlotsHint" class="mt-2 text-xs text-slate-500 hidden"></div>
+          </div>
+
+          <div class="rounded-xl bg-slate-50 ring-1 ring-slate-200 p-3">
+            <div class="text-xs text-slate-500">Note preview</div>
+            <div class="text-sm text-slate-800">
+              The student will receive a compassionate, confidential note. (Generated by system on submit.)
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="flex items-center justify-end gap-2">
+        <button type="button" id="hrActionCancel"
+                class="rounded-xl px-3 py-2 ring-1 ring-slate-200 hover:bg-slate-50">Cancel</button>
+        <button type="submit" id="hrActionSubmit"
+                class="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
+          <svg id="hrActionSpin" class="hidden h-4 w-4 animate-spin" viewBox="0 0 24 24">
+            <circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none"/>
+            <path class="opacity-80" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v3a5 5 0 0 0-5 5H4z"/>
+          </svg>
+          <span id="hrActionLabel">Book</span>
+        </button>
+      </div>
+    </form>
+
+    <div id="hrActionResult" class="mt-4 hidden rounded-xl ring-1 ring-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"></div>
+  </div>
+</div>
+
 {{-- ===== Sensitive unlock modal (second 2FA) ===== --}}
 <div id="hrModal" class="fixed inset-0 z-[75] hidden flex items-center justify-center" aria-hidden="true" role="dialog" aria-labelledby="hrTitle">
   <div class="absolute inset-0 bg-slate-900/45 backdrop-blur-[2px] opacity-0 transition-opacity duration-200"></div>
@@ -504,92 +665,87 @@
 </div>
 
 <script>
+  let epAllHR = @json(route('admin.chatbot-sessions.highrisk_all', $session->id));
+
   /* ===== View/Hide all high-risk items (animated) ===== */
   function wireHRListToggle(scope){
-    const root = scope || document;
-    const btn  = root.getElementById?.('btnShowAllHR') || root.querySelector?.('#btnShowAllHR');
-    const list = root.getElementById?.('hrAllList')    || root.querySelector?.('#hrAllList');
-
+    const root    = scope || document;
+    const btn     = root.getElementById?.('btnShowAllHR') || root.querySelector?.('#btnShowAllHR');
+    const list    = root.getElementById?.('hrAllList')    || root.querySelector?.('#hrAllList');
+    const actions = root.getElementById?.('hrActionsWrap') || root.querySelector?.('#hrActionsWrap');
     if (!btn || !list) return;
 
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduced     = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const closedLabel = btn.dataset.closedLabel || (btn.textContent || 'View all');
     const openLabel   = btn.dataset.openLabel   || 'Hide';
 
     list.classList.add('hr-collapse','hr-stagger');
     list.classList.add('hidden');
+    btn.setAttribute('data-state','closed');
+    btn.setAttribute('aria-expanded','false');
+    btn.textContent = closedLabel;
+
+    let loaded = btn.dataset.preloaded === '1';
+
+    async function ensureLoaded(){
+      if (loaded) return true;
+      if (!epAllHR) {                   // guard if route isn’t available
+        loaded = true;
+        return true;                    // fall back to server-rendered content
+      }
+      try{
+        const res = await fetch(epAllHR, { headers:{ 'X-Requested-With':'XMLHttpRequest' } });
+        const data  = await res.json().catch(()=> ({}));
+        const items = Array.isArray(data?.items) ? data.items : [];
+        if (!items.length){
+          list.innerHTML = `<div class="rounded-xl ring-1 ring-slate-200 p-3 bg-white text-sm text-slate-600">No high-risk lines found.</div>`;
+          actions?.classList.add('hidden');
+          loaded = true; return true;
+        }
+        list.innerHTML = items.map(item => `
+          <div class="rounded-xl ring-1 ring-slate-200 p-3 bg-white">
+            <div class="text-[12px] text-slate-500">
+              ${item.at || ''}
+              ${item.sender ? `<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] ring-1 ${String(item.sender).toLowerCase()==='user' ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-slate-50 text-slate-700 ring-slate-200'}">${item.sender}</span>` : ''}
+            </div>
+            <div class="mt-1 text-slate-900">#${item.id}</div>
+            <blockquote class="mt-1 text-sm text-slate-800 leading-relaxed">
+              ${String(item.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+            </blockquote>
+          </div>
+        `).join('');
+        actions?.classList.remove('hidden');
+        loaded = true; return true;
+      } catch {
+        list.innerHTML = `<div class="rounded-xl ring-1 ring-rose-200 p-3 bg-rose-50 text-sm text-rose-800">Couldn’t load items.</div>`;
+        actions?.classList.add('hidden');
+        loaded = true; return false;
+      }
+    }
 
     function expand(el){
       el.classList.remove('hidden');
       if (reduced) return;
-
-      el.style.height = '0px';
-      el.style.opacity = '0';
-      el.style.transform = 'translateY(4px)';
-      el.getBoundingClientRect();
+      el.style.height='0px'; el.style.opacity='0'; el.style.transform='translateY(4px)'; el.getBoundingClientRect();
       const h = el.scrollHeight;
-
-      el.style.transition = 'height 240ms cubic-bezier(.2,.65,.3,1), opacity 200ms ease, transform 200ms ease';
-      el.style.height = h + 'px';
-      el.style.opacity = '1';
-      el.style.transform = 'translateY(0)';
-
+      el.style.transition='height 240ms cubic-bezier(.2,.65,.3,1), opacity 200ms ease, transform 200ms ease';
+      el.style.height=h+'px'; el.style.opacity='1'; el.style.transform='translateY(0)';
       const kids = Array.from(el.children);
-      kids.forEach((k,i) => {
-        k.style.transition = 'opacity 220ms ease, transform 220ms ease';
-        k.style.transitionDelay = (80 + i*25) + 'ms';
-        k.style.opacity = '1';
-        k.style.transform = 'translateY(0)';
-      });
-
-      el.addEventListener('transitionend', function tidy(e){
-        if (e.propertyName === 'height'){
-          el.style.height = '';
-          el.style.transition = '';
-          el.style.opacity = '';
-          el.style.transform = '';
-          kids.forEach(k => { k.style.transition=''; k.style.transitionDelay=''; });
-          el.removeEventListener('transitionend', tidy);
-        }
-      });
+      kids.forEach((k,i)=>{ k.style.transition='opacity 220ms ease, transform 220ms ease'; k.style.transitionDelay=(80+i*25)+'ms'; k.style.opacity='1'; k.style.transform='translateY(0)'; });
+      el.addEventListener('transitionend', function tidy(e){ if(e.propertyName==='height'){ el.style.height=''; el.style.transition=''; el.style.opacity=''; el.style.transform=''; kids.forEach(k=>{k.style.transition=''; k.style.transitionDelay='';}); el.removeEventListener('transitionend', tidy);} });
     }
 
     function collapse(el){
       if (reduced){ el.classList.add('hidden'); return; }
       const kids = Array.from(el.children);
-      kids.forEach(k => {
-        k.style.transition = 'opacity 180ms ease, transform 180ms ease';
-        k.style.transitionDelay = '0ms';
-        k.style.opacity = '0';
-        k.style.transform = 'translateY(6px)';
-      });
-
-      const h = el.scrollHeight;
-      el.style.height = h + 'px';
-      el.getBoundingClientRect();
-      el.style.transition = 'height 220ms cubic-bezier(.2,.65,.3,1), opacity 160ms ease, transform 160ms ease';
-      el.style.height = '0px';
-      el.style.opacity = '0';
-      el.style.transform = 'translateY(4px)';
-
-      el.addEventListener('transitionend', function tidy(e){
-        if (e.propertyName === 'height'){
-          el.classList.add('hidden');
-          el.style.height = '';
-          el.style.transition = '';
-          el.style.opacity = '';
-          el.style.transform = '';
-          kids.forEach(k => { k.style.transition=''; k.style.transitionDelay=''; });
-          el.removeEventListener('transitionend', tidy);
-        }
-      });
+      kids.forEach(k=>{ k.style.transition='opacity 180ms ease, transform 180ms ease'; k.style.transitionDelay='0ms'; k.style.opacity='0'; k.style.transform='translateY(6px)'; });
+      const h = el.scrollHeight; el.style.height=h+'px'; el.getBoundingClientRect();
+      el.style.transition='height 220ms cubic-bezier(.2,.65,.3,1), opacity 160ms ease, transform 160ms ease';
+      el.style.height='0px'; el.style.opacity='0'; el.style.transform='translateY(4px)';
+      el.addEventListener('transitionend', function tidy(e){ if(e.propertyName==='height'){ el.classList.add('hidden'); el.style.height=''; el.style.transition=''; el.style.opacity=''; el.style.transform=''; kids.forEach(k=>{k.style.transition=''; k.style.transitionDelay='';}); el.removeEventListener('transitionend', tidy);} });
     }
 
-    btn.setAttribute('data-state','closed');
-    btn.setAttribute('aria-expanded','false');
-    btn.textContent = closedLabel;
-
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const isOpen = btn.getAttribute('data-state') === 'open';
       if (isOpen){
         collapse(list);
@@ -597,6 +753,7 @@
         btn.setAttribute('aria-expanded','false');
         btn.textContent = closedLabel;
       } else {
+        if (!loaded) await ensureLoaded();
         expand(list);
         btn.setAttribute('data-state','open');
         btn.setAttribute('aria-expanded','true');
@@ -605,7 +762,7 @@
     });
   }
 
-  // wire once for server-rendered content (works whether DOM is already ready or not)
+  // Wire once for server-rendered content
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => wireHRListToggle(document));
   } else {
@@ -624,6 +781,303 @@
       }
     }).catch(()=>{ /* ignore */ });
   }
+
+  /* ===== Book/Resched flow ===== */
+  (() => {
+    const canBook        = @json($canBook);
+    const canMoveEarlier = @json($canMoveEarlier);
+    const csrf           = @json(csrf_token());
+
+    const epSlots  = @json(route('admin.chatbot-sessions.slots', $session->id));        // GET ?date=YYYY-MM-DD
+    const epBook   = @json(route('admin.chatbot-sessions.book', $session->id));         // POST
+    const epRebook = @json(route('admin.chatbot-sessions.reschedule', $session->id));   // POST
+
+    // Buttons in unlocked card (initial + delegated for dynamic)
+    function rewireHRActionButtons(scope = document){
+      const b1 = scope.querySelector('#btnBookHR');
+      const b2 = scope.querySelector('#btnReschedHR');
+      if (b1) b1.addEventListener('click', () => open('book'), { once:true });
+      if (b2) b2.addEventListener('click', () => open('resched'), { once:true });
+    }
+    rewireHRActionButtons();
+
+    document.addEventListener('click', (e) => {
+      const b1 = e.target.closest?.('#btnBookHR');
+      const b2 = e.target.closest?.('#btnReschedHR');
+      if (b1) { e.preventDefault(); open('book'); }
+      if (b2) { e.preventDefault(); open('resched'); }
+    });
+
+    // Modal + form refs
+    const modal    = document.getElementById('hrActionModal');
+    const titleEl  = document.getElementById('hrActionTitle');
+    const closeBtn = document.getElementById('hrActionClose');
+    const cancelBtn= document.getElementById('hrActionCancel');
+    const form     = document.getElementById('hrActionForm');
+    const submit   = document.getElementById('hrActionSubmit');
+    const spin     = document.getElementById('hrActionSpin');
+    const label    = document.getElementById('hrActionLabel');
+    const result   = document.getElementById('hrActionResult');
+
+    const iDate    = document.getElementById('hrDate');
+    const iCoun    = document.getElementById('hrCounselor');
+    const iTime    = document.getElementById('hrTime');
+    const timePills   = document.getElementById('hrTimePills');
+    const noSlotsHint = document.getElementById('hrNoSlotsHint');
+
+    // Booking mini-calendar refs
+    const calGrid  = document.getElementById('bkCalGrid');
+    const calMonth = document.getElementById('bkCalMonth');
+    const calPrev  = document.getElementById('bkCalPrev');
+    const calNext  = document.getElementById('bkCalNext');
+
+    let mode = 'book'; // 'book' | 'resched'
+    const busy = (b)=>{ submit.disabled=b; spin.classList.toggle('hidden', !b); label.textContent = b ? (mode==='book'?'Booking…':'Rescheduling…') : (mode==='book'?'Book':'Reschedule'); };
+
+    // --- Calendar helpers
+    const today = new Date(); today.setHours(0,0,0,0);
+    let view = new Date(today.getFullYear(), today.getMonth(), 1);
+    let picked = null;
+
+    const pad = n => String(n).padStart(2,'0');
+    const ymd = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const sameYM = (a,b) => a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth();
+    const isWeekend = d => [0,6].includes(d.getDay());
+
+    function renderCalendar(){
+      calGrid.innerHTML = '';
+      calMonth.textContent = new Intl.DateTimeFormat('en', {month:'long',year:'numeric'}).format(view).toUpperCase();
+
+      calPrev.disabled = sameYM(view, today);
+      calPrev.classList.toggle('opacity-50', calPrev.disabled);
+
+      const firstDow = new Date(view.getFullYear(), view.getMonth(), 1).getDay();
+      const days = new Date(view.getFullYear(), view.getMonth()+1, 0).getDate();
+      for (let i=0;i<firstDow;i++) calGrid.appendChild(document.createElement('div'));
+
+      for (let d=1; d<=days; d++){
+        const cur = new Date(view.getFullYear(), view.getMonth(), d); cur.setHours(0,0,0,0);
+        const disabled = cur < today || isWeekend(cur);
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = d;
+        btn.className = 'bk-day' + (disabled ? ' bk-day--disabled' : '');
+
+        if (!disabled){
+          btn.addEventListener('click', () => {
+            picked = cur;
+            iDate.value = ymd(cur);
+            // highlight
+            Array.from(calGrid.querySelectorAll('.bk-day')).forEach(b => b.classList.remove('bk-day--selected'));
+            btn.classList.add('bk-day--selected');
+            // refresh slots for selected date
+            loadSlots();
+          });
+        } else {
+          btn.title = isWeekend(cur) ? 'Closed (Sat–Sun)' : 'Past date';
+          btn.disabled = true;
+        }
+
+        if (picked && cur.getTime() === picked.getTime()) btn.classList.add('bk-day--selected');
+        calGrid.appendChild(btn);
+      }
+    }
+
+    calPrev?.addEventListener('click', () => { if (!calPrev.disabled){ view.setMonth(view.getMonth()-1); renderCalendar(); }});
+    calNext?.addEventListener('click', () => { view.setMonth(view.getMonth()+1); renderCalendar(); });
+
+    function defaultNextWeekday(){
+      const d = new Date(); d.setDate(d.getDate()+1); d.setHours(0,0,0,0);
+      if (d.getDay()===6) d.setDate(d.getDate()+2); // Sat -> Mon
+      if (d.getDay()===0) d.setDate(d.getDate()+1); // Sun -> Mon
+      return d;
+    }
+
+    function open(m){
+      mode = m;
+      titleEl.textContent = (mode==='book') ? 'Book urgent appointment' : 'Move appointment earlier';
+      label.textContent   = (mode==='book') ? 'Book' : 'Reschedule';
+      result.classList.add('hidden');
+      form.classList.remove('hidden');
+      modal.classList.remove('hidden');
+
+      // Default date = next weekday
+      picked = defaultNextWeekday();
+      iDate.value = ymd(picked);
+      view = new Date(picked.getFullYear(), picked.getMonth(), 1);
+      renderCalendar();
+      loadSlots();
+    }
+    function close(){ modal.classList.add('hidden'); }
+    closeBtn?.addEventListener('click', close);
+    cancelBtn?.addEventListener('click', close);
+    modal?.firstElementChild?.addEventListener('click', close);
+
+    // When date changes programmatically, reload slots
+    iDate?.addEventListener('change', loadSlots);
+
+    async function loadSlots(){
+      const date = iDate.value;
+      if (!date) return;
+      try{
+        const url = new URL(epSlots, window.location.origin);
+        url.searchParams.set('date', date);
+        const res = await fetch(url, { headers:{'X-Requested-With':'XMLHttpRequest'} });
+        const j = await res.json();
+
+        // counselors
+        iCoun.innerHTML = '';
+        (j.counselors||[]).forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c.id; opt.textContent = c.name;
+          iCoun.appendChild(opt);
+        });
+
+        // default to first counselor
+        const firstId = iCoun.value;
+
+        // fill times (with optional ref suggestion from API)
+        fillTimes(firstId, j.slots||{}, { ref: j.ref_time || j.suggest || null });
+
+        iCoun.onchange = () =>
+          fillTimes(iCoun.value, j.slots||{}, { ref: j.ref_time || j.suggest || null });
+
+      }catch(e){
+        iCoun.innerHTML=''; iTime.innerHTML='';
+        if (timePills) timePills.innerHTML='';
+        if (noSlotsHint) { noSlotsHint.classList.add('hidden'); noSlotsHint.textContent=''; }
+        console.error(e);
+      }
+    }
+
+    /**
+     * Render time slots as pills; gracefully handle "no slots" with a ref suggestion.
+     */
+    function fillTimes(counselorId, slotsByCounselor, extras = {}){
+      // Keep <select> in sync for form submit
+      iTime.innerHTML = '';
+      const rows = slotsByCounselor?.[counselorId] || [];
+      rows.forEach(s => {
+        const opt = new Option(s.label, s.value, false, false);
+        if (s.disabled) opt.disabled = true;
+        iTime.add(opt);
+      });
+
+      // Render equal-size pills
+      timePills.innerHTML = '';
+      let anyEnabled = false;
+
+      rows.forEach(s => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = s.label;
+        btn.className = 'time-pill';
+        if (s.disabled) {
+          btn.setAttribute('aria-disabled','true');
+        } else {
+          anyEnabled = true;
+          btn.addEventListener('click', () => {
+            iTime.value = s.value;
+            [...timePills.querySelectorAll('.time-pill')].forEach(p => p.classList.remove('time-pill--active'));
+            btn.classList.add('time-pill--active');
+          }, { passive:true });
+        }
+        timePills.appendChild(btn);
+      });
+
+      // No slots? show a reference-time pill
+      const noSlotsHint = document.getElementById('hrNoSlotsHint');
+      if (!anyEnabled) {
+        let ref = (extras.ref || '').trim();
+        if (!ref) ref = '09:00';
+
+        noSlotsHint.textContent = 'No available slots for this counselor/date. You may try the reference time:';
+        noSlotsHint.classList.remove('hidden');
+
+        const refBtn = document.createElement('button');
+        refBtn.type = 'button';
+        refBtn.className = 'time-pill time-pill--ref';
+        refBtn.innerHTML = `Ref: ${ref}`;
+        refBtn.addEventListener('click', () => {
+          let opt = [...iTime.options].find(o => o.value === ref);
+          if (!opt) iTime.add(new Option(ref, ref, true, true)); else iTime.value = ref;
+          [...timePills.querySelectorAll('.time-pill')].forEach(p => p.classList.remove('time-pill--active'));
+          refBtn.classList.add('time-pill--active');
+        }, { passive:true });
+
+        timePills.appendChild(refBtn);
+      } else {
+        noSlotsHint.classList.add('hidden');
+        noSlotsHint.textContent = '';
+        // Preselect the first enabled pill
+        const firstEnabled = timePills.querySelector('.time-pill:not([aria-disabled="true"])');
+        firstEnabled?.click();
+      }
+    }
+
+    form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    busy(true);
+    try{
+      // ✅ Make sure date exists even if user didn’t click the mini-calendar
+      if (!iDate.value || !iDate.value.trim()) {
+        if (picked instanceof Date) {
+          iDate.value = ymd(picked);
+        } else {
+          const fallback = defaultNextWeekday();
+          picked = fallback;
+          iDate.value = ymd(fallback);
+        }
+      }
+
+      // ✅ If no time is chosen, try to auto-select the first enabled pill
+      if (!iTime.value && timePills) {
+        const firstEnabled = timePills.querySelector('.time-pill:not([aria-disabled="true"])');
+        firstEnabled?.click();
+      }
+
+      // If still nothing, give a friendly prompt (prevents backend “date required”)
+      if (!iDate.value) {
+        if (window.Swal) Swal.fire({icon:'warning', title:'Pick a date', text:'Please select a weekday for the appointment.'});
+        busy(false); return;
+      }
+      if (!iTime.value) {
+        if (window.Swal) Swal.fire({icon:'warning', title:'Pick a time', text:'Please choose a time slot.'});
+        busy(false); return;
+      }
+
+      const fd = new FormData(form);
+      fd.append('_token', csrf);
+      // ensure 'date' key is explicitly present
+      if (!fd.get('date')) fd.set('date', iDate.value || '');
+
+        const ep = (mode==='book') ? epBook : epRebook;
+        const res = await fetch(ep, {
+          method: 'POST',
+          headers: { 'X-Requested-With':'XMLHttpRequest' },
+          body: fd
+        });
+        const j = await res.json().catch(()=> ({}));
+        if (!res.ok || !j?.ok) {
+          const msg = j?.message || 'Request failed.';
+          if (window.Swal) Swal.fire({ icon:'error', title:'Error', text: msg });
+          throw new Error(msg);
+        }
+        // Show the server-composed HTML (includes the generated note)
+        result.innerHTML = j.html || '<div class="text-slate-700">Done.</div>';
+        form.classList.add('hidden');
+        result.classList.remove('hidden');
+        if (window.Swal) Swal.fire({ toast:true, position:'top-end', icon:'success', title:(mode==='book'?'Booked':'Rescheduled'), timer:1300, showConfirmButton:false });
+        // Refresh small banner near header if needed
+        document.getElementById('hrActionMsg')?.replaceChildren();
+      } catch(e){
+        console.error(e);
+      } finally {
+        busy(false);
+      }
+    });
+  })();
 
   /* ===== Calendar (weekly counts) ===== */
   (() => {
@@ -808,6 +1262,9 @@
   /* ===== High-risk sensitive unlock (second 2FA) ===== */
   (() => {
     const locked = @json($sensitiveLocked ?? false);
+    const isHighRisk     = @json($isHighRisk);
+    const canBook        = @json($canBook);
+    const canMoveEarlier = @json($canMoveEarlier);
     if (!locked) return;
 
     const hrUnlock  = document.getElementById('hrUnlock');
@@ -831,7 +1288,6 @@
 
     const epConfirm   = @json(route('admin.reauth.confirm_sensitive'));
     const epSensitive = @json(route('admin.chatbot-sessions.sensitive', $session->id));
-    const epAll       = @json(route('admin.chatbot-sessions.highrisk_all', $session->id));
 
     if (hrUnlock) hrUnlock.style.zIndex = '10';
 
@@ -877,7 +1333,7 @@
 
     async function fetchAllHighRisk() {
       try {
-        const res = await fetch(epAll, { headers: { 'X-Requested-With': 'XMLHttpRequest' }});
+        const res = await fetch(epAllHR, { headers: { 'X-Requested-With': 'XMLHttpRequest' }});
         const data = await res.json().catch(()=> ({}));
         if (!res.ok || !data?.ok) throw new Error(data?.message || 'Failed to load.');
         return data.items || [];
@@ -918,25 +1374,31 @@
         if (card){
           const listItems = Array.isArray(allHighRiskItems) ? allHighRiskItems : [];
 
-          const listHtml = listItems.length ? `
+          const listHtml = `
             <div class="mt-3">
               <div class="flex items-center justify-between">
                 <div class="text-sm font-semibold text-slate-900">
                   All high-risk / critical lines
-                  <span class="ml-1 text-slate-500 font-normal">(${listItems.length})</span>
+                  ${listItems.length ? `<span class="ml-1 text-slate-500 font-normal">(${listItems.length})</span>` : ''}
                 </div>
                 <button id="btnShowAllHR" type="button"
                         class="text-xs font-medium text-indigo-600 hover:text-indigo-700"
-                        data-state="closed" aria-expanded="false" aria-controls="hrAllList">
-                  View all (${listItems.length})
+                        data-state="closed" aria-expanded="false" aria-controls="hrAllList"
+                        data-preloaded="1">
+                  ${listItems.length ? `View all (${listItems.length})` : 'View all'}
                 </button>
               </div>
+
               <div id="hrAllList" class="mt-2 space-y-2 hidden">
                 ${listItems.map(item => `
                   <div class="rounded-xl ring-1 ring-slate-200 p-3 bg-white">
                     <div class="text-[12px] text-slate-500">
                       ${item.at || ''}
-                      ${item.sender ? `<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] ring-1 ${String(item.sender).toLowerCase()==='user'?'bg-rose-50 text-rose-700 ring-rose-200':'bg-slate-50 text-slate-700 ring-slate-200'}">${item.sender}</span>` : ''}
+                      ${item.sender ? `<span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] ring-1 ${
+                          String(item.sender).toLowerCase()==='user'
+                            ? 'bg-rose-50 text-rose-700 ring-rose-200'
+                            : 'bg-slate-50 text-slate-700 ring-slate-200'
+                        }">${item.sender}</span>` : ''}
                     </div>
                     <div class="mt-1 text-slate-900">#${item.id}</div>
                     <blockquote class="mt-1 text-sm text-slate-800 leading-relaxed">
@@ -944,9 +1406,25 @@
                     </blockquote>
                   </div>
                 `).join('')}
+
+                <div id="hrActionsWrap" class="mt-3 ${ (listItems.length && isHighRisk && (canBook || canMoveEarlier)) ? '' : 'hidden' }">
+                  <div class="no-print flex flex-wrap items-center gap-2">
+                    ${ canBook ? `
+                      <button id="btnBookHR" type="button"
+                              class="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-white hover:bg-indigo-700">
+                        Book urgent appointment
+                      </button>` : '' }
+                    ${ canMoveEarlier ? `
+                      <button id="btnReschedHR" type="button"
+                              class="inline-flex items-center gap-2 rounded-xl ring-1 ring-slate-200 bg-white px-3 py-2 text-slate-800 hover:bg-slate-50">
+                        Move to earlier slot
+                      </button>` : '' }
+                    <div id="hrActionMsg" class="text-sm text-slate-600"></div>
+                  </div>
+                </div>
               </div>
             </div>
-          ` : '';
+          `;
 
           card.innerHTML = `
             <div class="flex items-start gap-2.5">
@@ -957,7 +1435,7 @@
                   ${data.at ? data.at : ''} ${data.id ? `<span class="ml-1 opacity-70">• Chat ID: #${data.id}</span>` : ''}
                 </div>
 
-                <!-- Only the latest trigger is shown initially -->
+                <!-- Latest trigger -->
                 <blockquote class="mt-1.5 rounded-xl bg-white ring-1 ring-rose-100 p-3 text-sm text-slate-800">
                   “${(data.txt || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}”
                 </blockquote>
@@ -969,7 +1447,7 @@
           card.classList.remove('border-slate-200','bg-white');
           card.classList.add('border-rose-200','bg-rose-50');
 
-          // re-wire the toggle inside the freshly replaced card
+          // re-wire the toggle for the newly inserted button/list
           wireHRListToggle(card);
         }
 
@@ -990,107 +1468,146 @@
 
 {{-- ===== Styles ===== --}}
 <style>
-  /* Collapsing container */
-  .hr-collapse{ overflow:hidden; will-change:height; }
-  /* Optional: staggered children on expand */
-  .hr-stagger > *{ opacity:0; transform:translateY(6px); }
-  @media (prefers-reduced-motion: reduce){
-    .hr-collapse, .hr-stagger > *{ transition:none !important; }
-  }
+ /* Equal-size pill grid */
+.time-pills{
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap:.5rem;
+}
 
-  #hrUnlock span { transform: translateY(2px); opacity: .95; }
-  #hrUnlock:hover span { transform: translateY(0); opacity: 1; transition: all .15s ease; }
-  .card{ box-shadow:0 1px 2px rgba(15,23,42,.06),0 1px 1px rgba(15,23,42,.04); }
+/* Time slot pills */
+.time-pill{
+  width:100%;
+  display:inline-flex; align-items:center; justify-content:center;
+  padding:.55rem .6rem; border-radius:.75rem;
+  font-size:.875rem; font-weight:600; line-height:1;
+  background:#fff; color:#0f172a; border:1px solid #e5e7eb;
+  transition:background .15s ease, border-color .15s ease, color .15s ease, transform .05s ease;
+}
+.time-pill:hover{ background:#f8fafc; border-color:#cbd5e1; }
+.time-pill[aria-disabled="true"]{ opacity:.55; cursor:not-allowed; }
+.time-pill--active{
+  background:#4f46e5; color:#fff; border-color:#4f46e5;
+  box-shadow:0 0 0 2px rgba(99,102,241,.30);
+}
+.time-pill--ref{
+  background:#eef2ff; color:#3730a3; border-color:#c7d2fe;
+}
+.time-pill:active{ transform:scale(.98); }
 
-  .kpi{ min-height:132px; }
-  .hr-card{  min-height:150px; }
-  .emo-card{ min-height:150px; }
+/* Booking calendar mini-UI */
+.bk-day{
+  width: 2.4rem; height: 2.4rem; border-radius: 9999px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 600; background: #fff; color:#0f172a;
+  border:1px solid #e5e7eb; transition: .15s ease;
+}
+.bk-day:hover{ background:#eef2ff; border-color:#c7d2fe; }
+.bk-day--selected{ background:#4f46e5; color:#fff; border-color:#4f46e5; box-shadow:0 0 0 2px rgba(99,102,241,.35); }
+.bk-day--disabled{ background:#f3f4f6; color:#9ca3af; border-color:#e5e7eb; cursor:not-allowed; }
+.bk-day--disabled:hover{ background:#f3f4f6; }
 
-  :root{  --risk-kpi-height-lg: 292px; }
-  @media (min-width:1024px){
-    .kpi-grid > .risk-card{ height: var(--risk-kpi-height-lg); }
-  }
+/* Collapsing container */
+.hr-collapse{ overflow:hidden; will-change:height; }
+/* Optional: staggered children on expand */
+.hr-stagger > *{ opacity:0; transform:translateY(6px); }
+@media (prefers-reduced-motion: reduce){
+  .hr-collapse, .hr-stagger > *{ transition:none !important; }
+}
 
-  .seg{ display:flex; flex-wrap:wrap; background:#fff; }
-  .seg-btn{
-    flex:1 1 33.333%;
-    display:flex; align-items:center; justify-content:center; gap:.5rem;
-    padding:.48rem .68rem; font-size:.9rem; min-width:0; background:#fff; transition:background .15s ease;
-    border-right:1px solid rgba(15,23,42,.08);
-  }
-  .seg-btn:nth-child(3n){ border-right:none; }
-  .seg-btn:nth-child(n+4){ border-top:1px solid rgba(15,23,42,.08); }
-  .seg-btn:hover{ background:#F8FAFC; }
-  .seg-btn:focus-visible{ outline:none; box-shadow:0 0 0 2px rgba(99,102,241,.55) inset; }
-  .seg-active{ background:#F1F5F9; box-shadow:inset 0 0 0 2px rgba(99,102,241,.25); }
-  .seg-btn span.truncate{ max-width:7.5rem; }
+#hrUnlock span { transform: translateY(2px); opacity: .95; }
+#hrUnlock:hover span { transform: translateY(0); opacity: 1; transition: all .15s ease; }
+.card{ box-shadow:0 1px 2px rgba(15,23,42,.06),0 1px 1px rgba(15,23,42,.04); }
 
-  .note-1line{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.kpi{ min-height:132px; }
+.hr-card{  min-height:150px; }
+.emo-card{ min-height:150px; }
 
-  @media print{
-    body *{ visibility:hidden !important; }
-    #sessionPrintable, #sessionPrintable *{ visibility:visible !important; }
-    #sessionPrintable{ position:fixed; inset:0; margin:12mm !important; background:#fff; }
-    .shadow-sm{ box-shadow:none !important; } .ring-1{ box-shadow:none !important; }
-    .no-print{ display:none !important; }
-    @page{ size:A4; margin:12mm 14mm; }
-  }
+:root{  --risk-kpi-height-lg: 292px; }
+@media (min-width:1024px){
+  .kpi-grid > .risk-card{ height: var(--risk-kpi-height-lg); }
+}
 
-  .risk-card .risk-hint{
-    font-size:11px; line-height:1.25rem; color:rgb(100 116 139);
-    white-space:normal; overflow:visible; text-overflow:clip;
-  }
-  .risk-card .risk-hint .kbd{
-    padding:0.125rem 0.25rem; border:1px solid rgb(203 213 225); border-radius:0.25rem;
-  }
+.seg{ display:flex; flex-wrap:wrap; background:#fff; }
+.seg-btn{
+  flex:1 1 33.333%;
+  display:flex; align-items:center; justify-content:center; gap:.5rem;
+  padding:.48rem .68rem; font-size:.9rem; min-width:0; background:#fff; transition:background .15s ease;
+  border-right:1px solid rgba(15,23,42,.08);
+}
+.seg-btn:nth-child(3n){ border-right:none; }
+.seg-btn:nth-child(n+4){ border-top:1px solid rgba(15,23,42,.08); }
+.seg-btn:hover{ background:#F8FAFC; }
+.seg-btn:focus-visible{ outline:none; box-shadow:0 0 0 2px rgba(99,102,241,.55) inset; }
+.seg-active{ background:#F1F5F9; box-shadow:inset 0 0 0 2px rgba(99,102,241,.25); }
+.seg-btn span.truncate{ max-width:7.5rem; }
 
-  .risk-card .risk-last{
-    border:1px solid rgb(226 232 240);
-    background:rgb(248 250 252);
-    border-radius:0.75rem;
-    padding:0.5rem;
-  }
-  .risk-card .risk-last .risk-meta{
-    margin-top:0.125rem; font-size:10.5px; color:rgb(100 116 139);
-  }
-  .risk-card .risk-last .risk-note{
-    margin-top:0.25rem; font-size:12px; color:rgb(71 85 105);
-  }
-  .risk-card .line-clamp-2{
-    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
-  }
+.note-1line{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-  .risk-card .risk-extras{ margin-top:.25rem; }
-  .risk-card .risk-meter-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:.25rem; }
-  .risk-card .risk-meter-title{ font-size:12px; font-weight:600; color:rgb(15 23 42); }
-  .risk-card .risk-meter-bar{
-    position:relative; height:8px; border-radius:9999px; overflow:hidden;
-    background:linear-gradient(90deg,
-      rgba(16,185,129,.22) 0% , rgba(16,185,129,.22) 33.33%,
-      rgba(245,158,11,.22) 33.34% , rgba(245,158,11,.22) 66.66%,
-      rgba(244,63,94,.22) 66.67% , rgba(244,63,94,.22) 100%
-    );
-  }
-  .risk-card .risk-meter-pin{
-    position:absolute; top:50%; transform:translate(-50%, -50%);
-    width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent;
-    border-top:8px solid rgb(51 65 85);
-    filter:drop-shadow(0 1px 1px rgba(0,0,0,.15));
-  }
-  .risk-card .risk-meter-legend{
-    display:flex; justify-content:space-between; margin-top:.25rem;
-    font-size:10.5px; color:rgb(100 116 139);
-  }
-  .risk-card .risk-meter-legend .leg-low::before,
-  .risk-card .risk-meter-legend .leg-mod::before,
-  .risk-card .risk-meter-legend .leg-high::before{
-    content:''; display:inline-block; width:.5rem; height:.5rem; border-radius:9999px; margin-right:.35rem; vertical-align:middle;
-  }
-  .risk-card .risk-meter-legend .leg-low::before{ background:rgb(16 185 129); }
-  .risk-card .risk-meter-legend .leg-mod::before{ background:rgb(245 158 11); }
-  .risk-card .risk-meter-legend .leg-high::before{ background:rgb(244 63 94); }
+@media print{
+  body *{ visibility:hidden !important; }
+  #sessionPrintable, #sessionPrintable *{ visibility:visible !important; }
+  #sessionPrintable{ position:fixed; inset:0; margin:12mm !important; background:#fff; }
+  .shadow-sm{ box-shadow:none !important; } .ring-1{ box-shadow:none !important; }
+  .no-print{ display:none !important; }
+  @page{ size:A4; margin:12mm 14mm; }
+}
 
-  @keyframes shake { 0%,100%{transform:translateX(0)}15%{transform:translateX(-6px)}30%{transform:translateX(5px)}45%{transform:translateX(-4px)}60%{transform:translateX(3px)}75%{transform:translateX(-2px)}90%{transform:translateX(1px)}}
-  .ux-shake{animation:shake .35s ease-in-out}
+.risk-card .risk-hint{
+  font-size:11px; line-height:1.25rem; color:rgb(100 116 139);
+  white-space:normal; overflow:visible; text-overflow:clip;
+}
+.risk-card .risk-hint .kbd{
+  padding:0.125rem 0.25rem; border:1px solid rgb(203 213 225); border-radius:0.25rem;
+}
+
+.risk-card .risk-last{
+  border:1px solid rgb(226 232 240);
+  background:rgb(248 250 252);
+  border-radius:0.75rem;
+  padding:0.5rem;
+}
+.risk-card .risk-last .risk-meta{
+  margin-top:0.125rem; font-size:10.5px; color:rgb(100 116 139);
+}
+.risk-card .risk-last .risk-note{
+  margin-top:0.25rem; font-size:12px; color:rgb(71 85 105);
+}
+.risk-card .line-clamp-2{
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+
+.risk-card .risk-extras{ margin-top:.25rem; }
+.risk-card .risk-meter-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:.25rem; }
+.risk-card .risk-meter-title{ font-size:12px; font-weight:600; color:rgb(15 23 42); }
+.risk-card .risk-meter-bar{
+  position:relative; height:8px; border-radius:9999px; overflow:hidden;
+  background:linear-gradient(90deg,
+    rgba(16,185,129,.22) 0% , rgba(16,185,129,.22) 33.33%,
+    rgba(245,158,11,.22) 33.34% , rgba(245,158,11,.22) 66.66%,
+    rgba(244,63,94,.22) 66.67% , rgba(244,63,94,.22) 100%
+  );
+}
+.risk-card .risk-meter-pin{
+  position:absolute; top:50%; transform:translate(-50%, -50%);
+  width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent;
+  border-top:8px solid rgb(51 65 85);
+  filter:drop-shadow(0 1px 1px rgba(0,0,0,.15));
+}
+.risk-card .risk-meter-legend{
+  display:flex; justify-content:space-between; margin-top:.25rem;
+  font-size:10.5px; color:rgb(100 116 139);
+}
+.risk-card .risk-meter-legend .leg-low::before,
+.risk-card .risk-meter-legend .leg-mod::before,
+.risk-card .risk-meter-legend .leg-high::before{
+  content:''; display:inline-block; width:.5rem; height:.5rem; border-radius:9999px; margin-right:.35rem; vertical-align:middle;
+}
+.risk-card .risk-meter-legend .leg-low::before{ background:rgb(16 185 129); }
+.risk-card .risk-meter-legend .leg-mod::before{ background:rgb(245 158 11); }
+.risk-card .risk-meter-legend .leg-high::before{ background:rgb(244 63 94); }
+
+@keyframes shake { 0%,100%{transform:translateX(0)}15%{transform:translateX(-6px)}30%{transform:translateX(5px)}45%{transform:translateX(-4px)}60%{transform:translateX(3px)}75%{transform:translateX(-2px)}90%{transform:translateX(1px)}}
+.ux-shake{animation:shake .35s ease-in-out}
 </style>
 @endsection
