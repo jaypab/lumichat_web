@@ -351,6 +351,116 @@ public function store(Request $request)
     $analysisText = $display !== '' ? $display : $text;
 
     $idem = (string) $request->input('_idem', '');
+    // --- Greeting short-circuit: reply once, avoid spamming & skip Rasa
+$isUserGreeting = $this->isUserGreeting($analysisText);
+$greetKey       = 'greeted_at_' . (session('chat_session_id') ?: 'new');
+$lastGreetAt    = (int) session($greetKey, 0);
+$greetCooldown  = 45; // seconds
+
+if ($isUserGreeting) {
+    if (time() - $lastGreetAt < $greetCooldown) {
+        // Within cool-down: keep it silent (no duplicate bot bubble)
+        // Still log the user message and return an empty bot_reply array.
+        // (UI shows only the user's bubble—feels natural.)
+        $userId    = Auth::id();
+        $sessionId = session('chat_session_id');
+
+        // Ensure a session exists so history isn’t lost
+        if (!$sessionId) {
+            $new = ChatSession::create([
+                'user_id'       => $userId,
+                'topic_summary' => 'Starting conversation...',
+                'is_anonymous'  => 0,
+                'risk_level'    => 'low',
+            ]);
+            session(['chat_session_id' => $new->id]);
+            $sessionId = $new->id;
+        }
+
+        Chat::firstOrCreate(
+            ['idempotency_key' => $idem],
+            [
+                'user_id'         => $userId,
+                'chat_session_id' => $sessionId,
+                'sender'          => 'user',
+                'message'         => Crypt::encryptString($analysisText),
+                'sent_at'         => now(),
+            ]
+        );
+
+        return response()->json([
+            'user_message' => [
+                'text'       => $analysisText,
+                'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+                'sent_at'    => now()->toIso8601String(),
+            ],
+            'bot_reply'  => [], // no duplicate auto-replies
+            'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+        ]);
+    }
+
+    // Outside cool-down → one friendly prompt, no Rasa call this turn
+    session([$greetKey => time()]);
+    $lang = $this->inferLanguage($analysisText);
+    $name = $this->preferredName(); $first = explode(' ', $name)[0] ?? $name;
+
+    $reply = $this->pickLanguageVariant(
+        "Hi {USER_FIRST} — I’m here with you. What feels most pressing right now? / " .
+        "Hi {USER_FIRST} — ania ko nimo. Asa ang pinakalisod karon?",
+        $lang
+    );
+    $reply = str_replace(['{USER_FIRST}','{USER_NAME}','{USER}','{NAME}'], [e($first), e($name), e($first), e($name)], $reply);
+
+    // Ensure a session, persist user+bot
+    $userId    = Auth::id();
+    $sessionId = session('chat_session_id');
+    if (!$sessionId) {
+        $new = ChatSession::create([
+            'user_id'       => $userId,
+            'topic_summary' => 'Starting conversation...',
+            'is_anonymous'  => 0,
+            'risk_level'    => 'low',
+        ]);
+        session(['chat_session_id' => $new->id]);
+        $sessionId = $new->id;
+    }
+
+    $userMsg = Chat::firstOrCreate(
+        ['idempotency_key' => $idem],
+        [
+            'user_id'         => $userId,
+            'chat_session_id' => $sessionId,
+            'sender'          => 'user',
+            'message'         => Crypt::encryptString($analysisText),
+            'sent_at'         => now(),
+        ]
+    );
+
+    $bot = Chat::create([
+        'user_id'         => $userId,
+        'chat_session_id' => $sessionId,
+        'sender'          => 'bot',
+        'message'         => Crypt::encryptString($reply),
+        'sent_at'         => now(),
+    ]);
+
+    return response()->json([
+        'user_message' => [
+            'text'       => $analysisText,
+            'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => now()->toIso8601String(),
+        ],
+        'bot_reply'  => [[
+            'id'         => $bot->id,
+            'text'       => $reply,
+            'buttons'    => [],
+            'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => $bot->sent_at->toIso8601String(),
+        ]],
+        'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+    ]);
+}
+
     if (!Str::isUuid($idem)) {
         $idem = (string) Str::uuid();
     }
@@ -678,62 +788,82 @@ if ($armedAt !== null && $count > (int)$armedAt && !$forceCopingNow && !$decline
         }
     }
 
+    // De-duplicate: if the next bot text equals the last bot text in the last minute, drop it
+$lastBot = Chat::where('chat_session_id', $sessionId)->where('sender','bot')->latest('sent_at')->first();
+$lastBotText = '';
+$lastBotTime = 0;
+if ($lastBot) {
+    try { $lastBotText = $this->normalizeText(Crypt::decryptString($lastBot->message)); }
+    catch (\Throwable $e) { $lastBotText = $this->normalizeText((string)$lastBot->message); }
+    $lastBotTime = $lastBot->sent_at?->timestamp ?? 0;
+}
+
+
     // 15) Build final payload (language pick + placeholders + save bot items)
-    $botPayload = [];
-    foreach ($botReplies as $replyObj) {
-        $replyText = (string) ($replyObj['text'] ?? '');
-        $replyBtns = (isset($replyObj['buttons']) && is_array($replyObj['buttons'])) ? $replyObj['buttons'] : [];
+   foreach ($botReplies as $replyObj) {
+    $replyText = (string) ($replyObj['text'] ?? '');
+    $replyBtns = (isset($replyObj['buttons']) && is_array($replyObj['buttons'])) ? $replyObj['buttons'] : [];
 
-        $replyText = $this->pickLanguageVariant($replyText, $lang);
+    $replyText = $this->pickLanguageVariant($replyText, $lang);
 
-        // Replace appointment link placeholder
-        if (str_contains($replyText, '{APPOINTMENT_LINK}')) {
-            $replyText = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $replyText);
-        }
-
-        // Personalization placeholders
-        $safeName  = e($name);
-        $safeFirst = e($first);
-        $replyText = str_replace(
-            ['{USER_NAME}', '{USER_FIRST}', '{USER}', '{NAME}'],
-            [$safeName,     $safeFirst,     $safeFirst, $safeName],
-            $replyText
-        );
-
-        // Normalize button payloads (convert "{APPOINTMENT_LINK}" to url)
-        $normalizedBtns = [];
-        foreach ($replyBtns as $b) {
-            $title   = (string)($b['title'] ?? 'Open');
-            $payload = $b['payload'] ?? null;
-            $url     = $b['url'] ?? null;
-
-            if (is_string($payload) && trim($payload) === '{APPOINTMENT_LINK}') {
-                $normalizedBtns[] = ['title' => $title, 'url' => $link];
-            } else {
-                $one = ['title' => $title];
-                if ($url)     $one['url']     = $url;
-                if ($payload) $one['payload'] = $payload;
-                $normalizedBtns[] = $one;
-            }
-        }
-
-        // Save bot message (encrypted)
-        $bot = Chat::create([
-            'user_id'         => $userId,
-            'chat_session_id' => $sessionId,
-            'sender'          => 'bot',
-            'message'         => Crypt::encryptString($replyText),
-            'sent_at'         => now(),
-        ]);
-
-        $botPayload[] = [
-            'id'         => $bot->id,
-            'text'       => $replyText,
-            'buttons'    => $normalizedBtns,
-            'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
-            'sent_at'    => $bot->sent_at->toIso8601String(),
-        ];
+    // Replace appointment link placeholder
+    if (str_contains($replyText, '{APPOINTMENT_LINK}')) {
+        $replyText = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $replyText);
     }
+
+    // Personalization placeholders
+    $safeName  = e($name);
+    $safeFirst = e($first);
+    $replyText = str_replace(
+        ['{USER_NAME}', '{USER_FIRST}', '{USER}', '{NAME}'],
+        [$safeName,     $safeFirst,     $safeFirst, $safeName],
+        $replyText
+    );
+
+    // ---- NEW: skip duplicate bubble within 60s
+    $norm = $this->normalizeText($replyText);
+    if ($norm !== '' && $norm === $lastBotText && (time() - $lastBotTime) < 60) {
+        continue; // drop duplicate
+    }
+
+    // Normalize buttons
+    $normalizedBtns = [];
+    foreach ($replyBtns as $b) {
+        $title   = (string)($b['title'] ?? 'Open');
+        $payload = $b['payload'] ?? null;
+        $url     = $b['url'] ?? null;
+
+        if (is_string($payload) && trim($payload) === '{APPOINTMENT_LINK}') {
+            $normalizedBtns[] = ['title' => $title, 'url' => $link];
+        } else {
+            $one = ['title' => $title];
+            if ($url)     $one['url']     = $url;
+            if ($payload) $one['payload'] = $payload;
+            $normalizedBtns[] = $one;
+        }
+    }
+
+    $bot = Chat::create([
+        'user_id'         => $userId,
+        'chat_session_id' => $sessionId,
+        'sender'          => 'bot',
+        'message'         => Crypt::encryptString($replyText),
+        'sent_at'         => now(),
+    ]);
+
+    // update lastBot cache so sequential duplicates in same turn are also filtered
+    $lastBotText = $norm;
+    $lastBotTime = time();
+
+    $botPayload[] = [
+        'id'         => $bot->id,
+        'text'       => $replyText,
+        'buttons'    => $normalizedBtns,
+        'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+        'sent_at'    => $bot->sent_at->toIso8601String(),
+    ];
+}
+
 
     // 16) Return
     return response()->json([
@@ -1079,13 +1209,43 @@ private function parseCopingCommand(string $text): ?string
     if (in_array($t, $no,  true)) return 'no';
     return null;
 }
+
+private function normalizeText(string $t): string
+{
+    $t = mb_strtolower(trim($t));
+    // collapse whitespace + strip zero-width chars
+    $t = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]+/u', '', $t);
+    $t = preg_replace('/\s+/u', ' ', $t);
+    return $t ?? '';
+}
+
+private function isUserGreeting(string $t): bool
+{
+    $t = $this->normalizeText($t);
+    // very short salutations or simple “kumusta” patterns
+    if (preg_match('/\b(hi+|hello+|hey+|yo+|kumusta|must[aā]|good (morning|afternoon|evening))\b/u', $t)) {
+        // avoid “hi i feel …” → greeting + content
+        return !preg_match('/\b(i feel|i\'?m|ako|nasuko|nagool|kapoy|problem|issue|help|anxious|sad|stress)\b/u', $t);
+    }
+    return false;
+}
+
+/** Bot-side greeting detector (broader) */
 private function looksLikeGreeting(string $t): bool
 {
-    $t = trim(mb_strtolower($t));
-    return (bool) preg_match(
-        '/\b(hi|hello|hey)\b.*\b(how can i help|how may i help|how can i assist|kumusta|how can i help you today)\b/u',
-        $t
-    );
+    $t = $this->normalizeText($t);
+    // common patterns we want to DROP on later turns
+    $greets = [
+        '/\b(hi|hello|hey)\b.*\b(how (?:can|may) i (?:help|assist)|how are you(?: feeling)?(?: today| right now)?)\b/u',
+        '/\bhello!?\s*(how are you(?: feeling)?(?: today)?)\b/u',
+        '/\bkumusta( ka| man)?( karon| today)?[?]?\b/u',
+        '/\bhow are you(?: feeling)?\b/u',
+        '/\bhow can i help (?:you )?today\b/u',
+    ];
+    foreach ($greets as $r) if (preg_match($r, $t)) return true;
+    // very short pure-greeting texts
+    if (preg_match('/^(hi|hello|hey|kumusta)[.! ]*$/u', $t)) return true;
+    return false;
 }
 
 
