@@ -535,6 +535,7 @@ if ($isUserGreeting) {
     // --- Coping consent / flow flags (UPDATED)
     $doorKey      = 'door_after_rasa_' . $sessionId;
     $helpcheckKey = 'helpcheck_at_' . $sessionId;
+    $pendingApptKey = 'pending_appt_cta_' . $sessionId;
 
     // Recognize both payloads (/show_coping, /skip_coping) and button titles ("Yes, show tips", "No, thanks")
     $copingCmd = $this->parseCopingCommand($analysisText);   // returns 'yes' | 'no' | null
@@ -629,27 +630,54 @@ if ($isUserGreeting) {
         'message_preview' => Str::limit($text, 120),
     ]);
 
-    // 8) Appointment CTA injection (unchanged)
-    $askedForAppt = $this->wantsAppointment($text) || $this->confirmedAfterOffer($text, $sessionId);
-    $link   = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
-        ? \Illuminate\Support\Facades\URL::signedRoute('features.enable_appointment')
-        : (\Illuminate\Support\Facades\Route::has('appointment.index') ? route('appointment.index') : url('/appointment'));
-    $ctaHtml = '<a href="' . e($link) . '">Book an appointment</a>';
+   // 8b) Appointment CTA injection (RE-ORDERED & SMART)
+$askedForAppt = $this->wantsAppointment($text) || $this->confirmedAfterOffer($text, $sessionId);
 
-    $hasApptPlaceholder = false;
-    foreach ($botReplies as $rpl) {
-        if (is_array($rpl) && isset($rpl['text']) && is_string($rpl['text']) && str_contains($rpl['text'], '{APPOINTMENT_LINK}')) {
-            $hasApptPlaceholder = true; break;
-        }
+$link   = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
+    ? \Illuminate\Support\Facades\URL::signedRoute('features.enable_appointment')
+    : (\Illuminate\Support\Facades\Route::has('appointment.index') ? route('appointment.index') : url('/appointment'));
+$ctaHtml = '<a href="' . e($link) . '">Book an appointment</a>';
+
+$hasApptPlaceholder = false;
+foreach ($botReplies as $rpl) {
+    if (is_array($rpl) && isset($rpl['text']) && is_string($rpl['text']) && str_contains($rpl['text'], '{APPOINTMENT_LINK}')) {
+        $hasApptPlaceholder = true; break;
     }
-    if ($askedForAppt && !$hasApptPlaceholder) {
-        $ctaReply = "You can book a time with a school counselor here: {APPOINTMENT_LINK} / Pwede ka magpa-book sa school counselor dinhi: {APPOINTMENT_LINK}";
-        if ($msgRisk === 'high') { $botReplies[] = ['text' => $ctaReply, 'buttons' => []]; }
-        else { array_unshift($botReplies, ['text' => $ctaReply, 'buttons' => []]); }
-        $this->logActivity('appointment_detected', 'User asked to schedule; CTA injected', $sessionId, [
-            'preview' => Str::limit($text, 120),
-        ]);
-    }
+}
+
+// Decide when to show the CTA:
+// - Show immediately if user explicitly asked OR risk is high
+// - Otherwise, defer if we just built consent or just stripped coping this turn
+$shouldInjectNow =
+    !$hasApptPlaceholder &&
+    (
+        $askedForAppt ||
+        ($msgRisk === 'high') ||
+        session($pendingApptKey, false)
+    );
+
+$mustDeferThisTurn = ($builtConsent || $strippedCopingThisTurn) && $msgRisk !== 'high' && !$askedForAppt;
+
+if ($shouldInjectNow && !$mustDeferThisTurn) {
+    $ctaReply = "You can book a time with a school counselor here: {APPOINTMENT_LINK} / " .
+                "Pwede ka magpa-book sa school counselor dinhi: {APPOINTMENT_LINK}";
+
+    // Always append (do not unshift) so empathy/consent comes first
+    $botReplies[] = ['text' => $ctaReply, 'buttons' => []];
+
+    // clear pending flag if we had one
+    if (session($pendingApptKey, false)) session()->forget($pendingApptKey);
+
+    $this->logActivity('appointment_detected', 'Appointment CTA shown', $sessionId, [
+        'preview' => Str::limit($text, 120),
+        'risk'    => $msgRisk,
+        'asked'   => $askedForAppt,
+    ]);
+} elseif (!$hasApptPlaceholder && ($askedForAppt || $msgRisk !== 'high')) {
+    // Set pending when consent should go first this turn
+    session([$pendingApptKey => true]);
+}
+
 
     // 9) After-Rasa turn-2 helper check, then arm consent for next user turn
     if (
