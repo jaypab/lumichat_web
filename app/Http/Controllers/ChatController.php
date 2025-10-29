@@ -502,6 +502,64 @@ if ($isUserGreeting) {
 
     // Topic summary (unchanged gist)
     $count = Chat::where('chat_session_id', $sessionId)->where('sender', 'user')->count();
+    // --- NEW: Defer Rasa on the user's first content turn
+$deferKey       = 'defer_rasa_until_reply_' . $sessionId;
+$helpcheckKey   = 'helpcheck_at_' . $sessionId;      // you already use this later
+$pendingApptKey = 'pending_appt_cta_' . $sessionId;  // you already use this later
+
+// If this is the first user message in this session, send empathy + open question only.
+// Arm the defer flag so the NEXT user message will trigger Rasa + help-check.
+if ($count === 1 && !session($deferKey, false)) {
+    $primaryEmotion = $this->choosePrimaryEmotion($labels);
+    $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
+    $preface = $this->pickLanguageVariant($preface, $lang);
+
+    $name  = $this->preferredName();
+    $first = preg_split('/\s+/', $name, 2)[0] ?? $name;
+    $preface = str_replace(['{USER_NAME}','{USER_FIRST}','{USER}','{NAME}'], [e($name), e($first), e($first), e($name)], $preface);
+
+    // End with one gentle open question (no help-check yet)
+    $followQ = $this->pickLanguageVariant(
+        "What’s been weighing on you most today? / Asa ang pinakabug-at karon?",
+        $lang
+    );
+
+    $bot1 = Chat::create([
+        'user_id'         => $userId,
+        'chat_session_id' => $sessionId,
+        'sender'          => 'bot',
+        'message'         => Crypt::encryptString($preface),
+        'sent_at'         => now(),
+    ]);
+    $bot2 = Chat::create([
+        'user_id'         => $userId,
+        'chat_session_id' => $sessionId,
+        'sender'          => 'bot',
+        'message'         => Crypt::encryptString($followQ),
+        'sent_at'         => now(),
+    ]);
+
+    session([$deferKey => true]); // mark that next user reply should trigger Rasa + help-check
+
+    return response()->json([
+        'user_message' => [
+            'text'       => $text,
+            'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => now()->toIso8601String(),
+        ],
+        'bot_reply' => [[
+            'id' => $bot1->id, 'text' => $preface, 'buttons' => [],
+            'time_human' => $bot1->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => $bot1->sent_at->toIso8601String(),
+        ],[
+            'id' => $bot2->id, 'text' => $followQ, 'buttons' => [],
+            'time_human' => $bot2->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => $bot2->sent_at->toIso8601String(),
+        ]],
+        'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+    ]);
+}
+
     if ($count === 1) {
         preg_match('/\b(sad|depress|help|anxious|angry|lonely|stress|tired|happy|excited|not okay|nagool|kapoy|kulba|nalipay)\b/i', $text, $m);
         $summary = $m[0] ?? Str::limit($text, 40, '…');
@@ -556,6 +614,160 @@ if ($isUserGreeting) {
     if ($forceCopingNow || $declineCoping) {
         $skipRasaThisTurn = false;
     }
+    // If user declines the coping offer explicitly → validation + CTA (no loop)
+if ($copingCmd === 'no' && $this->lastBotWasCopingOffer($sessionId)) {
+    $name  = $this->preferredName();
+    $first = preg_split('/\s+/', $name, 2)[0] ?? $name;
+
+    $validation = $this->pickLanguageVariant(
+        "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more?",
+        $lang
+    );
+    $validation = str_replace(['{USER_FIRST}','{USER}','{NAME}','{USER_NAME}'], [e($first), e($first), e($name), e($name)], $validation);
+
+    $link   = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
+        ? \Illuminate\Support\Facades\URL::signedRoute('features.enable_appointment')
+        : (\Illuminate\Support\Facades\Route::has('appointment.index') ? route('appointment.index') : url('/appointment'));
+    $ctaHtml = '<a href="'.e($link).'">Book an appointment</a>';
+
+    $cta = $this->pickLanguageVariant(
+        "If at any point you’d like more support, you can book time with the counselor. {APPOINTMENT_LINK} / ".
+        "Kung gusto ka og dugang tabang, pwede ka mag-book og oras sa counselor. {APPOINTMENT_LINK}",
+        $lang
+    );
+    $cta = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $cta);
+
+    $b1 = Chat::create(['user_id'=>$userId,'chat_session_id'=>$sessionId,'sender'=>'bot','message'=>Crypt::encryptString($validation),'sent_at'=>now()]);
+    $b2 = Chat::create(['user_id'=>$userId,'chat_session_id'=>$sessionId,'sender'=>'bot','message'=>Crypt::encryptString($cta),'sent_at'=>now()]);
+
+    // clear all flow flags to avoid looping
+    session()->forget($helpcheckKey);
+    session()->forget($pendingApptKey);
+    session()->forget('coping_offered_'.$sessionId);
+    session()->forget('coping_shown_'.$sessionId);
+
+    return response()->json([
+        'user_message' => ['text'=>$text,'time_human'=>now()->timezone(config('app.timezone'))->format('g:i:s A'),'sent_at'=>now()->toIso8601String()],
+        'bot_reply' => [[
+            'id'=>$b1->id,'text'=>$validation,'buttons'=>[],
+            'time_human'=>$b1->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'=>$b1->sent_at->toIso8601String(),
+        ],[
+            'id'=>$b2->id,'text'=>$cta,'buttons'=>[],
+            'time_human'=>$b2->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'=>$b2->sent_at->toIso8601String(),
+        ]],
+        'time_human'=>now()->timezone(config('app.timezone'))->format('g:i:s A'),
+    ]);
+}
+
+// If user accepts coping (copingCmd === 'yes'), you already show tips.
+// After showing tips, ask a SINGLE help-check again (then rely on the handler above)
+
+
+// --- NEW: If the last bot line was the help-check, interpret yes/no now.
+if ($this->lastBotWasHelpCheck($sessionId)) {
+    $yn = $this->parseYesNoGeneric($analysisText);
+
+    // If user said YES: be glad + show appointment CTA. Clear flags; do NOT offer coping.
+    if ($yn === 'yes') {
+        $name  = $this->preferredName();
+        $first = preg_split('/\s+/', $name, 2)[0] ?? $name;
+
+        $glad = $this->pickLanguageVariant(
+            "I’m glad to hear that, {USER_FIRST}. / Maayo nga nakatabang bisag gamay, {USER_FIRST}.",
+            $lang
+        );
+        $glad = str_replace(['{USER_FIRST}','{USER}','{NAME}','{USER_NAME}'], [e($first), e($first), e($name), e($name)], $glad);
+
+        $link   = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
+            ? \Illuminate\Support\Facades\URL::signedRoute('features.enable_appointment')
+            : (\Illuminate\Support\Facades\Route::has('appointment.index') ? route('appointment.index') : url('/appointment'));
+        $ctaHtml = '<a href="'.e($link).'">Book an appointment</a>';
+
+        $cta = $this->pickLanguageVariant(
+            "It’s okay if this still feels heavy. You can book time with the counselor so you don’t have to handle this alone. {APPOINTMENT_LINK} / ".
+            "Okay ra kung bug-at gihapon paminawon. Pwede ka mag-book og oras sa counselor aron dili nimo ni atubangon nga ikaw ra. {APPOINTMENT_LINK}",
+            $lang
+        );
+        $cta = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $cta);
+
+        // write both messages
+        $b1 = Chat::create([
+            'user_id'=>$userId,'chat_session_id'=>$sessionId,'sender'=>'bot',
+            'message'=>Crypt::encryptString($glad),'sent_at'=>now(),
+        ]);
+        $b2 = Chat::create([
+            'user_id'=>$userId,'chat_session_id'=>$sessionId,'sender'=>'bot',
+            'message'=>Crypt::encryptString($cta),'sent_at'=>now(),
+        ]);
+
+        // clear all “flow” flags
+        session()->forget($helpcheckKey);
+        session()->forget($pendingApptKey);
+        session()->forget('coping_offered_'.$sessionId);
+        session()->forget('coping_shown_'.$sessionId);
+        session()->forget('cta_after_help_'.$sessionId);
+        session()->forget('door_after_rasa_'.$sessionId);
+        session()->forget('defer_rasa_until_reply_'.$sessionId);
+
+        return response()->json([
+            'user_message' => [
+                'text'=>$text,
+                'time_human'=>now()->timezone(config('app.timezone'))->format('g:i:s A'),
+                'sent_at'=>now()->toIso8601String(),
+            ],
+            'bot_reply' => [[
+                'id'=>$b1->id,'text'=>$glad,'buttons'=>[],
+                'time_human'=>$b1->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+                'sent_at'=>$b1->sent_at->toIso8601String(),
+            ],[
+                'id'=>$b2->id,'text'=>$cta,'buttons'=>[],
+                'time_human'=>$b2->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+                'sent_at'=>$b2->sent_at->toIso8601String(),
+            ]],
+            'time_human'=>now()->timezone(config('app.timezone'))->format('g:i:s A'),
+        ]);
+    }
+
+    // If user said NO: offer coping consent now (single offer; no loop)
+    if ($yn === 'no') {
+        session(['coping_offered_'.$sessionId => true]);
+
+        $offer = $this->pickLanguageVariant(
+            "If you want, I can also share a few coping tips based on how you’re feeling. Want them now? / ".
+            "Kung gusto nimo, makashare ko og pipila ka coping tips base sa imong gibati. Gusto nimo karon?",
+            $lang
+        );
+        $buttons = [
+            ['title' => 'Yes, show tips', 'payload' => '/show_coping'],
+            ['title' => 'No, thanks',     'payload' => '/skip_coping'],
+        ];
+
+        $b = Chat::create([
+            'user_id'=>$userId,'chat_session_id'=>$sessionId,'sender'=>'bot',
+            'message'=>Crypt::encryptString($offer),'sent_at'=>now(),
+        ]);
+
+        // keep help-check “armed” for later (after tips)
+        return response()->json([
+            'user_message' => [
+                'text'=>$text,
+                'time_human'=>now()->timezone(config('app.timezone'))->format('g:i:s A'),
+                'sent_at'=>now()->toIso8601String(),
+            ],
+            'bot_reply' => [[
+                'id'=>$b->id,'text'=>$offer,'buttons'=>$buttons,
+                'time_human'=>$b->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+                'sent_at'=>$b->sent_at->toIso8601String(),
+            ]],
+            'time_human'=>now()->timezone(config('app.timezone'))->format('g:i:s A'),
+        ]);
+    }
+
+    // If ambiguous answer, fall through to normal handling (don’t loop)
+}
+
 
     // 6) Call Rasa unless skipping
     if (!$skipRasaThisTurn) {
@@ -563,6 +775,11 @@ if ($isUserGreeting) {
         $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk) + [
             'user' => ['id' => $userId, 'name' => $name, 'first' => $first],
         ];
+        // If Rasa was deferred last turn, allow it now (and then drop the flag)
+        if (session($deferKey, false)) {
+            session()->forget($deferKey);
+        }
+
         try {
             $r = Http::timeout(8)->withOptions(['verify' => true])
                 ->withHeaders(['Accept' => 'application/json'])
@@ -1350,5 +1567,26 @@ private function isPureGreetingText(string $s): bool
     );
 }
 
+// Was the last bot line the "Did that help even a little?" check?
+private function lastBotWasHelpCheck(int $sessionId): bool
+{
+    $last = \App\Models\Chat::where('chat_session_id', $sessionId)
+        ->where('sender','bot')->latest('sent_at')->first();
+    if (!$last) return false;
+
+    try { $txt = \Illuminate\Support\Facades\Crypt::decryptString($last->message); }
+    catch (\Throwable $e) { $txt = (string)$last->message; }
+
+    $t = $this->normalizeText($txt ?? '');
+    return (bool)preg_match('/\b(did (that|it) (help|ease|relieve)|feel .* (lighter|easier))\b/u', $t);
+}
+
+private function parseYesNoGeneric(string $text): ?string
+{
+    $t = $this->normalizeText($text);
+    if (preg_match('/\b(yes|yep|yeah|yup|sure|ok|okay|sige|oo|opo)\b/u', $t)) return 'yes';
+    if (preg_match('/\b(no|nope|not really|di(?:li)?|hindi|wag|pass)\b/u', $t)) return 'no';
+    return null;
+}
 
 }
