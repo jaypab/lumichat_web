@@ -532,22 +532,34 @@ if ($isUserGreeting) {
         }
     } catch (\Throwable $e) {}
 
-    // --- Coping consent / flow flags
-    $doorKey                = 'door_after_rasa_' . $sessionId;
-    $helpcheckKey           = 'helpcheck_at_' . $sessionId;       // NEW: remember when we asked the helper chec    k
-    $skipRasaThisTurn       = session($doorKey, false);
-    $forceCopingNow         = (bool) preg_match('/^\/show_coping\b/i', $analysisText);
-    $declineCoping          = (bool) preg_match('/^\/skip_coping\b/i', $analysisText);
+    // --- Coping consent / flow flags (UPDATED)
+    $doorKey      = 'door_after_rasa_' . $sessionId;
+    $helpcheckKey = 'helpcheck_at_' . $sessionId;
+
+    // Recognize both payloads (/show_coping, /skip_coping) and button titles ("Yes, show tips", "No, thanks")
+    $copingCmd = $this->parseCopingCommand($analysisText);   // returns 'yes' | 'no' | null
+
+    $skipRasaThisTurn = session($doorKey, false);
+
+    // Accept either payload or title text
+    $forceCopingNow = ($copingCmd === 'yes') || (bool) preg_match('/^\/show_coping\b/i', $analysisText);
+    $declineCoping  = ($copingCmd === 'no')  || (bool) preg_match('/^\/skip_coping\b/i', $analysisText);
+
     $builtConsent           = false;
     $strippedCopingThisTurn = false;
-    $copingShownThisTurn    = false;                               // NEW: track if coping content is intentionally shown this turn
+    $copingShownThisTurn    = $forceCopingNow;   // mark that we intend to show coping now
 
+    // If user explicitly answered yes/no, clear the arming keys so we don't re-offer
+    if ($copingCmd === 'yes' || $copingCmd === 'no') {
+        session()->forget($doorKey);
+        session()->forget($helpcheckKey);
+    }
+
+    // If user forced coping or declined, don't skip Rasa this turn
     if ($forceCopingNow || $declineCoping) {
         $skipRasaThisTurn = false;
     }
-    if ($forceCopingNow) {
-        $copingShownThisTurn = true;                               // NEW
-    }
+
 
     // 6) Call Rasa unless skipping (same as your code)
     $rasaUrl  = $this->rasaWebhookUrl();
@@ -662,7 +674,7 @@ if ($isUserGreeting) {
     if ($armedAt !== null && $count > (int)$armedAt && !$forceCopingNow && !$declineCoping) {
         $botReplies[] = [                               // NEW: append (do not replace) the offer
             'text' =>
-                "If you want, I can share a few coping tips based on how you’re feeling. Want them now? / " .
+                "If you want, I can also share a few coping tips based on how you’re feeling. Want them now? / " .
                 "Kung gusto nimo, makashare ko og pipila ka coping tips base sa imong gibati. Gusto nimo karon?",
             'buttons' => [
                 ['title' => 'Yes, show tips', 'payload' => '/show_coping'],
