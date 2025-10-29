@@ -1182,54 +1182,65 @@ private function normalizeText(string $t): string
 
 private function isUserGreeting(string $t): bool
 {
-    $t = $this->normalizeText($t);
+    $t = $this->normalizeText($t);              // lower, trim, collapse spaces/ZW chars
 
-    // --- If message already has meaningful content, don't classify as greeting
+    // 1) If there’s clear content, don’t treat as greeting
     if (preg_match('/\b('.
-        // common content words we shouldn't ignore
+        // common “content” intents
         'i\s*feel|i\'?m|ako|nasuko|nagool|kapoy|problem|issue|need\s+help|please\s+help|help\s+me|'.
-        'anxious|anxiety|panic|sad|depress|stress|stressed|lonely|scared|worried|suicid|die|'.
+        'anxious|anxiety|panic|sad|depress|stress|lonely|scared|worried|suicid|die|'.
         'appointment|schedule|book|counsel(?:or|ling)?|therap(?:y|ist)?'.
     ')\b/u', $t)) {
         return false;
     }
 
-    // --- Pure emoji/wave or near-empty greeting
+    // 2) Pure emoji / waves
     if (preg_match('/^\p{Zs}*(👋|🤝|🙏|☺️|😊)+\p{Zs}*$/u', $t)) return true;
 
-    // --- Greeting lexicon (tokens & phrases)
-    $singleEn   = '(hi+|hello+|helo+|hey+|hiya|yo+|howdy|g\'?day|alo+h?a|bonjour|hola|mabuhay|oi+|oy+)';
-    $slangEn    = '(sup+|wass?up+|whats?\s*up+)';
-    $goodEn     = '(good\s*(morning|afternoon|evening|day|night)|gm+|ga+|ge+|gn+|gd\s*(am|pm))';
+    // 3) Canonical greeting tokens (allow stretched letters with +)
+    $greetCore = '(?:hi+|hello+|helo+|hey+|hiya+|yo+|howdy|g\'?day|alo+h?a|bonjour|hola|mabuhay|oi+|oy+)';
+    $greetSlang = '(?:sup+|wass?up+|whats?\s*up+)';
+    $goodTime   = '(?:good\s*(?:morning|afternoon|evening|day|night)|gm+|ga+|ge+|gn+|gd\s*(?:am|pm))';
 
-    $tagalog1   = '(kamusta|kumusta|musta|mustah?)';
-    $tagalog2   = '(magandang\s*(umaga|hapon|gabi|araw|tanghali))';
+    // Tagalog / Cebuano
+    $tagalogHi  = '(?:kam?usta+|kum?usta+|musta+h?)';
+    $tagalogGM  = '(?:magandang\s*(?:umaga|tanghali|hapon|gabi|araw))';
+    $cebGM      = '(?:maayong\s*(?:buntag|udto|hapon|gabii|adlaw))';
+    $cebHi      = '(?:ayo+)';
 
-    $cebuano1   = '(maayong\s*(buntag|hapon|gabii|adlaw|udto))';
-    $cebuano2   = '(ayo+)';
+    // 4) Allowed “tails” after a greeting (names, bot, etc.), typos & plurals allowed
+    $tail = '(?:there|po|sir|ma\'?am|everyone|guys|team|class|all|'.
+            'lumi|lumi\s*chat|lumichat+|lumichatt+|'.
+            'chat+|chats?|bot|ai|assistant|kuya|ate)';
 
-    // words we allow after a greeting without turning it into "content"
-    $tails      = '(there|po|sir|ma\'?am|everyone|guys|team|class|all|lumi(?:chat)?|bot|chat|kuya|ate)';
+    // 5) Super-simple short form: ≤ 5 tokens, starts with a greeting, rest are tails
+    $tokens = preg_split('/\s+/u', $t, -1, PREG_SPLIT_NO_EMPTY);
+    if (count($tokens) > 0 && count($tokens) <= 5) {
+        $first = $tokens[0] ?? '';
+        if (
+            preg_match('/^(' . $greetCore . '|' . $greetSlang . '|' . $goodTime . '|' . $tagalogHi . '|' . $tagalogGM . '|' . $cebGM . '|' . $cebHi . ')$/u', $first)
+        ) {
+            // if every remaining token is an allowed tail (e.g., "hi chatt", "hello lumi chat", "gm po")
+            $restOk = true;
+            for ($i = 1; $i < count($tokens); $i++) {
+                if (!preg_match('/^' . $tail . '$/u', $tokens[$i])) {
+                    $restOk = false; break;
+                }
+            }
+            if ($restOk) return true;
+        }
+    }
 
-    // --- Strict single/short-form greetings (≤ 4 tokens, no extra content)
-    if (preg_match('/^('
-        . $singleEn .'|'. $slangEn .'|'. $goodEn .'|'. $tagalog1 .'|'. $tagalog2 .'|'. $cebuano1 .'|'. $cebuano2 .
-        ')(\s+'. $tails .'){0,3}$/u', $t)) {
+    // 6) Phrase-style greetings (e.g., "hello there", "hi, good evening", "magandang gabi po")
+    if (preg_match('/^(' . $greetCore . '|' . $greetSlang . ')\s+(' . $tail . '|' . $goodTime . '|' . $tagalogHi . '|' . $tagalogGM . '|' . $cebGM . ')(\s+po)?$/u', $t)) {
+        return true;
+    }
+    if (preg_match('/^(' . $tagalogGM . '|' . $cebGM . ')\s*(po|sir|ma\'?am)?$/u', $t)) {
         return true;
     }
 
-    // --- Greeting + name/bot (e.g., "hi lumichat", "hello kuya", "kumusta po lumi")
-    if (preg_match('/^(' . $singleEn . '|' . $tagalog1 . ')\b(\s+[a-z0-9\.\'\-]+){0,3}$/u', $t)) {
-        return true;
-    }
-
-    // --- “Hello there”, “Hi, good evening”, “Magandang umaga po”
-    if (preg_match('/^(' . $singleEn . ')\s+(there|'. $goodEn .'|'. $tagalog1 .'|'. $tagalog2 .')(\s+po)?$/u', $t)) {
-        return true;
-    }
-    if (preg_match('/^(' . $tagalog2 . '|' . $cebuano1 . ')\s*(po|sir|ma\'?am)?$/u', $t)) {
-        return true;
-    }
+    // 7) Ultra-short stretched greeting alone (e.g., "hiiiiii", "helloooo")
+    if (preg_match('/^(' . $greetCore . ')$/u', $t)) return true;
 
     return false;
 }
