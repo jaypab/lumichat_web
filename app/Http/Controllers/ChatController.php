@@ -350,70 +350,16 @@ public function store(Request $request)
     $display   = trim(preg_replace('/\s+/u', ' ', preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawDisp) ?? ''));
     $analysisText = $display !== '' ? $display : $text;
 
-    $idem = (string) $request->input('_idem', '');
-    // --- Greeting short-circuit: reply once, avoid spamming & skip Rasa
+   
+    // --- Greeting short-circuit: always reply (no Rasa), rotate variants to avoid "duplicate" filter
+$idem = (string) $request->input('_idem', '');
+if (!Str::isUuid($idem)) $idem = (string) Str::uuid();
+
 $isUserGreeting = $this->isUserGreeting($analysisText);
-$greetKey       = 'greeted_at_' . (session('chat_session_id') ?: 'new');
-$lastGreetAt    = (int) session($greetKey, 0);
-$greetCooldown  = 45; // seconds
-
 if ($isUserGreeting) {
-    if (time() - $lastGreetAt < $greetCooldown) {
-        // Within cool-down: keep it silent (no duplicate bot bubble)
-        // Still log the user message and return an empty bot_reply array.
-        // (UI shows only the user's bubble—feels natural.)
-        $userId    = Auth::id();
-        $sessionId = session('chat_session_id');
-
-        // Ensure a session exists so history isn’t lost
-        if (!$sessionId) {
-            $new = ChatSession::create([
-                'user_id'       => $userId,
-                'topic_summary' => 'Starting conversation...',
-                'is_anonymous'  => 0,
-                'risk_level'    => 'low',
-            ]);
-            session(['chat_session_id' => $new->id]);
-            $sessionId = $new->id;
-        }
-
-        Chat::firstOrCreate(
-            ['idempotency_key' => $idem],
-            [
-                'user_id'         => $userId,
-                'chat_session_id' => $sessionId,
-                'sender'          => 'user',
-                'message'         => Crypt::encryptString($analysisText),
-                'sent_at'         => now(),
-            ]
-        );
-
-        return response()->json([
-            'user_message' => [
-                'text'       => $analysisText,
-                'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
-                'sent_at'    => now()->toIso8601String(),
-            ],
-            'bot_reply'  => [], // no duplicate auto-replies
-            'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
-        ]);
-    }
-
-    // Outside cool-down → one friendly prompt, no Rasa call this turn
-    session([$greetKey => time()]);
-    $lang = $this->inferLanguage($analysisText);
-    $name = $this->preferredName(); $first = explode(' ', $name)[0] ?? $name;
-
-    $reply = $this->pickLanguageVariant(
-        "Hi {USER_FIRST} — I’m here with you. What feels most pressing right now? / " .
-        "Hi {USER_FIRST} — ania ko nimo. Asa ang pinakalisod karon?",
-        $lang
-    );
-    $reply = str_replace(['{USER_FIRST}','{USER_NAME}','{USER}','{NAME}'], [e($first), e($name), e($first), e($name)], $reply);
-
-    // Ensure a session, persist user+bot
     $userId    = Auth::id();
     $sessionId = session('chat_session_id');
+
     if (!$sessionId) {
         $new = ChatSession::create([
             'user_id'       => $userId,
@@ -425,7 +371,8 @@ if ($isUserGreeting) {
         $sessionId = $new->id;
     }
 
-    $userMsg = Chat::firstOrCreate(
+    // persist user message idempotently
+    Chat::firstOrCreate(
         ['idempotency_key' => $idem],
         [
             'user_id'         => $userId,
@@ -436,6 +383,23 @@ if ($isUserGreeting) {
         ]
     );
 
+    // rotate a few friendly prompts so it never feels stuck
+    $lang  = $this->inferLanguage($analysisText);
+    $name  = $this->preferredName();
+    $first = explode(' ', $name)[0] ?? $name;
+
+    $variants = [
+        "Hi {USER_FIRST} — I’m here with you. What feels most pressing right now? / Hi {USER_FIRST} — ania ko nimo. Asa ang pinakalisod karon?",
+        "Thanks for reaching out, {USER_FIRST}. What’s on your mind? / Salamat sa pag-message, {USER_FIRST}. Unsay naa sa imong huna-huna?",
+        "I’m listening, {USER_FIRST}. Where should we start? / Naminaw ko, {USER_FIRST}. Asa ta magsugod?",
+    ];
+    $idx   = (int) session('greet_variant_idx', 0);
+    $reply = $this->pickLanguageVariant($variants[$idx % count($variants)], $lang);
+    session(['greet_variant_idx' => $idx + 1]);
+
+    $reply = str_replace(['{USER_FIRST}','{USER_NAME}','{USER}','{NAME}'], [e($first), e($name), e($first), e($name)], $reply);
+
+    // save bot reply (do NOT run through duplicate-drop logic)
     $bot = Chat::create([
         'user_id'         => $userId,
         'chat_session_id' => $sessionId,
@@ -461,6 +425,8 @@ if ($isUserGreeting) {
     ]);
 }
 
+
+   
     if (!Str::isUuid($idem)) {
         $idem = (string) Str::uuid();
     }
@@ -650,13 +616,6 @@ if (!$forceCopingNow && !$declineCoping) {
     }
 }
 
-// Remove generic greeting bubbles on later turns to avoid repetition
-if ($count >= 2 && !empty($botReplies)) {
-    $botReplies = array_values(array_filter($botReplies, function ($p) {
-        $txt = (string)($p['text'] ?? '');
-        return $txt === '' ? true : !$this->looksLikeGreeting($txt);
-    }));
-}
 
 
 
@@ -819,12 +778,12 @@ if ($lastBot) {
         [$safeName,     $safeFirst,     $safeFirst, $safeName],
         $replyText
     );
+  $norm = $this->normalizeText($replyText);
 
-    // ---- NEW: skip duplicate bubble within 60s
-    $norm = $this->normalizeText($replyText);
-    if ($norm !== '' && $norm === $lastBotText && (time() - $lastBotTime) < 60) {
-        continue; // drop duplicate
+    if ($norm !== '' && $norm === $lastBotText && (time() - $lastBotTime) < 60 && !$this->isPureGreetingText($replyText)) {
+        continue; // drop duplicate, except for greeting-style nudges
     }
+
 
     // Normalize buttons
     $normalizedBtns = [];
@@ -862,6 +821,54 @@ if ($lastBot) {
         'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
         'sent_at'    => $bot->sent_at->toIso8601String(),
     ];
+}
+// --- Guarantee we end with a genuine question (unless we just showed consent)
+if (!$builtConsent) {
+    if (empty($botPayload)) {
+        // Safety net: never end with silence
+        $pref = $this->empathyTemplate($primaryEmotion ?? null, $msgRisk);
+        $pref = $this->pickLanguageVariant($pref, $lang);
+        $pref = str_replace(['{USER_NAME}','{USER_FIRST}','{USER}','{NAME}'], [e($name), e($first), e($first), e($name)], $pref);
+
+        $bot = Chat::create([
+            'user_id'         => $userId,
+            'chat_session_id' => $sessionId,
+            'sender'          => 'bot',
+            'message'         => Crypt::encryptString($pref),
+            'sent_at'         => now(),
+        ]);
+        $botPayload[] = [
+            'id'         => $bot->id,
+            'text'       => $pref,
+            'buttons'    => [],
+            'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => $bot->sent_at->toIso8601String(),
+        ];
+    }
+
+    $last = $botPayload[count($botPayload)-1] ?? null;
+    $lastTxt   = (string)($last['text'] ?? '');
+    $lastHasBtn= !empty($last['buttons']);
+
+    if (!$lastHasBtn && !$this->endsWithQuestion($lastTxt)) {
+        $q = $this->bridgeFollowup($primaryEmotion ?? null, $first);
+        $q = $this->pickLanguageVariant($q, $lang);
+
+        $bot = Chat::create([
+            'user_id'         => $userId,
+            'chat_session_id' => $sessionId,
+            'sender'          => 'bot',
+            'message'         => Crypt::encryptString($q),
+            'sent_at'         => now(),
+        ]);
+        $botPayload[] = [
+            'id'         => $bot->id,
+            'text'       => $q,
+            'buttons'    => [],
+            'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => $bot->sent_at->toIso8601String(),
+        ];
+    }
 }
 
 
@@ -1230,23 +1237,23 @@ private function isUserGreeting(string $t): bool
     return false;
 }
 
-/** Bot-side greeting detector (broader) */
 private function looksLikeGreeting(string $t): bool
 {
     $t = $this->normalizeText($t);
-    // common patterns we want to DROP on later turns
-    $greets = [
-        '/\b(hi|hello|hey)\b.*\b(how (?:can|may) i (?:help|assist)|how are you(?: feeling)?(?: today| right now)?)\b/u',
-        '/\bhello!?\s*(how are you(?: feeling)?(?: today)?)\b/u',
-        '/\bkumusta( ka| man)?( karon| today)?[?]?\b/u',
-        '/\bhow are you(?: feeling)?\b/u',
-        '/\bhow can i help (?:you )?today\b/u',
-    ];
-    foreach ($greets as $r) if (preg_match($r, $t)) return true;
-    // very short pure-greeting texts
-    if (preg_match('/^(hi|hello|hey|kumusta)[.! ]*$/u', $t)) return true;
-    return false;
+    // Only the flat opener should ever be suppressed; keep supportive lines.
+    return (bool) preg_match(
+        '/\b(hi|hello|hey)\b.*\b(how (?:can|may) i (?:help|assist) (?:you )?today)\b/u',
+        $t
+    );
 }
-
-
+private function endsWithQuestion(string $s): bool
+{
+    $s = rtrim($s);
+    return $s !== '' && preg_match('/[?？！]$/u', $s) === 1;
+}
+private function isPureGreetingText(string $s): bool
+{
+    $t = $this->normalizeText($s);
+    return (bool) preg_match('/^(hi|hello|hey|good (morning|afternoon|evening)|kumusta)[.! ]*$/u', $t);
+}
 }
