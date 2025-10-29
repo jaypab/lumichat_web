@@ -453,6 +453,9 @@ public function store(Request $request)
     // 3) Language + risk (use the same analysisText used for emotions)
     $lang    = $this->inferLanguage($text);
     $msgRisk = $this->evaluateRiskLevel($analysisText);
+    // Pull any delayed coping offer from previous turn (we will append it later)
+    $delayedCoping = $this->popCopingOffer($sessionId);
+
     if ($selfThreat) {
         $msgRisk = 'high';
     }
@@ -626,39 +629,49 @@ public function store(Request $request)
             $prefaceAdded = true;
         }
 
-        /* If we inserted a preface, suppress the first Rasa text but keep its buttons.
-        Result: only ONE text bubble shows (the preface), with any quick-reply buttons preserved. */
-        if ($prefaceAdded && isset($botReplies[1])) {
-            $firstRasa = $botReplies[1];
+if ($prefaceAdded && isset($botReplies[1])) {
+    $firstRasa = $botReplies[1];
 
-            // Merge buttons (if any) into the preface
-            if (!empty($firstRasa['buttons']) && is_array($firstRasa['buttons'])) {
-                $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $firstRasa['buttons']);
-            }
-
-            // Drop that first Rasa text bubble entirely
-            array_splice($botReplies, 1, 1);
+    // If buttons look like a coping offer, stage for NEXT turn; else merge now
+    if (!empty($firstRasa['buttons']) && is_array($firstRasa['buttons'])) {
+        if ($this->isCopingOfferButtons($firstRasa['buttons'])) {
+            $this->stageCopingOffer($sessionId, $firstRasa['buttons'], $lang);
+        } else {
+            $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $firstRasa['buttons']);
         }
+    }
+
+    // Drop that first Rasa text bubble entirely
+    array_splice($botReplies, 1, 1);
+}
+
         // --- Comfort insertion (non-question, reflective) BEFORE Rasa content
 $comfortAdded = false;
 if ($this->shouldComfort($sessionId, $labels, $msgRisk)) {
     $comfort = $this->comfortTemplate($primaryEmotion, $msgRisk);
 
-    if ($prefaceAdded) {
-        // Place comfort right AFTER preface, then suppress the next Rasa text but keep buttons
-        array_splice($botReplies, 1, 0, [['text' => $comfort, 'buttons' => []]]);
-        if (isset($botReplies[2]) && !empty($botReplies[2]['buttons'])) {
+if ($prefaceAdded) {
+    array_splice($botReplies, 1, 0, [['text' => $comfort, 'buttons' => []]]);
+    if (isset($botReplies[2]) && !empty($botReplies[2]['buttons'])) {
+        if ($this->isCopingOfferButtons($botReplies[2]['buttons'])) {
+            $this->stageCopingOffer($sessionId, $botReplies[2]['buttons'], $lang);
+        } else {
             $botReplies[1]['buttons'] = array_merge($botReplies[1]['buttons'] ?? [], $botReplies[2]['buttons']);
         }
-        if (isset($botReplies[2])) array_splice($botReplies, 2, 1);
-    } else {
-        // No preface: comfort goes first; suppress first Rasa text but keep buttons
-        array_unshift($botReplies, ['text' => $comfort, 'buttons' => []]);
-        if (isset($botReplies[1]) && !empty($botReplies[1]['buttons'])) {
+    }
+    if (isset($botReplies[2])) array_splice($botReplies, 2, 1);
+} else {
+    array_unshift($botReplies, ['text' => $comfort, 'buttons' => []]);
+    if (isset($botReplies[1]) && !empty($botReplies[1]['buttons'])) {
+        if ($this->isCopingOfferButtons($botReplies[1]['buttons'])) {
+            $this->stageCopingOffer($sessionId, $botReplies[1]['buttons'], $lang);
+        } else {
             $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $botReplies[1]['buttons']);
         }
-        if (isset($botReplies[1])) array_splice($botReplies, 1, 1);
     }
+    if (isset($botReplies[1])) array_splice($botReplies, 1, 1);
+}
+
     $comfortAdded = true;
 }
 
@@ -675,6 +688,9 @@ if ($this->shouldComfort($sessionId, $labels, $msgRisk)) {
 
     $botPayload = [];
     foreach ($botReplies as $replyObj) {
+        // If a coping offer was staged from the PREVIOUS turn, append it NOW,
+        // *after* the current Rasa response set, using the original 2-button format.
+
         $replyText = (string) ($replyObj['text'] ?? '');
         $replyBtns = (isset($replyObj['buttons']) && is_array($replyObj['buttons'])) ? $replyObj['buttons'] : [];
 
@@ -691,7 +707,13 @@ if ($this->shouldComfort($sessionId, $labels, $msgRisk)) {
             [$safeName,     $safeFirst,     $safeFirst, $safeName],
             $replyText
         );
+        if ($delayedCoping && !empty($delayedCoping['buttons'])) {
+            $offerText = (string)($delayedCoping['text'] ?? "Would you like some quick coping tips? / Gusto ka og mubo nga coping tips?");
+            $offerButtons = $delayedCoping['buttons'];
 
+            // Ensure the delayed buttons use the appointment-link normalization later in your button normalization.
+            $botReplies[] = ['text' => $offerText, 'buttons' => $offerButtons];
+        }
         // buttons: turn payload "{APPOINTMENT_LINK}" into url $link
         $normalizedBtns = [];
         foreach ($replyBtns as $b) {
@@ -1175,5 +1197,46 @@ private function comfortTemplate(?string $emotion, string $risk): string
     ];
     return $generic[array_rand($generic)];
 }
+
+/* =========================================================================
+ | Coping-offer delay helpers
+ * =========================================================================*/
+
+private function isCopingOfferButtons(array $buttons): bool
+{
+    foreach ($buttons as $b) {
+        $title = mb_strtolower((string)($b['title'] ?? ''));
+        $payload = mb_strtolower((string)($b['payload'] ?? ''));
+        if (
+            str_contains($title, 'tip') ||
+            str_contains($title, 'show tip') ||
+            str_contains($payload, 'tip') ||
+            str_contains($payload, 'coping')
+        ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+private function stageCopingOffer(int $sessionId, array $buttons, string $lang = 'en'): void
+{
+    // Keep original button objects so we preserve your exact titles/payloads/urls
+    session(['delayed_coping_'.$sessionId => [
+        'buttons' => $buttons,
+        'lang'    => $lang,
+        // Optional: your standard offer text in EN/CEB "dual" format:
+        'text'    => "Would you like some quick coping tips? / Gusto ka og mubo nga coping tips?",
+    ]]);
+}
+
+private function popCopingOffer(int $sessionId): ?array
+{
+    $key = 'delayed_coping_'.$sessionId;
+    $v = session($key);
+    if ($v) session()->forget($key);
+    return $v ?: null;
+}
+
 
 }
