@@ -471,6 +471,7 @@ public function store(Request $request)
     $declineCoping    = (bool) preg_match('/^\/skip_coping\b/i', $analysisText);
     // NEW: tracks whether we *built* a consent prompt this turn
     $builtConsent     = false;
+    $strippedCopingThisTurn = false;
 
     if ($forceCopingNow || $declineCoping) {
         $skipRasaThisTurn = false; // if they clicked a button, process normally
@@ -534,11 +535,20 @@ if (!$forceCopingNow && !$declineCoping) {
     }
     if ($foundCoping) {
         $botReplies = array_values($botReplies);
-        // Do NOT append a consent prompt here.
-        // Step 9 will append the follow-up question and set $doorKey,
-        // Step 10 will show the consent prompt on the next user turn.
+        $strippedCopingThisTurn = true;   // <-- mark it
+        // Do NOT append a consent prompt here. We'll arm the door below.
     }
 }
+
+// Remove generic greeting bubbles on later turns to avoid repetition
+if ($count >= 2 && !empty($botReplies)) {
+    $botReplies = array_values(array_filter($botReplies, function ($p) {
+        $txt = (string)($p['text'] ?? '');
+        return $txt === '' ? true : !$this->looksLikeGreeting($txt);
+    }));
+}
+
+
 
     // 7) Risk elevation + logging
     $current = $session->risk_level ?: 'low';
@@ -582,8 +592,13 @@ if (!$forceCopingNow && !$declineCoping) {
         ]);
     }
 
-   // 9) Door after Rasa (turn 2): invite quick reply; arm consent for NEXT turn
-if (!$skipRasaThisTurn && $count === 2 && !empty($botReplies)) {
+  // 9) Door after Rasa (turn 2): invite quick reply; arm consent for NEXT turn
+if (
+    !$skipRasaThisTurn &&
+    $count === 2 &&
+    !empty($botReplies) &&
+    $strippedCopingThisTurn          // <-- only if we removed coping this turn
+) {
     $botReplies[] = [
         'text' =>
             "Did any part of that help even a little, {USER_FIRST}? What feels most pressing right now? / " .
@@ -1064,5 +1079,14 @@ private function parseCopingCommand(string $text): ?string
     if (in_array($t, $no,  true)) return 'no';
     return null;
 }
+private function looksLikeGreeting(string $t): bool
+{
+    $t = trim(mb_strtolower($t));
+    return (bool) preg_match(
+        '/\b(hi|hello|hey)\b.*\b(how can i help|how may i help|how can i assist|kumusta|how can i help you today)\b/u',
+        $t
+    );
+}
+
 
 }
