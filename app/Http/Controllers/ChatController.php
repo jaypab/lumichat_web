@@ -344,100 +344,14 @@ public function store(Request $request)
         'display_text' => ['nullable', 'string', 'max:2000'],
     ]);
 
-    $rawInput    = (string) $request->input('message', '');
-    $text        = trim(preg_replace('/\s+/u', ' ', preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawInput) ?? '')) ;
-    $rawDisp     = (string) $request->input('display_text', '');
-    $display     = trim(preg_replace('/\s+/u', ' ', preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawDisp) ?? ''));
-    $analysisText= $display !== '' ? $display : $text;
+    $rawInput     = (string) $request->input('message', '');
+    $text         = trim(preg_replace('/\s+/u', ' ', preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawInput) ?? '')) ;
+    $rawDisp      = (string) $request->input('display_text', '');
+    $display      = trim(preg_replace('/\s+/u', ' ', preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawDisp) ?? ''));
+    $analysisText = $display !== '' ? $display : $text;
 
-    // Greeting short-circuit (unchanged) ...
     $idem = (string) $request->input('_idem', '');
     if (!Str::isUuid($idem)) $idem = (string) Str::uuid();
-
-    $isUserGreeting = $this->isUserGreeting($analysisText);
-    // If the message is purely a greeting, we’ll avoid empathy inserts this turn.
-    $suppressEmpathyForGreeting = $isUserGreeting
-    || (bool)preg_match('/^(hi+|hello+|hey+|yo+)\b[^\w]*$/iu', $this->normalizeText($analysisText));
-
-    // --- Greeting short-circuit (EARLY RETURN)
-if ($isUserGreeting) {
-    // ensure a session exists (same pattern you use below)
-    $userId    = Auth::id();
-    $sessionId = session('chat_session_id');
-    $session   = $sessionId
-        ? ChatSession::where('id', $sessionId)->where('user_id', $userId)->first()
-        : null;
-
-    if (!$session) {
-        $session = ChatSession::create([
-            'user_id'       => $userId,
-            'topic_summary' => 'Starting conversation...',
-            'is_anonymous'  => 0,
-            'risk_level'    => 'low',
-        ]);
-        session(['chat_session_id' => $session->id]);
-        $sessionId = $session->id;
-        $this->logActivity('chat_session_created', 'New chat session auto-created', $session->id, [
-            'is_anonymous' => false,
-            'reused'       => false,
-        ]);
-    } else {
-        $sessionId = $session->id;
-    }
-
-    $lang = $this->inferLanguage($text);
-    $name = $this->preferredName();
-    $first = preg_split('/\s+/', $name, 2)[0] ?? $name;
-
-    $greetReply =
-        "Hello! How are you feeling today? / Kumusta! Kumusta imong gibati karon?";
-    $greetReply = $this->pickLanguageVariant($greetReply, $lang);
-    $greetReply = str_replace(['{USER_FIRST}','{USER}','{NAME}','{USER_NAME}'], [e($first), e($first), e($name), e($name)], $greetReply);
-
-    $bot = Chat::create([
-        'user_id'         => $userId,
-        'chat_session_id' => $sessionId,
-        'sender'          => 'bot',
-        'message'         => \Illuminate\Support\Facades\Crypt::encryptString($greetReply),
-        'sent_at'         => now(),
-    ]);
-
-    return response()->json([
-        'user_message' => [
-            'text'       => $text,
-            'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
-            'sent_at'    => now()->toIso8601String(),
-        ],
-        'bot_reply' => [[
-            'id'         => $bot->id,
-            'text'       => $greetReply,
-            'buttons'    => [],
-            'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
-            'sent_at'    => $bot->sent_at->toIso8601String(),
-        ]],
-        'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
-    ]);
-}
-// Persist the user's greeting so turn counting stays correct
-try {
-    Chat::firstOrCreate(
-        ['idempotency_key' => $idem],
-        [
-            'user_id'         => $userId,
-            'chat_session_id' => $sessionId,
-            'sender'          => 'user',
-            'message'         => Crypt::encryptString($text), // the original greeting
-            'sent_at'         => now(),
-        ]
-    );
-} catch (\Throwable $e) {
-    // best effort; ignore duplicate/race
-}
-
-
-    if (!Str::isUuid($idem)) {
-        $idem = (string) Str::uuid();
-    }
 
     // 2) Detect emotions + self-threat
     $emoResult  = $this->detectEmotions($analysisText);
@@ -450,7 +364,7 @@ try {
     $userId    = Auth::id();
     $sessionId = session('chat_session_id');
 
-    // 3) Ensure session (unchanged except your existing logic)
+    // 3) Ensure session
     $session = null;
     if ($sessionId) {
         $session = ChatSession::where('id', $sessionId)->where('user_id', $userId)->first();
@@ -501,7 +415,7 @@ try {
         if (!$userMsg) throw $e;
     }
 
-    // Persist FIRST high-risk (unchanged)
+    // Persist FIRST high-risk (unchanged gist)
     try {
         if ($msgRisk === 'high') {
             $session->refresh();
@@ -527,7 +441,7 @@ try {
         }
     } catch (\Throwable $e) {}
 
-    // Topic summary (unchanged)
+    // Topic summary (unchanged gist)
     $count = Chat::where('chat_session_id', $sessionId)->where('sender', 'user')->count();
     if ($count === 1) {
         preg_match('/\b(sad|depress|help|anxious|angry|lonely|stress|tired|happy|excited|not okay|nagool|kapoy|kulba|nalipay)\b/i', $text, $m);
@@ -535,7 +449,7 @@ try {
         $session->update(['topic_summary' => ucfirst($summary)]);
     }
 
-    // Accumulate emotion counts (unchanged)
+    // Accumulate emotion counts
     try {
         if (!empty($labels)) {
             $current = $this->emotionsAsCounts($session->emotions ?? []);
@@ -548,47 +462,50 @@ try {
     } catch (\Throwable $e) {}
 
     // --- Coping consent / flow flags (UPDATED)
-    $doorKey      = 'door_after_rasa_' . $sessionId;
-    $helpcheckKey = 'helpcheck_at_' . $sessionId;
-    $pendingApptKey = 'pending_appt_cta_' . $sessionId;
+    $doorKey         = 'door_after_rasa_' . $sessionId;
+    $helpcheckKey    = 'helpcheck_at_' . $sessionId;
+    $pendingApptKey  = 'pending_appt_cta_' . $sessionId;
+    $ctaAfterHelpKey = 'cta_after_help_'  . $sessionId;
 
-    // Recognize both payloads (/show_coping, /skip_coping) and button titles ("Yes, show tips", "No, thanks")
-    $copingCmd = $this->parseCopingCommand($analysisText);   // returns 'yes' | 'no' | null
+    // Contextual parse for yes/no/done
+    $copingCmd = $this->parseCopingCommand($analysisText, $sessionId);  // NOTE: pass $sessionId
 
     $skipRasaThisTurn = session($doorKey, false);
 
-    // Accept either payload or title text
     $forceCopingNow = ($copingCmd === 'yes') || (bool) preg_match('/^\/show_coping\b/i', $analysisText);
     $declineCoping  = ($copingCmd === 'no')  || (bool) preg_match('/^\/skip_coping\b/i', $analysisText);
 
+    // If user tapped "Done" on the coping card → ask help-check now; show CTA on NEXT user message
+    $botReplies = [];
+    if ($copingCmd === 'done') {
+        $botReplies[] = [
+            'text'    => "Did that help even a little, {USER_FIRST}? / Nakatabang ba to bisag gamay, {USER_FIRST}?",
+            'buttons' => [],
+        ];
+        session([$ctaAfterHelpKey => true]);   // arm CTA for next turn
+        $skipRasaThisTurn = true;              // tiny transition; no Rasa this turn
+    }
+
     $builtConsent           = false;
     $strippedCopingThisTurn = false;
-    $copingShownThisTurn    = $forceCopingNow;   // mark that we intend to show coping now
+    $copingShownThisTurn    = $forceCopingNow;
 
-    // If user explicitly answered yes/no, clear the arming keys so we don't re-offer
     if ($copingCmd === 'yes' || $copingCmd === 'no') {
         session()->forget($doorKey);
         session()->forget($helpcheckKey);
     }
-
-    // If user forced coping or declined, don't skip Rasa this turn
     if ($forceCopingNow || $declineCoping) {
         $skipRasaThisTurn = false;
     }
 
-
-    // 6) Call Rasa unless skipping (same as your code)
-    $rasaUrl  = $this->rasaWebhookUrl();
-    $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk) + [
-        'user' => ['id' => $userId, 'name' => $name, 'first' => $first],
-    ];
-    $timeout  = 8;
-    $verify   = true;
-
-    $botReplies = [];
+    // 6) Call Rasa unless skipping
     if (!$skipRasaThisTurn) {
+        $rasaUrl  = $this->rasaWebhookUrl();
+        $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk) + [
+            'user' => ['id' => $userId, 'name' => $name, 'first' => $first],
+        ];
         try {
-            $r = Http::timeout($timeout)->withOptions(['verify' => $verify])
+            $r = Http::timeout(8)->withOptions(['verify' => true])
                 ->withHeaders(['Accept' => 'application/json'])
                 ->post($rasaUrl, [
                     'sender'   => 'u_' . $userId . '_s_' . $sessionId,
@@ -620,7 +537,7 @@ try {
         ]];
     }
 
-    // Strip coping for this turn (consent-next-turn flow)
+    // Strip coping for this turn (offer first; tips later)
     if (!$forceCopingNow && !$declineCoping) {
         $foundCoping = false;
         foreach ($botReplies as $i => $piece) {
@@ -635,7 +552,7 @@ try {
         }
     }
 
-    // 7) Risk elevation + logging (unchanged)
+    // 7) Risk elevation + logging
     $current = $session->risk_level ?: 'low';
     $order   = ['low'=>0, 'moderate'=>1, 'high'=>2];
     $new     = ($order[$msgRisk] > $order[$current]) ? $msgRisk : $current;
@@ -645,77 +562,29 @@ try {
         'message_preview' => Str::limit($text, 120),
     ]);
 
-   // 8b) Appointment CTA injection (RE-ORDERED & SMART)
-$askedForAppt = $this->wantsAppointment($text) || $this->confirmedAfterOffer($text, $sessionId);
-
-$link   = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
-    ? \Illuminate\Support\Facades\URL::signedRoute('features.enable_appointment')
-    : (\Illuminate\Support\Facades\Route::has('appointment.index') ? route('appointment.index') : url('/appointment'));
-$ctaHtml = '<a href="' . e($link) . '">Book an appointment</a>';
-
-$hasApptPlaceholder = false;
-foreach ($botReplies as $rpl) {
-    if (is_array($rpl) && isset($rpl['text']) && is_string($rpl['text']) && str_contains($rpl['text'], '{APPOINTMENT_LINK}')) {
-        $hasApptPlaceholder = true; break;
+    // 8) Appointment CTA policy:
+    //    - Never show the old "You can book a time..." line.
+    //    - Arm a pending flag if user asked for appointment or risk is high.
+    $askedForAppt = $this->wantsAppointment($text) || $this->confirmedAfterOffer($text, $sessionId);
+    if ($askedForAppt || $msgRisk === 'high') {
+        session([$pendingApptKey => true]);  // remember to include CTA after help-check
     }
-}
-
-// Decide when to show the CTA:
-// - Show immediately if user explicitly asked OR risk is high
-// - Otherwise, defer if we just built consent or just stripped coping this turn
-$shouldInjectNow =
-    !$hasApptPlaceholder &&
-    (
-        $askedForAppt ||
-        ($msgRisk === 'high') ||
-        session($pendingApptKey, false)
-    );
-
-$mustDeferThisTurn = ($builtConsent || $strippedCopingThisTurn) && $msgRisk !== 'high' && !$askedForAppt;
-
-if ($shouldInjectNow && !$mustDeferThisTurn) {
-    $ctaReply = "You can book a time with a school counselor here: {APPOINTMENT_LINK} / " .
-                "Pwede ka magpa-book sa school counselor dinhi: {APPOINTMENT_LINK}";
-
-    // Always append (do not unshift) so empathy/consent comes first
-    $botReplies[] = ['text' => $ctaReply, 'buttons' => []];
-
-    // clear pending flag if we had one
-    if (session($pendingApptKey, false)) session()->forget($pendingApptKey);
-
-    $this->logActivity('appointment_detected', 'Appointment CTA shown', $sessionId, [
-        'preview' => Str::limit($text, 120),
-        'risk'    => $msgRisk,
-        'asked'   => $askedForAppt,
-    ]);
-} elseif (!$hasApptPlaceholder && ($askedForAppt || $msgRisk !== 'high')) {
-    // Set pending when consent should go first this turn
-    session([$pendingApptKey => true]);
-}
-
 
     // 9) After-Rasa turn-2 helper check, then arm consent for next user turn
-    if (
-        !$skipRasaThisTurn &&
-        $count === 2 &&
-        !empty($botReplies) &&
-        $strippedCopingThisTurn
-    ) {
+    if (!$skipRasaThisTurn && $count === 2 && !empty($botReplies) && $strippedCopingThisTurn) {
         $botReplies[] = [
-            'text' =>
-                "Did any part of that help even a little, {USER_FIRST}? What feels most pressing right now? / " .
-                "Nakatabang ba gamay bisan usa, {USER_FIRST}? Asa ang pinakalisod karon?",
+            'text'    => "Did any part of that help even a little, {USER_FIRST}? What feels most pressing right now? / Nakatabang ba gamay bisan usa, {USER_FIRST}? Asa ang pinakalisod karon?",
             'buttons' => [],
         ];
         session([$doorKey => $count]);
-        session([$helpcheckKey => $count]);              // NEW: remember helper-check turn
+        session([$helpcheckKey => $count]);
     }
 
     // 10) If consent was armed earlier and the user has now replied, APPEND coping Yes/No
     $armedAt     = session($doorKey, null);
     $helpAskedAt = session($helpcheckKey, null);
     if ($armedAt !== null && $count > (int)$armedAt && !$forceCopingNow && !$declineCoping) {
-        $botReplies[] = [                               // NEW: append (do not replace) the offer
+        $botReplies[] = [
             'text' =>
                 "If you want, I can also share a few coping tips based on how you’re feeling. Want them now? / " .
                 "Kung gusto nimo, makashare ko og pipila ka coping tips base sa imong gibati. Gusto nimo karon?",
@@ -726,49 +595,26 @@ if ($shouldInjectNow && !$mustDeferThisTurn) {
         ];
         $builtConsent = true;
         session()->forget($doorKey);
-        if ($helpAskedAt !== null) session()->forget($helpcheckKey); // NEW: cleanup
+        if ($helpAskedAt !== null) session()->forget($helpcheckKey);
     }
 
     // 11) Empathy preface (unchanged selection logic)
+    $suppressEmpathyForGreeting = false; // we already handled greeting elsewhere in your codebase
     $primaryEmotion = $this->choosePrimaryEmotion($labels);
-    if (
-    !$forceCopingNow &&
-    !$declineCoping &&
-    !$suppressEmpathyForGreeting &&                 // <<< NEW: skip empathy on pure greetings
-    $this->shouldPreface($sessionId, $labels, $msgRisk)
-) {
-
+    if (!$forceCopingNow && !$declineCoping && !$suppressEmpathyForGreeting && $this->shouldPreface($sessionId, $labels, $msgRisk)) {
         $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
-
-        if ($count === 1) {
-            $botReplies = [ ['text' => $preface, 'buttons' => []] ];
-        } elseif ($count === 2) {
-            $botReplies = [ ['text' => $preface, 'buttons' => []] ];
-        } elseif ($count === 3) {
-            array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
-        } else {
-            array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
-            if (isset($botReplies[1])) {
-                $firstRasa = $botReplies[1];
-                if (!empty($firstRasa['buttons']) && is_array($firstRasa['buttons'])) {
-                    $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $firstRasa['buttons']);
-                }
-                array_splice($botReplies, 1, 1);
-            }
-        }
+        array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
     }
 
-    // 12) Acknowledge decline gently (unchanged)
+    // 12) Acknowledge decline gently
     if ($declineCoping) {
         array_unshift($botReplies, [
-            'text' =>
-                "No worries, {USER_FIRST}. I’m here to listen—what would you like to talk through next? / " .
-                "Sige, {USER_FIRST}. Naa ra ko maminaw—unsa imong gusto hisgutan sunod?",
+            'text'    => "No worries, {USER_FIRST}. I’m here to listen—what would you like to talk through next? / Sige, {USER_FIRST}. Naa ra ko maminaw—unsa imong gusto hisgutan sunod?",
             'buttons' => [],
         ]);
     }
 
-    // 13) Early-turn coping strip (unchanged condition)
+    // 13) Early-turn coping strip (safety for very early turns)
     if (!$forceCopingNow && $count <= 3 && !$builtConsent) {
         $botReplies = array_values(array_filter(
             $botReplies,
@@ -776,7 +622,25 @@ if ($shouldInjectNow && !$mustDeferThisTurn) {
         ));
     }
 
-    // 14) Bridge follow-up turn-3 (unchanged except your helper)
+    // --- NEW: If we armed CTA-after-help-check previously, append it now and clear the flag
+    $link   = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
+        ? \Illuminate\Support\Facades\URL::signedRoute('features.enable_appointment')
+        : (\Illuminate\Support\Facades\Route::has('appointment.index') ? route('appointment.index') : url('/appointment'));
+    $ctaHtml = '<a href="'.e($link).'">Book an appointment</a>';
+
+    if (session($ctaAfterHelpKey, false)) {
+        session()->forget($ctaAfterHelpKey);
+        // Only show the CTA if it was relevant (pending due to high risk or explicit ask)
+        if (session($pendingApptKey, false)) {
+            $ctaReply =
+                "It’s okay if this still feels heavy. You can book time with the counselor so you don’t have to handle this alone. {APPOINTMENT_LINK} / ".
+                "Okay ra kung bug-at gihapon paminawon. Pwede ka mag-book og oras sa counselor aron dili nimo ni atubangon nga ikaw ra. {APPOINTMENT_LINK}";
+            $botReplies[] = ['text' => $ctaReply, 'buttons' => []];
+            session()->forget($pendingApptKey);
+        }
+    }
+
+    // 14) Bridge follow-up turn-3 (guarded)
     if ($count === 3) {
         $lastTxt = trim((string)($botReplies[count($botReplies)-1]['text'] ?? ''));
         $alreadyQ = str_ends_with($lastTxt, '?');
@@ -788,7 +652,7 @@ if ($shouldInjectNow && !$mustDeferThisTurn) {
         }
     }
 
-    // De-dup (unchanged prelude)
+    // De-dup baseline
     $lastBot = Chat::where('chat_session_id', $sessionId)->where('sender','bot')->latest('sent_at')->first();
     $lastBotText = '';
     $lastBotTime = 0;
@@ -798,7 +662,7 @@ if ($shouldInjectNow && !$mustDeferThisTurn) {
         $lastBotTime = $lastBot->sent_at?->timestamp ?? 0;
     }
 
-    // 15) Build final payload (with NEW "orphan Done" suppression)
+    // 15) Build final payload (with "orphan Done" suppression)
     $botPayload = [];
     foreach ($botReplies as $replyObj) {
         $replyText = (string) ($replyObj['text'] ?? '');
@@ -823,14 +687,13 @@ if ($shouldInjectNow && !$mustDeferThisTurn) {
             continue;
         }
 
-        // Normalize buttons — NEW: drop "Done" if coping isn't actually shown this turn
+        // Normalize buttons — drop "Done" if coping isn't actually shown this turn
         $normalizedBtns = [];
         foreach ($replyBtns as $b) {
             $title   = (string)($b['title'] ?? 'Open');
             $payload = $b['payload'] ?? null;
             $url     = $b['url'] ?? null;
 
-            // NEW: suppress orphan Done button
             if (!$copingShownThisTurn && preg_match('/^\s*done\s*$/i', $title)) {
                 continue;
             }
@@ -865,7 +728,7 @@ if ($shouldInjectNow && !$mustDeferThisTurn) {
         ];
     }
 
-    // --- Guarantee we end with a question unless consent just fired (unchanged)
+    // --- Guarantee we end with a question unless consent just fired
     if (!$builtConsent) {
         if (empty($botPayload)) {
             $pref = $this->empathyTemplate($primaryEmotion ?? null, $msgRisk);
@@ -888,8 +751,8 @@ if ($shouldInjectNow && !$mustDeferThisTurn) {
             ];
         }
 
-        $last     = $botPayload[count($botPayload)-1] ?? null;
-        $lastTxt  = (string)($last['text'] ?? '');
+        $last    = $botPayload[count($botPayload)-1] ?? null;
+        $lastTxt = (string)($last['text'] ?? '');
         $lastHasBtn = !empty($last['buttons']);
 
         if (!$lastHasBtn && !$this->endsWithQuestion($lastTxt)) {
@@ -913,7 +776,7 @@ if ($shouldInjectNow && !$mustDeferThisTurn) {
         }
     }
 
-    // 16) Return (unchanged)
+    // 16) Return
     return response()->json([
         'user_message' => [
             'text'       => $text,
@@ -924,6 +787,7 @@ if ($shouldInjectNow && !$mustDeferThisTurn) {
         'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
     ]);
 }
+
 
 
     // Normalize any stored shape into label=>count map.
@@ -1267,17 +1131,36 @@ private function bridgeFollowup(?string $emotion, string $nameFirst): string
 
     return str_replace('{N}', $nameFirst, $variants[$next]);
 }
+// Detect if the last bot message was the "coping offer" prompt
+private function lastBotWasCopingOffer(int $sessionId): bool
+{
+    $last = \App\Models\Chat::where('chat_session_id', $sessionId)
+        ->where('sender','bot')->latest('sent_at')->first();
+    if (!$last) return false;
 
-// Detect explicit coping commands coming from quick-reply buttons or typed text.
-private function parseCopingCommand(string $text): ?string
+    try { $txt = \Illuminate\Support\Facades\Crypt::decryptString($last->message); }
+    catch (\Throwable $e) { $txt = (string)$last->message; }
+
+    $t = mb_strtolower($txt ?? '');
+    // keep this text check aligned with the offer you build later
+    return str_contains($t, 'share a few coping tips') && str_contains($t, 'want them now');
+}
+
+// Make parseCopingCommand contextual: only honor yes/no/done if it’s answering the coping offer.
+private function parseCopingCommand(string $text, int $sessionId): ?string
 {
     $t = trim(mb_strtolower($text));
-    // Button payloads or common variants
-    $yes = ['yes, show tips', 'show tips', '/show_coping', 'yes'];
-    $no  = ['no, thanks', 'no thanks', '/skip_coping', 'no'];
+    $isOfferContext = $this->lastBotWasCopingOffer($sessionId);
 
-    if (in_array($t, $yes, true)) return 'yes';
-    if (in_array($t, $no,  true)) return 'no';
+    // Only accept yes/no when the last bot turn was *the* coping offer
+    if ($isOfferContext) {
+        if (in_array($t, ['yes, show tips','show tips','/show_coping','yes'], true)) return 'yes';
+        if (in_array($t, ['no, thanks','no thanks','/skip_coping','no'], true))       return 'no';
+    }
+
+    // Accept "done" only when we are inside the coping card (button title/payload)
+    if (in_array($t, ['done','/coping_done','/coping_step_done'], true)) return 'done';
+
     return null;
 }
 
