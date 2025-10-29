@@ -568,6 +568,8 @@ if ($count === 1 && !session($deferKey, false)) {
 
     // Contextual parse for yes/no/done
     $copingCmd = $this->parseCopingCommand($analysisText, $sessionId);  // NOTE: pass $sessionId
+    $this->clearHelpCheck($sessionId);
+    $this->clearCopingOffer($sessionId);
 
     $skipRasaThisTurn = session($doorKey, false);
 
@@ -945,6 +947,7 @@ if ($declineCoping) {
 if ($count === 3 && !session()->has('flow_done_'.$sessionId)) {
     $lastTxt  = trim((string)($botReplies[count($botReplies)-1]['text'] ?? ''));
     $alreadyQ = str_ends_with($lastTxt, '?');
+    
     if (!$alreadyQ) {
         $botReplies[] = [
             'text'    => $this->bridgeFollowup($primaryEmotion, $first),
@@ -1582,13 +1585,35 @@ private function lastBotWasHelpCheck(int $sessionId): bool
     catch (\Throwable $e) { $txt = (string)$last->message; }
 
     $t = $this->normalizeText($txt ?? '');
-    return (bool)preg_match('/\b(did (that|it) (help|ease|relieve)|feel .* (lighter|easier))\b/u', $t);
-    return (bool)preg_match(
-    '/\b(did (that|it) (help|ease|relieve)|feel .* (lighter|easier)|did (any|any part) of that help)\b/u',
-    $t
-);
 
+    // cover “Did that help…”, “Did any part…”, “feel lighter/easier”, etc.
+    return (bool) preg_match(
+        '/\b(did\s+(that|it)\s+(help|ease|relieve)|did\s+(any|any\s+part)\s+of\s+that\s+help|feel\s+.*\s+(lighter|easier))\b/u',
+        $t
+    );
 }
+private function markHelpCheckAsked(int $sessionId): void {
+    session(["helpcheck_pending_$sessionId" => time()]);
+}
+private function helpCheckPending(int $sessionId, int $ttlSec = 120): bool {
+    $t = (int) session("helpcheck_pending_$sessionId", 0);
+    return $t && (time() - $t) < $ttlSec;
+}
+private function clearHelpCheck(int $sessionId): void {
+    session()->forget("helpcheck_pending_$sessionId");
+}
+
+private function markCopingOfferPending(int $sessionId): void {
+    session(["coping_offer_pending_$sessionId" => time()]);
+}
+private function copingOfferPending(int $sessionId, int $ttlSec = 180): bool {
+    $t = (int) session("coping_offer_pending_$sessionId", 0);
+    return $t && (time() - $t) < $ttlSec;
+}
+private function clearCopingOffer(int $sessionId): void {
+    session()->forget("coping_offer_pending_$sessionId");
+}
+
 
 private function parseYesNoGeneric(string $text): ?string
 {
