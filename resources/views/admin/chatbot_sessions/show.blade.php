@@ -415,7 +415,7 @@
             <button id="hrUnlock" type="button"
                     class="absolute inset-0 flex flex-col items-center justify-center gap-2 focus-visible:outline-none group"
                     aria-label="Unlock high-risk message"
-                    title="Click to unlock">
+                    title="Unlock the student’s high-risk trigger message">
               <img src="{{ asset('images/icons/security.png') }}" alt="Security"
                   class="h-12 w-12 md:h-14 md:w-14 opacity-90 drop-shadow-sm transition-transform duration-150 group-hover:scale-105">
               <span class="inline-flex items-center gap-1 rounded-full bg-white/80 text-slate-700 ring-1 ring-slate-200
@@ -788,9 +788,69 @@
     const canMoveEarlier = @json($canMoveEarlier);
     const csrf           = @json(csrf_token());
 
-    const epSlots  = @json(route('admin.chatbot-sessions.slots', $session->id));        // GET ?date=YYYY-MM-DD
-    const epBook   = @json(route('admin.chatbot-sessions.book', $session->id));         // POST
-    const epRebook = @json(route('admin.chatbot-sessions.reschedule', $session->id));   // POST
+    const epSlots  = @json(route('admin.chatbot-sessions.slots', $session->id));
+    const epBook   = @json(route('admin.chatbot-sessions.book', $session->id));
+    const epRebook = @json(route('admin.chatbot-sessions.reschedule', $session->id));
+
+    /* ───────── 1-HOUR DEFAULT GRID + 12-hour formatter ───────── */
+    const DEFAULT_HOURLY_SLOTS = [
+      "09:00","10:00","11:00",
+      "13:00","14:00","15:00"
+    ];
+
+    /* ===== Helpers to normalize minutes -> top-of-the-hour ===== */
+    function hourKey(hhmm){
+      const m = /^(\d{2}):(\d{2})$/.exec(String(hhmm||'').trim());
+      if (!m) return '';
+      return `${m[1]}:00`; // collapse to hour
+    }
+    function fmt12(hhmm){
+      const m = /^(\d{2}):(\d{2})$/.exec(String(hhmm||'').trim());
+      if(!m) return String(hhmm||'');
+      let h = +m[1], mm = m[2];
+      const ampm = h>=12 ? 'PM':'AM';
+      h = h%12 || 12;
+      return `${h}:${mm} ${ampm}`;
+    }
+    /** Build hourly rows from raw slots (may contain :30), occupied list, and current time */
+    function normalizeHourlyRows(rawRows, occupiedArr, currentStr){
+      const occSet = new Set((occupiedArr||[]).map(v => String(v).slice(0,5)));
+      const curH   = hourKey(currentStr||'');
+      const bucket = new Map(); // hour -> {present, disabledAll, busy, current}
+
+      DEFAULT_HOURLY_SLOTS.forEach(h => {
+        if (h !== '12:00') bucket.set(h, {present:false, disabledAll:true, busy:false, current:false});
+      });
+
+      (Array.isArray(rawRows) ? rawRows : []).forEach(s => {
+        const val  = String(s?.value ?? s?.label ?? '').trim();
+        const hour = hourKey(val);
+        if (!hour || hour === '12:00') return;
+
+        if(!bucket.has(hour)) bucket.set(hour, {present:false, disabledAll:true, busy:false, current:false});
+        const b = bucket.get(hour);
+
+        // busy if: explicit flags OR listed in occupied set (by exact half-hour OR by hour)
+        const isBusy = Boolean(
+          s?.busy || s?.occupied ||
+          occSet.has(val.slice(0,5)) || occSet.has(hour)
+        );
+        const isDis  = Boolean(s?.disabled);
+
+        b.present     = true;
+        b.disabledAll = b.disabledAll && isDis;
+        b.busy        = b.busy || isBusy;       // any half-hour busy ⇒ hour busy
+        b.current     = b.current || (hour === curH);
+      });
+
+      return Array.from(bucket.keys())
+        .filter(h => h !== '12:00')
+        .map(h => {
+          const b = bucket.get(h);
+          const disabled = b.disabledAll || b.busy || b.current;
+          return { value:h, label:fmt12(h), disabled, busy:b.busy, current:b.current };
+        });
+    }
 
     // Buttons in unlocked card (initial + delegated for dynamic)
     function rewireHRActionButtons(scope = document){
@@ -894,6 +954,38 @@
       return d;
     }
 
+    function buildOccupiedSet(counselorId, payload){
+      const set = new Set();
+
+      // A) top-level global occupied: ["09:00","10:00",...]
+      if (Array.isArray(payload?.occupied)) {
+        payload.occupied.forEach(x => set.add(String(x).trim().slice(0,5)));
+      }
+
+      // B) per-counselor occupied map:
+      //    occupied_map: { "5": ["09:00","14:00"], "all": ["10:00"] }
+      const omap = payload?.occupied_map || payload?.occupiedHours || null;
+      if (omap && (omap.all || omap[counselorId])) {
+        (omap.all || []).forEach(x => set.add(String(x).trim().slice(0,5)));
++       (omap[counselorId] || []).forEach(x => set.add(String(x).trim().slice(0,5)));
+      }
+
+      // C) bookings array:
+      //    bookings: [{ counselor_id: 5, time: "09:00" }, ...]
+      if (Array.isArray(payload?.bookings)) {
+        payload.bookings.forEach(b => {
+          if (!b) return;
+          const cid = String(b.counselor_id ?? b.counselorId ?? '').trim();
+          if (cid === String(counselorId)) {
+            const t = String(b.time || b.hhmm || '').trim();
+            if (t) set.add(t.slice(0,5));
+          }
+        });
+      }
+
+      return set;
+    }
+
     function open(m){
       mode = m;
       titleEl.textContent = (mode==='book') ? 'Book urgent appointment' : 'Move appointment earlier';
@@ -917,16 +1009,21 @@
     // When date changes programmatically, reload slots
     iDate?.addEventListener('change', loadSlots);
 
-    async function loadSlots(){
+    async function loadSlots(forceCounselorId = null){
       const date = iDate.value;
       if (!date) return;
+
       try{
         const url = new URL(epSlots, window.location.origin);
         url.searchParams.set('date', date);
+        // optional: let backend tailor the response to currently selected counselor
+        const cid = forceCounselorId || iCoun.value || '';
+        if (cid) url.searchParams.set('counselor_id', cid);
+
         const res = await fetch(url, { headers:{'X-Requested-With':'XMLHttpRequest'} });
         const j = await res.json();
 
-        // counselors
+        // counselors (keep or update)
         iCoun.innerHTML = '';
         (j.counselors||[]).forEach(c => {
           const opt = document.createElement('option');
@@ -934,83 +1031,135 @@
           iCoun.appendChild(opt);
         });
 
-        // default to first counselor
-        const firstId = iCoun.value;
+        if (!iCoun.options.length) {
+          timePills.innerHTML = '';
+          noSlotsHint.textContent = 'No active counselors available for booking.';
+          noSlotsHint.classList.remove('hidden');
+          return;
+        }
 
-        // fill times (with optional ref suggestion from API)
-        fillTimes(firstId, j.slots||{}, { ref: j.ref_time || j.suggest || null });
+        // reselect previously chosen counselor if possible
+        if (cid && [...iCoun.options].some(o => o.value === cid)) iCoun.value = cid;
 
-        iCoun.onchange = () =>
-          fillTimes(iCoun.value, j.slots||{}, { ref: j.ref_time || j.suggest || null });
+        const occBy   = j.occupied_by || {};          // NEW: map per counselor
+        const slots   = j.slots || {};                // same shape as before
+        const current = (j.current_time || '').trim();
+        const ref     = j.ref_time || j.suggest || null;
+
+        // initial fill
+        const activeCid = iCoun.value;
+        const occRaw = occBy[activeCid] || [];
+        const occNorm = occRaw.map(x => String(x).padStart(5,'0')); // "9:00" -> "09:00"
+        fillTimes(activeCid, slots, {
+          occupied: occNorm,
+          current,
+          ref
+        });
+
+        // on counselor change, refetch so we always have fresh occupied data
+        iCoun.onchange = () => loadSlots(iCoun.value);
 
       }catch(e){
         iCoun.innerHTML=''; iTime.innerHTML='';
-        if (timePills) timePills.innerHTML='';
-        if (noSlotsHint) { noSlotsHint.classList.add('hidden'); noSlotsHint.textContent=''; }
+        timePills && (timePills.innerHTML='');
+        noSlotsHint && noSlotsHint.classList.add('hidden');
         console.error(e);
       }
     }
-
+  
     /**
-     * Render time slots as pills; gracefully handle "no slots" with a ref suggestion.
+     * Render time slots as pills; show:
+     *  - busy/occupied → red pill (not selectable)
+     *  - current time (for this session) → gray “Current” badge (not selectable)
      */
     function fillTimes(counselorId, slotsByCounselor, extras = {}){
-      // Keep <select> in sync for form submit
+      const occ = Array.isArray(extras.occupied) ? extras.occupied.map(String) : [];
+      const cur = (extras.current || '').trim();
+
+      // 1) Normalize to hours
+      const raw  = (slotsByCounselor?.[counselorId] || []);
+      const rows = normalizeHourlyRows(raw, occ, cur);
+
+      // 2) Keep <select> in sync for form submit
       iTime.innerHTML = '';
-      const rows = slotsByCounselor?.[counselorId] || [];
       rows.forEach(s => {
         const opt = new Option(s.label, s.value, false, false);
         if (s.disabled) opt.disabled = true;
         iTime.add(opt);
       });
 
-      // Render equal-size pills
+      // 3) Pills
       timePills.innerHTML = '';
       let anyEnabled = false;
 
       rows.forEach(s => {
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.textContent = s.label;
         btn.className = 'time-pill';
-        if (s.disabled) {
+        // If busy, show a red badge; else plain label
+        btn.innerHTML = s.busy
+          ? `${s.label} <span class="time-pill-badge time-pill-badge--danger">No Slots</span>`
+          : s.label;
+
+        if (s.busy) {
+          btn.classList.add('time-pill--busy');
           btn.setAttribute('aria-disabled','true');
-        } else {
+          btn.title = 'Occupied (another appointment exists)';
+        } else if (s.current) {
+          btn.classList.add('time-pill--current');
+          btn.setAttribute('aria-disabled','true');
+          btn.title = 'Current appointment time for this session';
+          const badge = document.createElement('span');
+          badge.className = 'time-pill-badge';
+          badge.textContent = 'Current';
+          btn.appendChild(badge);
+        } else if (s.disabled) {
+          btn.setAttribute('aria-disabled','true');
+        }
+
+        if (!s.disabled) {
           anyEnabled = true;
           btn.addEventListener('click', () => {
             iTime.value = s.value;
             [...timePills.querySelectorAll('.time-pill')].forEach(p => p.classList.remove('time-pill--active'));
             btn.classList.add('time-pill--active');
           }, { passive:true });
+        } else {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (window.Swal) Swal.fire({
+              icon:'error',
+              title:'Time not available',
+              text: s.busy ? 'That time is already taken. Pick another.' : 'You cannot choose this time.',
+              confirmButtonText:'OK'
+            });
+          }, { passive:false });
         }
         timePills.appendChild(btn);
       });
 
-      // No slots? show a reference-time pill
-      const noSlotsHint = document.getElementById('hrNoSlotsHint');
+      // 4) Fallback + preselect
       if (!anyEnabled) {
-        let ref = (extras.ref || '').trim();
-        if (!ref) ref = '09:00';
+        const noSlotsHint = document.getElementById('hrNoSlotsHint');
+        let ref = (extras.ref || '').trim() || '09:00';
+        const refLabel = fmt12(ref);
 
-        noSlotsHint.textContent = 'No available slots for this counselor/date. You may try the reference time:';
+        noSlotsHint.textContent = 'No available slots for this counselor/date. You may try this reference time:';
         noSlotsHint.classList.remove('hidden');
 
         const refBtn = document.createElement('button');
         refBtn.type = 'button';
         refBtn.className = 'time-pill time-pill--ref';
-        refBtn.innerHTML = `Ref: ${ref}`;
+        refBtn.innerHTML = `Ref: ${refLabel}`;
         refBtn.addEventListener('click', () => {
           let opt = [...iTime.options].find(o => o.value === ref);
-          if (!opt) iTime.add(new Option(ref, ref, true, true)); else iTime.value = ref;
+          if (!opt) iTime.add(new Option(refLabel, ref, true, true)); else iTime.value = ref;
           [...timePills.querySelectorAll('.time-pill')].forEach(p => p.classList.remove('time-pill--active'));
           refBtn.classList.add('time-pill--active');
         }, { passive:true });
-
         timePills.appendChild(refBtn);
       } else {
-        noSlotsHint.classList.add('hidden');
-        noSlotsHint.textContent = '';
-        // Preselect the first enabled pill
+        document.getElementById('hrNoSlotsHint')?.classList.add('hidden');
         const firstEnabled = timePills.querySelector('.time-pill:not([aria-disabled="true"])');
         firstEnabled?.click();
       }
@@ -1062,8 +1211,30 @@
         if (!res.ok || !j?.ok) {
           const msg = j?.message || 'Request failed.';
           if (window.Swal) Swal.fire({ icon:'error', title:'Error', text: msg });
+
+          // 👉 Flip the selected pill to "busy" (red) immediately
+          const selected = iTime.value;
+          if (selected) {
+            const selectedLabel = fmt12(selected).trim();
+            const pill = [...timePills.querySelectorAll('.time-pill')]
+              .find(b => (b.textContent || b.innerText || '').trim().startsWith(selectedLabel));
+            if (pill) {
+              pill.classList.remove('time-pill--active');
+              pill.classList.add('time-pill--busy');
+              pill.setAttribute('aria-disabled','true');
+              pill.title = 'Occupied (another appointment exists)';
+              if (!pill.querySelector('.time-pill-badge--danger')) {
+                pill.innerHTML = `${selectedLabel} <span class="time-pill-badge time-pill-badge--danger">No Slots</span>`;
+              }
+              // try select another available slot
+              timePills.querySelector('.time-pill:not([aria-disabled="true"])')?.click();
+            }
+          }
+
           throw new Error(msg);
         }
+
+        
         // Show the server-composed HTML (includes the generated note)
         result.innerHTML = j.html || '<div class="text-slate-700">Done.</div>';
         form.classList.add('hidden');
@@ -1468,7 +1639,50 @@
 
 {{-- ===== Styles ===== --}}
 <style>
- /* Equal-size pill grid */
+/* Busy (occupied) slot = red outline, light background */
+.time-pill--busy{
+  position: relative;
+  background:#fff5f5;
+  border-color:#fecaca;   /* red-200 */
+  color:#b91c1c;          /* red-700 */
+}
+.time-pill--busy::before{
+  content:"✕";
+  font-weight:700;
+  margin-right:.4rem;
+}
+
+/* Current appointment time = neutral/gray with badge */
+.time-pill--current{
+  position:relative;
+  background:#f8fafc;
+  border-color:#cbd5e1;   /* slate-300 */
+  color:#334155;          /* slate-700 */
+}
+.time-pill-badge{
+  margin-left:.5rem;
+  font-size:.65rem; line-height:1;
+  padding:.2rem .35rem;
+  border-radius:.375rem;
+  background:#e2e8f0;     /* slate-200 */
+  color:#334155;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.02em;
+}
+.time-pill-badge--danger{
+  margin-left:.5rem;
+  font-size:.65rem; line-height:1;
+  padding:.2rem .35rem;
+  border-radius:.375rem;
+  background:#fee2e2;   /* red-200 */
+  color:#b91c1c;        /* red-700 */
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.02em;
+}
+
+  /* Equal-size pill grid */
 .time-pills{
   display:grid;
   grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));

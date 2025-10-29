@@ -387,6 +387,7 @@ class ChatbotSessionController extends Controller
         if ($dowIso < 1 || $dowIso > 5) {
             return response()->json([
                 'counselors' => [], 'slots' => [], 'pooled' => [],
+                'occupied_by'=> [],
                 'message'    => 'Appointments are available Monday to Friday only.'
             ]);
         }
@@ -397,8 +398,14 @@ class ChatbotSessionController extends Controller
             ->get(['id','name']);
 
         if ($counselors->isEmpty()) {
-            return response()->json(['counselors'=>[], 'slots'=>[], 'pooled'=>[], 'message'=>'No active counselors.']);
+            return response()->json([
+                'counselors'=>[], 'slots'=>[], 'pooled'=>[], 'occupied_by'=>[],
+                'message'=>'No active counselors.'
+            ]);
         }
+
+        // Your UI shows hour pills: 09,10,11,13,14,15
+        $hourStarts = ['09:00','10:00','11:00','13:00','14:00','15:00'];
 
         $snap = function (Carbon $dt): Carbon {
             $m = (int) floor($dt->minute / 30) * 30;
@@ -406,9 +413,13 @@ class ChatbotSessionController extends Controller
         };
 
         $slotsByCounselor = [];
-        $allTimes = [];
+        $occupiedBy       = [];           // NEW: per-counselor fully-booked hours
+        $allTimes         = [];
 
         foreach ($counselors as $c) {
+            // Track how many free half-hours exist inside each display hour
+            $hourFreeCounts = array_fill_keys($hourStarts, 0);
+
             $ranges = DB::table('tbl_counselor_availabilities')
                 ->where('counselor_id', $c->id)
                 ->where('weekday', $dowIso)
@@ -436,22 +447,38 @@ class ChatbotSessionController extends Controller
                         ->whereIn('status', self::BLOCKING_STATUSES)
                         ->exists();
 
-                    if (!$taken) {
+                    if (!$taken && !$isPast) {
                         $hhmm = $slot->format('H:i');
                         $col[] = [
                             'value'    => $hhmm,
                             'label'    => $slot->format('g:i A'),
-                            'disabled' => $isPast,
+                            'disabled' => false,
                         ];
+                        // Count free half-hours into hour bucket (e.g., 10:30 -> 10:00)
+                        $hourLabel = substr($hhmm, 0, 2).':00';
+                        if (isset($hourFreeCounts[$hourLabel])) {
+                            $hourFreeCounts[$hourLabel]++;
+                        }
                         $allTimes[$hhmm] = true;
                     }
+
                     $cursor = $cursor->addMinutes(30);
                 }
             }
+
+            // Determine which display hours are fully booked (no free half-hour)
+            $occupied = [];
+            foreach ($hourFreeCounts as $hour => $freeCount) {
+                if ($freeCount === 0) {
+                    $occupied[] = $hour;
+                }
+            }
+
             $slotsByCounselor[$c->id] = collect($col)->unique('value')->sortBy('value')->values()->all();
+            $occupiedBy[$c->id]       = $occupied; // NEW
         }
 
-        // Pooled capacity per HH:MM
+        // Pooled capacity per HH:MM (as you had)
         $repo   = app(AppointmentRepositoryInterface::class);
         $pooled = [];
         foreach (array_keys($allTimes) as $hhmm) {
@@ -461,8 +488,9 @@ class ChatbotSessionController extends Controller
 
         return response()->json([
             'counselors' => $counselors->map(fn($r)=>['id'=>$r->id,'name'=>$r->name])->values(),
-            'slots'      => $slotsByCounselor,
-            'pooled'     => $pooled,
+            'slots'      => $slotsByCounselor,   // unchanged
+            'pooled'     => $pooled,             // unchanged
+            'occupied_by'=> $occupiedBy,         // NEW
         ]);
     }
 
