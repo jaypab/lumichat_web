@@ -502,13 +502,11 @@ if ($isUserGreeting) {
 
     // Topic summary (unchanged gist)
     $count = Chat::where('chat_session_id', $sessionId)->where('sender', 'user')->count();
-    // --- NEW: Defer Rasa on the user's first content turn
+// --- NEW: Defer Rasa on the user's first content turn (ONE line only)
 $deferKey       = 'defer_rasa_until_reply_' . $sessionId;
-$helpcheckKey   = 'helpcheck_at_' . $sessionId;      // you already use this later
-$pendingApptKey = 'pending_appt_cta_' . $sessionId;  // you already use this later
+$helpcheckKey   = 'helpcheck_at_' . $sessionId;
+$pendingApptKey = 'pending_appt_cta_' . $sessionId;
 
-// If this is the first user message in this session, send empathy + open question only.
-// Arm the defer flag so the NEXT user message will trigger Rasa + help-check.
 if ($count === 1 && !session($deferKey, false)) {
     $primaryEmotion = $this->choosePrimaryEmotion($labels);
     $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
@@ -518,12 +516,6 @@ if ($count === 1 && !session($deferKey, false)) {
     $first = preg_split('/\s+/', $name, 2)[0] ?? $name;
     $preface = str_replace(['{USER_NAME}','{USER_FIRST}','{USER}','{NAME}'], [e($name), e($first), e($first), e($name)], $preface);
 
-    // End with one gentle open question (no help-check yet)
-    $followQ = $this->pickLanguageVariant(
-        "What’s been weighing on you most today? / Asa ang pinakabug-at karon?",
-        $lang
-    );
-
     $bot1 = Chat::create([
         'user_id'         => $userId,
         'chat_session_id' => $sessionId,
@@ -531,15 +523,8 @@ if ($count === 1 && !session($deferKey, false)) {
         'message'         => Crypt::encryptString($preface),
         'sent_at'         => now(),
     ]);
-    $bot2 = Chat::create([
-        'user_id'         => $userId,
-        'chat_session_id' => $sessionId,
-        'sender'          => 'bot',
-        'message'         => Crypt::encryptString($followQ),
-        'sent_at'         => now(),
-    ]);
 
-    session([$deferKey => true]); // mark that next user reply should trigger Rasa + help-check
+    session([$deferKey => true]); // next user reply triggers Rasa + help-check
 
     return response()->json([
         'user_message' => [
@@ -551,14 +536,11 @@ if ($count === 1 && !session($deferKey, false)) {
             'id' => $bot1->id, 'text' => $preface, 'buttons' => [],
             'time_human' => $bot1->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
             'sent_at'    => $bot1->sent_at->toIso8601String(),
-        ],[
-            'id' => $bot2->id, 'text' => $followQ, 'buttons' => [],
-            'time_human' => $bot2->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
-            'sent_at'    => $bot2->sent_at->toIso8601String(),
         ]],
         'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
     ]);
 }
+
 
     if ($count === 1) {
         preg_match('/\b(sad|depress|help|anxious|angry|lonely|stress|tired|happy|excited|not okay|nagool|kapoy|kulba|nalipay)\b/i', $text, $m);
@@ -701,7 +683,7 @@ if ($this->lastBotWasHelpCheck($sessionId)) {
             'user_id'=>$userId,'chat_session_id'=>$sessionId,'sender'=>'bot',
             'message'=>Crypt::encryptString($cta),'sent_at'=>now(),
         ]);
-
+        session(['flow_done_'.$sessionId => true]);
         // clear all “flow” flags
         session()->forget($helpcheckKey);
         session()->forget($pendingApptKey);
@@ -847,7 +829,12 @@ if ($this->lastBotWasHelpCheck($sessionId)) {
     }
 
     // 9) After-Rasa: ALWAYS ask the quick help-check (same turn), then arm consent for next turn
-if (!$skipRasaThisTurn && !empty($botReplies)) {
+if (
+    !$skipRasaThisTurn
+    && !empty($botReplies)
+    && !session()->has('flow_done_'.$sessionId)     // NEW: stop if finished
+    && !session()->has($helpcheckKey)               // NEW: don't stack multiple pending checks
+) {
     $botReplies[] = [
         'text'    => "Did that help even a little, {USER_FIRST}? / Nakatabang ba to bisag gamay, {USER_FIRST}?",
         'buttons' => [],
@@ -861,7 +848,14 @@ if (!$skipRasaThisTurn && !empty($botReplies)) {
     // 10) If consent was armed earlier and the user has now replied, APPEND coping Yes/No
     $armedAt     = session($doorKey, null);
     $helpAskedAt = session($helpcheckKey, null);
-    if ($armedAt !== null && $count > (int)$armedAt && !$forceCopingNow && !$declineCoping) {
+    if (
+        !$forceCopingNow
+        && !$declineCoping
+        && !session()->has('flow_done_'.$sessionId)        // don't offer if we concluded
+        && $helpAskedAt !== null                           // a help-check was actually asked
+        && $armedAt !== null
+        && $count > (int)$armedAt                          // user has replied since help-check
+    ) {
         $botReplies[] = [
             'text' =>
                 "If you want, I can also share a few coping tips based on how you’re feeling. Want them now? / " .
@@ -873,15 +867,24 @@ if (!$skipRasaThisTurn && !empty($botReplies)) {
         ];
         $builtConsent = true;
         session()->forget($doorKey);
-        if ($helpAskedAt !== null) session()->forget($helpcheckKey);
+        session()->forget($helpcheckKey); // we've consumed the check → clear it
     }
 
-    // 11) Empathy preface (unchanged selection logic)
-    $primaryEmotion = $this->choosePrimaryEmotion($labels);
-    if (!$forceCopingNow && !$declineCoping && !$suppressEmpathyForGreeting && $this->shouldPreface($sessionId, $labels, $msgRisk)) {
-        $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
-        array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
-    }
+
+    // 11) Empathy preface (guarded by flow_done)
+$primaryEmotion = $this->choosePrimaryEmotion($labels);
+
+if (
+    !session()->has('flow_done_'.$sessionId) &&            // ← add this guard OUTSIDE
+    !$forceCopingNow &&
+    !$declineCoping &&
+    !$suppressEmpathyForGreeting &&
+    $this->shouldPreface($sessionId, $labels, $msgRisk)
+) {
+    $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
+    array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
+}
+
 
    // 12) Acknowledge decline gently AND (if relevant) show appointment CTA immediately
 if ($declineCoping) {
@@ -938,17 +941,18 @@ if ($declineCoping) {
         }
     }
 
-    // 14) Bridge follow-up turn-3 (guarded)
-    if ($count === 3) {
-        $lastTxt = trim((string)($botReplies[count($botReplies)-1]['text'] ?? ''));
-        $alreadyQ = str_ends_with($lastTxt, '?');
-        if (!$alreadyQ) {
-            $botReplies[] = [
-                'text'    => $this->bridgeFollowup($primaryEmotion, $first),
-                'buttons' => [],
-            ];
-        }
+// 14) Bridge follow-up turn-3 (guarded by flow_done)
+if ($count === 3 && !session()->has('flow_done_'.$sessionId)) {
+    $lastTxt  = trim((string)($botReplies[count($botReplies)-1]['text'] ?? ''));
+    $alreadyQ = str_ends_with($lastTxt, '?');
+    if (!$alreadyQ) {
+        $botReplies[] = [
+            'text'    => $this->bridgeFollowup($primaryEmotion, $first),
+            'buttons' => [],
+        ];
     }
+}
+
 
     // De-dup baseline
     $lastBot = Chat::where('chat_session_id', $sessionId)->where('sender','bot')->latest('sent_at')->first();
@@ -1579,6 +1583,11 @@ private function lastBotWasHelpCheck(int $sessionId): bool
 
     $t = $this->normalizeText($txt ?? '');
     return (bool)preg_match('/\b(did (that|it) (help|ease|relieve)|feel .* (lighter|easier))\b/u', $t);
+    return (bool)preg_match(
+    '/\b(did (that|it) (help|ease|relieve)|feel .* (lighter|easier)|did (any|any part) of that help)\b/u',
+    $t
+);
+
 }
 
 private function parseYesNoGeneric(string $text): ?string
