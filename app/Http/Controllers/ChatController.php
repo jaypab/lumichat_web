@@ -389,7 +389,7 @@ if ($isUserGreeting) {
     $first = explode(' ', $name)[0] ?? $name;
 
     $variants = [
-        "Hi {USER_FIRST} — I’m here with you. What feels most pressing right now? / Hi {USER_FIRST} — ania ko nimo. Asa ang pinakalisod karon?",
+        "Hi {USER_FIRST} — I’m here with you. How can i help you? / Hi {USER_FIRST} — ania ko nimo. Asa ang pinakalisod karon?",
         "Thanks for reaching out, {USER_FIRST}. What’s on your mind? / Salamat sa pag-message, {USER_FIRST}. Unsay naa sa imong huna-huna?",
         "I’m listening, {USER_FIRST}. Where should we start? / Naminaw ko, {USER_FIRST}. Asa ta magsugod?",
     ];
@@ -1188,22 +1188,31 @@ if (!$builtConsent) {
 
 private function bridgeFollowup(?string $emotion, string $nameFirst): string
 {
-    // EN / CEB — question-forward, neutral (no “tips/grounding/breathing” words here)
-    $generic = [
-        "Did any part of that help a little, {$nameFirst}? What feels most pressing now? / Nakatabang ba gamay to, {$nameFirst}? Asa ang pinakalisod karon?",
-        "Thanks for sharing, {$nameFirst}. Where should we start first? / Salamat sa pag-share, {$nameFirst}. Asa ta magsugod?",
-        "I hear you, {$nameFirst}. What’s one small detail I should understand better? / Nadungog tika, {$nameFirst}. Unsay usa ka detalye nga angay nakong masabtan?",
+    // EN / CEB lines (split with " / " so pickLanguageVariant() still works)
+    $variants = [
+        // direct “helped a little” checks
+        "Did that help even a little, {N}? / Nakatabang ba to bisag gamay, {N}?",
+        "Did any part of that help a bit, {N}? / Nakatabang ba og gamay ang bisan usa ato, {N}?",
+        "Do you feel even a tiny bit lighter after that, {N}? / Murag nibug-at gamay ang gibati nimo human ato, {N}?",
+
+        // “eased/relieved” feeling checks
+        "Did that ease things even a little, {N}? / Nikanubag ba gamay ang gibati nimo, {N}?",
+        "Did it relieve a bit of the heaviness, {N}? / Nakuha-an ba gamay ang kabug-at, {N}?",
+        "Is it slightly easier to breathe now, {N}? / Mas sayon ba gamay ginhawa karon, {N}?",
+
+        // reflective + still checking relief
+        "Do you feel even a bit more okay now, {N}? / Human ato, mas okay ba gamay ang paminaw nimo, {N}?",
+        "Did that make things feel the tiniest bit more manageable, {N}? / Mas madala ba gamay karon, {N}?",
     ];
 
-    $byEmotion = [
-        'stressed'    => "Makes sense, {$nameFirst}. Which task or thought piles up fastest? / Masabtan ra. Asa nga buluhaton o huna-huna ang dali kaayong magtapok?",
-        'anxious'     => "Got it, {$nameFirst}. What worry pops up first? / Sige. Unsay unang kabalaka nga mosulod?",
-        'sad'         => "I’m with you, {$nameFirst}. What adds most to the heaviness? / Ania ko. Unsa’y pinakadugang sa kabug-at?",
-        'overwhelmed' => "Let’s take it piece by piece, {$nameFirst}. Where should we start? / Hinay-hinay lang. Asa ta magsugod?",
-    ];
+    // Rotate to avoid repetition
+    $i    = (int) session('bridge_idx', -1);
+    $next = ($i + 1) % count($variants);
+    session(['bridge_idx' => $next]);
 
-    return $byEmotion[strtolower((string)$emotion)] ?? $generic[array_rand($generic)];
+    return str_replace('{N}', $nameFirst, $variants[$next]);
 }
+
 // Detect explicit coping commands coming from quick-reply buttons or typed text.
 private function parseCopingCommand(string $text): ?string
 {
