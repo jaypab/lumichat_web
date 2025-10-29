@@ -355,6 +355,10 @@ public function store(Request $request)
     if (!Str::isUuid($idem)) $idem = (string) Str::uuid();
 
     $isUserGreeting = $this->isUserGreeting($analysisText);
+    // If the message is purely a greeting, we’ll avoid empathy inserts this turn.
+    $suppressEmpathyForGreeting = $isUserGreeting
+    || (bool)preg_match('/^(hi+|hello+|hey+|yo+)\b[^\w]*$/iu', $this->normalizeText($analysisText));
+
     if ($isUserGreeting) {
         // (same as your version) ...
         // returns early
@@ -617,7 +621,13 @@ public function store(Request $request)
 
     // 11) Empathy preface (unchanged selection logic)
     $primaryEmotion = $this->choosePrimaryEmotion($labels);
-    if (!$forceCopingNow && !$declineCoping && $this->shouldPreface($sessionId, $labels, $msgRisk)) {
+    if (
+    !$forceCopingNow &&
+    !$declineCoping &&
+    !$suppressEmpathyForGreeting &&                 // <<< NEW: skip empathy on pure greetings
+    $this->shouldPreface($sessionId, $labels, $msgRisk)
+) {
+
         $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
 
         if ($count === 1) {
@@ -1173,13 +1183,25 @@ private function normalizeText(string $t): string
 private function isUserGreeting(string $t): bool
 {
     $t = $this->normalizeText($t);
-    // very short salutations or simple “kumusta” patterns
-    if (preg_match('/\b(hi+|hello+|hey+|yo+|kumusta|must[aā]|good (morning|afternoon|evening))\b/u', $t)) {
-        // avoid “hi i feel …” → greeting + content
-        return !preg_match('/\b(i feel|i\'?m|ako|nasuko|nagool|kapoy|problem|issue|help|anxious|sad|stress)\b/u', $t);
+
+    // Single short greeting tokens like: hi, hii, hiii, hello, helloo, hey, heyy, yo, kumusta, musta, etc.
+    if (preg_match('/^(hi+|hello+|hey+|yo+|kumusta|musta|good (morning|afternoon|evening))$/u', $t)) {
+        return true;
     }
+
+    // Greeting at start with nothing meaningful after (e.g., "hi!", "hello!!", "hey :)")
+    if (preg_match('/^(hi+|hello+|hey+|yo+)\b[^\w]*$/u', $t)) {
+        return true;
+    }
+
+    // Avoid treating as pure greeting if there is real content
+    if (preg_match('/\b(i feel|i\'?m|ako|nasuko|nagool|kapoy|problem|issue|help|anxious|sad|stress|anxiety|depress)\b/u', $t)) {
+        return false;
+    }
+
     return false;
 }
+
 
 private function looksLikeGreeting(string $t): bool
 {
