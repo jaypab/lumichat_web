@@ -629,15 +629,17 @@ if ($isUserGreeting) {
         session([$pendingApptKey => true]);  // remember to include CTA after help-check
     }
 
-    // 9) After-Rasa turn-2 helper check, then arm consent for next user turn
-    if (!$skipRasaThisTurn && $count === 2 && !empty($botReplies) && $strippedCopingThisTurn) {
-        $botReplies[] = [
-            'text'    => "Did any part of that help even a little, {USER_FIRST}? What feels most pressing right now? / Nakatabang ba gamay bisan usa, {USER_FIRST}? Asa ang pinakalisod karon?",
-            'buttons' => [],
-        ];
-        session([$doorKey => $count]);
-        session([$helpcheckKey => $count]);
-    }
+    // 9) After-Rasa: ALWAYS ask the quick help-check (same turn), then arm consent for next turn
+if (!$skipRasaThisTurn && !empty($botReplies)) {
+    $botReplies[] = [
+        'text'    => "Did that help even a little, {USER_FIRST}? / Nakatabang ba to bisag gamay, {USER_FIRST}?",
+        'buttons' => [],
+    ];
+    // Arm the “consent to coping tips” for the NEXT user message
+    session([$doorKey => $count]);     // mark which user-turn we’ll expect the answer on
+    session([$helpcheckKey => $count]); 
+}
+
 
     // 10) If consent was armed earlier and the user has now replied, APPEND coping Yes/No
     $armedAt     = session($doorKey, null);
@@ -664,13 +666,34 @@ if ($isUserGreeting) {
         array_unshift($botReplies, ['text' => $preface, 'buttons' => []]);
     }
 
-    // 12) Acknowledge decline gently
-    if ($declineCoping) {
-        array_unshift($botReplies, [
-            'text'    => "No worries, {USER_FIRST}. I’m here to listen—what would you like to talk through next? / Sige, {USER_FIRST}. Naa ra ko maminaw—unsa imong gusto hisgutan sunod?",
+   // 12) Acknowledge decline gently AND (if relevant) show appointment CTA immediately
+if ($declineCoping) {
+    array_unshift($botReplies, [
+        'text'    => "No worries, {USER_FIRST}. I’m here to listen—what would you like to talk through next? / Sige, {USER_FIRST}. Naa ra ko maminaw—unsa imong gusto hisgutan sunod?",
+        'buttons' => [],
+    ]);
+
+    // If user previously asked for appointment OR risk is high, show the CTA now (not later)
+    if (session($pendingApptKey, false)) {
+        $link   = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
+            ? \Illuminate\Support\Facades\URL::signedRoute('features.enable_appointment')
+            : (\Illuminate\Support\Facades\Route::has('appointment.index') ? route('appointment.index') : url('/appointment'));
+        $ctaHtml = '<a href="'.e($link).'">Book an appointment</a>';
+
+        $botReplies[] = [
+            'text' =>
+                "It’s okay to feel that way. If you prefer to talk with a counselor, you can book time here: {APPOINTMENT_LINK} / ".
+                "Okay ra nga ingon ana imong paminaw. Kung gusto ka makig-istorya sa counselor, pwede ka mag-book dinhi: {APPOINTMENT_LINK}",
             'buttons' => [],
-        ]);
+        ];
+
+        // clear the pending flag so we don’t repeat the CTA
+        session()->forget($pendingApptKey);
+        // flag so the replacer below can swap the link token
+        $builtConsent = $builtConsent ?? false; // keep var defined
+        // (no need to set ctaAfterHelpKey; we are adding CTA now)
     }
+}
 
     // 13) Early-turn coping strip (safety for very early turns)
     if (!$forceCopingNow && $count <= 3 && !$builtConsent) {
