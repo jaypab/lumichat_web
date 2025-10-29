@@ -599,7 +599,6 @@ public function store(Request $request)
     }
 
     // 11) Empathy preface (unchanged selection logic)
-    $suppressEmpathyForGreeting = false; // we already handled greeting elsewhere in your codebase
     $primaryEmotion = $this->choosePrimaryEmotion($labels);
     if (!$forceCopingNow && !$declineCoping && !$suppressEmpathyForGreeting && $this->shouldPreface($sessionId, $labels, $msgRisk)) {
         $preface = $this->empathyTemplate($primaryEmotion, $msgRisk);
