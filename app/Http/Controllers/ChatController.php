@@ -453,9 +453,6 @@ public function store(Request $request)
     // 3) Language + risk (use the same analysisText used for emotions)
     $lang    = $this->inferLanguage($text);
     $msgRisk = $this->evaluateRiskLevel($analysisText);
-    // Pull any delayed coping offer from previous turn (we will append it later)
-    $delayedCoping = $this->popCopingOffer($sessionId);
-
     if ($selfThreat) {
         $msgRisk = 'high';
     }
@@ -629,51 +626,19 @@ public function store(Request $request)
             $prefaceAdded = true;
         }
 
-if ($prefaceAdded && isset($botReplies[1])) {
-    $firstRasa = $botReplies[1];
+        /* If we inserted a preface, suppress the first Rasa text but keep its buttons.
+        Result: only ONE text bubble shows (the preface), with any quick-reply buttons preserved. */
+        if ($prefaceAdded && isset($botReplies[1])) {
+            $firstRasa = $botReplies[1];
 
-    // If buttons look like a coping offer, stage for NEXT turn; else merge now
-    if (!empty($firstRasa['buttons']) && is_array($firstRasa['buttons'])) {
-        if ($this->isCopingOfferButtons($firstRasa['buttons'])) {
-            $this->stageCopingOffer($sessionId, $firstRasa['buttons'], $lang);
-        } else {
-            $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $firstRasa['buttons']);
+            // Merge buttons (if any) into the preface
+            if (!empty($firstRasa['buttons']) && is_array($firstRasa['buttons'])) {
+                $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $firstRasa['buttons']);
+            }
+
+            // Drop that first Rasa text bubble entirely
+            array_splice($botReplies, 1, 1);
         }
-    }
-
-    // Drop that first Rasa text bubble entirely
-    array_splice($botReplies, 1, 1);
-}
-
-        // --- Comfort insertion (non-question, reflective) BEFORE Rasa content
-$comfortAdded = false;
-if ($this->shouldComfort($sessionId, $labels, $msgRisk)) {
-    $comfort = $this->comfortTemplate($primaryEmotion, $msgRisk);
-
-if ($prefaceAdded) {
-    array_splice($botReplies, 1, 0, [['text' => $comfort, 'buttons' => []]]);
-    if (isset($botReplies[2]) && !empty($botReplies[2]['buttons'])) {
-        if ($this->isCopingOfferButtons($botReplies[2]['buttons'])) {
-            $this->stageCopingOffer($sessionId, $botReplies[2]['buttons'], $lang);
-        } else {
-            $botReplies[1]['buttons'] = array_merge($botReplies[1]['buttons'] ?? [], $botReplies[2]['buttons']);
-        }
-    }
-    if (isset($botReplies[2])) array_splice($botReplies, 2, 1);
-} else {
-    array_unshift($botReplies, ['text' => $comfort, 'buttons' => []]);
-    if (isset($botReplies[1]) && !empty($botReplies[1]['buttons'])) {
-        if ($this->isCopingOfferButtons($botReplies[1]['buttons'])) {
-            $this->stageCopingOffer($sessionId, $botReplies[1]['buttons'], $lang);
-        } else {
-            $botReplies[0]['buttons'] = array_merge($botReplies[0]['buttons'] ?? [], $botReplies[1]['buttons']);
-        }
-    }
-    if (isset($botReplies[1])) array_splice($botReplies, 1, 1);
-}
-
-    $comfortAdded = true;
-}
 
 
 
@@ -688,9 +653,6 @@ if ($prefaceAdded) {
 
     $botPayload = [];
     foreach ($botReplies as $replyObj) {
-        // If a coping offer was staged from the PREVIOUS turn, append it NOW,
-        // *after* the current Rasa response set, using the original 2-button format.
-
         $replyText = (string) ($replyObj['text'] ?? '');
         $replyBtns = (isset($replyObj['buttons']) && is_array($replyObj['buttons'])) ? $replyObj['buttons'] : [];
 
@@ -707,27 +669,16 @@ if ($prefaceAdded) {
             [$safeName,     $safeFirst,     $safeFirst, $safeName],
             $replyText
         );
-        if ($delayedCoping && !empty($delayedCoping['buttons'])) {
-            $offerText = (string)($delayedCoping['text'] ?? "Would you like some quick coping tips? / Gusto ka og mubo nga coping tips?");
-            $offerButtons = $delayedCoping['buttons'];
 
-            // Ensure the delayed buttons use the appointment-link normalization later in your button normalization.
-            $botReplies[] = ['text' => $offerText, 'buttons' => $offerButtons];
-        }
         // buttons: turn payload "{APPOINTMENT_LINK}" into url $link
         $normalizedBtns = [];
         foreach ($replyBtns as $b) {
             $title   = (string)($b['title'] ?? 'Open');
             $payload = $b['payload'] ?? null;
             $url     = $b['url'] ?? null;
-            
 
             if (is_string($payload) && trim($payload) === '{APPOINTMENT_LINK}') {
                 $normalizedBtns[] = ['title' => $title, 'url' => $link];
-                if (empty($normalizedBtns)) {
-    // A neutral, low-branching nudge (no question, no new topic)
-    $normalizedBtns[] = ['title' => 'Continue'];
-}
             } else {
                 $one = ['title' => $title];
                 if ($url)     $one['url'] = $url;
@@ -1064,179 +1015,4 @@ private function shouldPreface(int $sessionId, array $labels, string $risk): boo
 
     return $should;
 }
-/* =========================================================================
- | Comfort flow (non-question, reflective prompts)
- * =========================================================================*/
-
-private function shouldComfort(int $sessionId, array $labels, string $risk): bool
-{
-    // Show gentle comfort on the first 2 turns, whenever risk >= moderate,
-    // when the primary emotion changes, and every 2nd turn; short cooldown.
-    $key  = 'comfort_meta_'.$sessionId;
-    $meta = session($key, ['last_emotion'=>null, 'turns'=>0, 'last_time'=>0]);
-
-    $primary = $this->choosePrimaryEmotion($labels);
-    $meta['turns'] = (int)$meta['turns'] + 1;
-
-    $emotionChanged = $primary && $primary !== ($meta['last_emotion'] ?? null);
-    $firstTwo       = $meta['turns'] <= 2;
-    $timeOk         = (time() - (int)$meta['last_time']) >= 25;
-    $everySecond    = ($meta['turns'] % 2 === 0);
-
-    $prioScore      = self::EMOTION_PRIORITY[$primary ?? ''] ?? 0;
-    $strongEmotion  = ($prioScore >= 2);
-
-    $should = $firstTwo || $risk !== 'low' || $emotionChanged || $strongEmotion || $everySecond;
-    $should = $should && $timeOk;
-
-    $meta['last_emotion'] = $primary ?: ($meta['last_emotion'] ?? null);
-    if ($should) $meta['last_time'] = time();
-    session([$key => $meta]);
-
-    return $should;
-}
-
-/**
- * Non-question, comforting lines. EN / CEB variants in one string.
- * Keep them short, validating, and gently invitational without "?"
- */
-private function comfortTemplate(?string $emotion, string $risk): string
-{
-    // Risk-aware first
-    if ($risk === 'high') {
-        $high = [
-            "You matter, {USER_FIRST}. I’m staying with you. We can take this one breath at a time / Importante ka, {USER_FIRST}. Ania ko uban nimo. Hinay-hinay lang ta og ginhawa",
-            "Thank you for telling me, {USER_FIRST}. You’re not alone and I’m here with care / Salamat sa pagsulti, {USER_FIRST}. Dili ka nag-inusara ug ania ko nga nag-atiman",
-        ];
-        return $high[array_rand($high)];
-    }
-    if ($risk === 'moderate') {
-        $mod = [
-            "That sounds heavy, {USER_FIRST}. I’m here and you’re safe to share at your pace / Bug-at paminawon, {USER_FIRST}. Ania ko ug luwas ka nga mo-share sa imong tempo",
-            "Your feelings are valid, {USER_FIRST}. We can move gently and keep things simple / Balido imong gibati, {USER_FIRST}. Hinay-hinay lang ta ug himuong yano ang tanan",
-        ];
-        return $mod[array_rand($mod)];
-    }
-
-    // Emotion-focused lines (no questions)
-    $byEmotion = [
-        'sad'         => [
-            "I’m sorry this feels heavy, {USER_FIRST}. I’m right here with you / Gikasubo nako, {USER_FIRST}. Ania ko uban nimo",
-        ],
-        'anxious'     => [
-            "That sounds tense, {USER_FIRST}. Let’s slow down together for a moment / Murag tensiyonado, {USER_FIRST}. Hinay-hinay ta kadali",
-        ],
-        'stressed'    => [
-            "You’ve been carrying a lot, {USER_FIRST}. We’ll keep it light and manageable / Daghan kag gidala, {USER_FIRST}. Atoning yanoon ug hinay-hinay",
-        ],
-        'overwhelmed' => [
-            "Everything piling up can feel too much, {USER_FIRST}. I’m here beside you / Kung magtapok tanan lisod gyud, {USER_FIRST}. Ania ko sa imong kilid",
-        ],
-        'angry'       => [
-            "Your feelings are understood, {USER_FIRST}. I’m holding space for you / Nasabtan ang imong gibati, {USER_FIRST}. Ania ko maminaw",
-        ],
-        'tired'       => [
-            "You sound drained, {USER_FIRST}. We can take this slowly / Murag gikapoy kaayo, {USER_FIRST}. Hinay-hinay lang ta",
-        ],
-        'lonely'      => [
-            "Loneliness can hurt, {USER_FIRST}. I’m with you now / Masakit ang kamingaw, {USER_FIRST}. Ania ko karon",
-        ],
-        'confused'    => [
-            "It’s okay to be unsure, {USER_FIRST}. We’ll keep things gentle / Okay ra malibog, {USER_FIRST}. Hinay-hinay lang nato",
-        ],
-        'not_ok'      => [
-            "Not feeling okay is okay, {USER_FIRST}. You’re safe here / Okay ra nga dili okay, {USER_FIRST}. Luwas ka dinhi",
-        ],
-        'disappointed'=> [
-            "Being let down can sting, {USER_FIRST}. I’m staying with you / Masakit ma-let down, {USER_FIRST}. Ania ko uban nimo",
-        ],
-        'hurt'        => [
-            "That sounded painful, {USER_FIRST}. I’m here with care / Murag masakit, {USER_FIRST}. Ania ko nag-atiman",
-        ],
-        'ashamed'     => [
-            "Shame can feel heavy, {USER_FIRST}. You are still worthy / Bug-at ang ulaw, {USER_FIRST}. Bililhon gihapon ka",
-        ],
-        'guilty'      => [
-            "Guilt is tough, {USER_FIRST}. We’ll be kind and steady / Lisod ang kasubo, {USER_FIRST}. Malumo ug hinay-hinay ta",
-        ],
-        'insecure'    => [
-            "Self-doubt gets loud sometimes, {USER_FIRST}. You’re not alone / Kusog usahay ang pagduha-duha, {USER_FIRST}. Dili ka nag-inusara",
-        ],
-        'bored'       => [
-            "Feeling flat happens, {USER_FIRST}. We can keep this gentle / Mahitabo ang pagka-flat, {USER_FIRST}. Hinay-hinay lang nato",
-        ],
-        'disgust'     => [
-            "That was hard to take in, {USER_FIRST}. I’m here with you / Lisod to dawaton, {USER_FIRST}. Ania ko uban nimo",
-        ],
-        'surprised'   => [
-            "That was unexpected, {USER_FIRST}. I’m here as you settle / Wala damha, {USER_FIRST}. Ania ko samtang maghinay-hinay",
-        ],
-        'homesick'    => [
-            "Missing home is tough, {USER_FIRST}. You’re not alone / Lisod ang mingaw sa balay, {USER_FIRST}. Dili ka nag-inusara",
-        ],
-        'love'        => [
-            "That warmth matters, {USER_FIRST}. Holding onto what helps is okay / Bililhon na nga kainit, {USER_FIRST}. Okay ra nga kapyutan ang makatabang",
-        ],
-        'determined'  => [
-            "I see your drive, {USER_FIRST}. We’ll keep it steady / Kita nako imong determinasyon, {USER_FIRST}. Hinay-hinay ug lig-on ta",
-        ],
-        'calm'        => [
-            "I’m glad there’s some calm, {USER_FIRST}. We can keep it gentle / Maayo nga naay kalinaw, {USER_FIRST}. Padayonan nato ni og hinay-hinay",
-        ],
-    ];
-
-    if ($emotion && isset($byEmotion[$emotion])) {
-        $pool = $byEmotion[$emotion];
-        return $pool[array_rand($pool)];
-    }
-
-    // Generic—no questions
-    $generic = [
-        "It’s okay to feel this, {USER_FIRST}. I’m here and you can take your time / Okay ra ning gibati nimo, {USER_FIRST}. Ania ko ug pwede ka maghinay-hinay",
-        "{USER_FIRST}, thanks for opening up. You’re safe here and I’m staying with you / Salamat sa pagkabukas, {USER_FIRST}. Luwas ka dinhi ug ania ko uban nimo",
-    ];
-    return $generic[array_rand($generic)];
-}
-
-/* =========================================================================
- | Coping-offer delay helpers
- * =========================================================================*/
-
-private function isCopingOfferButtons(array $buttons): bool
-{
-    foreach ($buttons as $b) {
-        $title = mb_strtolower((string)($b['title'] ?? ''));
-        $payload = mb_strtolower((string)($b['payload'] ?? ''));
-        if (
-            str_contains($title, 'tip') ||
-            str_contains($title, 'show tip') ||
-            str_contains($payload, 'tip') ||
-            str_contains($payload, 'coping')
-        ) {
-            return true;
-        }
-    }
-    return false;
-}
-
-private function stageCopingOffer(int $sessionId, array $buttons, string $lang = 'en'): void
-{
-    // Keep original button objects so we preserve your exact titles/payloads/urls
-    session(['delayed_coping_'.$sessionId => [
-        'buttons' => $buttons,
-        'lang'    => $lang,
-        // Optional: your standard offer text in EN/CEB "dual" format:
-        'text'    => "Would you like some quick coping tips? / Gusto ka og mubo nga coping tips?",
-    ]]);
-}
-
-private function popCopingOffer(int $sessionId): ?array
-{
-    $key = 'delayed_coping_'.$sessionId;
-    $v = session($key);
-    if ($v) session()->forget($key);
-    return $v ?: null;
-}
-
-
 }
