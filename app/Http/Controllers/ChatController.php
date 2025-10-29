@@ -418,6 +418,21 @@ if ($isUserGreeting) {
         'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
     ]);
 }
+// Persist the user's greeting so turn counting stays correct
+try {
+    Chat::firstOrCreate(
+        ['idempotency_key' => $idem],
+        [
+            'user_id'         => $userId,
+            'chat_session_id' => $sessionId,
+            'sender'          => 'user',
+            'message'         => Crypt::encryptString($text), // the original greeting
+            'sent_at'         => now(),
+        ]
+    );
+} catch (\Throwable $e) {
+    // best effort; ignore duplicate/race
+}
 
 
     if (!Str::isUuid($idem)) {
