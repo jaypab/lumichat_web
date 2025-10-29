@@ -353,6 +353,65 @@ public function store(Request $request)
     $idem = (string) $request->input('_idem', '');
     if (!Str::isUuid($idem)) $idem = (string) Str::uuid();
 
+    // --- Greeting guard (pure greetings get one friendly reply, no Rasa)
+$isUserGreeting = $this->isUserGreeting($analysisText);
+$suppressEmpathyForGreeting = $isUserGreeting
+    || (bool)preg_match('/^(hi+|hello+|hey+|yo+)\b[^\w]*$/iu', $this->normalizeText($analysisText));
+
+if ($isUserGreeting) {
+    $userId    = Auth::id();
+    $sessionId = session('chat_session_id');
+    $session   = $sessionId
+        ? ChatSession::where('id', $sessionId)->where('user_id', $userId)->first()
+        : null;
+
+    if (!$session) {
+        $session = ChatSession::create([
+            'user_id'       => $userId,
+            'topic_summary' => 'Starting conversation...',
+            'is_anonymous'  => 0,
+            'risk_level'    => 'low',
+        ]);
+        session(['chat_session_id' => $session->id]);
+    }
+
+    $lang  = $this->inferLanguage($analysisText);
+    $name  = $this->preferredName();
+    $first = preg_split('/\s+/', $name, 2)[0] ?? $name;
+
+    $greetReply = "Hello! How are you feeling today? / Kumusta! Kumusta imong gibati karon?";
+    $greetReply = $this->pickLanguageVariant($greetReply, $lang);
+    $greetReply = str_replace(
+        ['{USER_FIRST}','{USER}','{NAME}','{USER_NAME}'],
+        [e($first), e($first), e($name), e($name)],
+        $greetReply
+    );
+
+    $bot = Chat::create([
+        'user_id'         => $userId,
+        'chat_session_id' => $session->id,
+        'sender'          => 'bot',
+        'message'         => \Illuminate\Support\Facades\Crypt::encryptString($greetReply),
+        'sent_at'         => now(),
+    ]);
+
+    return response()->json([
+        'user_message' => [
+            'text'       => $analysisText,
+            'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => now()->toIso8601String(),
+        ],
+        'bot_reply' => [[
+            'id'         => $bot->id,
+            'text'       => $greetReply,
+            'buttons'    => [],
+            'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => $bot->sent_at->toIso8601String(),
+        ]],
+        'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+    ]);
+}
+
     // 2) Detect emotions + self-threat
     $emoResult  = $this->detectEmotions($analysisText);
     $labels     = (array)($emoResult['emotions'] ?? []);
