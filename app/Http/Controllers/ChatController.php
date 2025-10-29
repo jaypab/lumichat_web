@@ -359,11 +359,66 @@ public function store(Request $request)
     $suppressEmpathyForGreeting = $isUserGreeting
     || (bool)preg_match('/^(hi+|hello+|hey+|yo+)\b[^\w]*$/iu', $this->normalizeText($analysisText));
 
-    if ($isUserGreeting) {
-        // (same as your version) ...
-        // returns early
-        // ...
+    // --- Greeting short-circuit (EARLY RETURN)
+if ($isUserGreeting) {
+    // ensure a session exists (same pattern you use below)
+    $userId    = Auth::id();
+    $sessionId = session('chat_session_id');
+    $session   = $sessionId
+        ? ChatSession::where('id', $sessionId)->where('user_id', $userId)->first()
+        : null;
+
+    if (!$session) {
+        $session = ChatSession::create([
+            'user_id'       => $userId,
+            'topic_summary' => 'Starting conversation...',
+            'is_anonymous'  => 0,
+            'risk_level'    => 'low',
+        ]);
+        session(['chat_session_id' => $session->id]);
+        $sessionId = $session->id;
+        $this->logActivity('chat_session_created', 'New chat session auto-created', $session->id, [
+            'is_anonymous' => false,
+            'reused'       => false,
+        ]);
+    } else {
+        $sessionId = $session->id;
     }
+
+    $lang = $this->inferLanguage($text);
+    $name = $this->preferredName();
+    $first = preg_split('/\s+/', $name, 2)[0] ?? $name;
+
+    $greetReply =
+        "Hello! How are you feeling today? / Kumusta! Kumusta imong gibati karon?";
+    $greetReply = $this->pickLanguageVariant($greetReply, $lang);
+    $greetReply = str_replace(['{USER_FIRST}','{USER}','{NAME}','{USER_NAME}'], [e($first), e($first), e($name), e($name)], $greetReply);
+
+    $bot = Chat::create([
+        'user_id'         => $userId,
+        'chat_session_id' => $sessionId,
+        'sender'          => 'bot',
+        'message'         => \Illuminate\Support\Facades\Crypt::encryptString($greetReply),
+        'sent_at'         => now(),
+    ]);
+
+    return response()->json([
+        'user_message' => [
+            'text'       => $text,
+            'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => now()->toIso8601String(),
+        ],
+        'bot_reply' => [[
+            'id'         => $bot->id,
+            'text'       => $greetReply,
+            'buttons'    => [],
+            'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => $bot->sent_at->toIso8601String(),
+        ]],
+        'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+    ]);
+}
+
 
     if (!Str::isUuid($idem)) {
         $idem = (string) Str::uuid();
@@ -479,7 +534,7 @@ public function store(Request $request)
 
     // --- Coping consent / flow flags
     $doorKey                = 'door_after_rasa_' . $sessionId;
-    $helpcheckKey           = 'helpcheck_at_' . $sessionId;       // NEW: remember when we asked the helper check
+    $helpcheckKey           = 'helpcheck_at_' . $sessionId;       // NEW: remember when we asked the helper chec    k
     $skipRasaThisTurn       = session($doorKey, false);
     $forceCopingNow         = (bool) preg_match('/^\/show_coping\b/i', $analysisText);
     $declineCoping          = (bool) preg_match('/^\/skip_coping\b/i', $analysisText);
@@ -1194,8 +1249,13 @@ private function isUserGreeting(string $t): bool
         return false;
     }
 
-    // 2) Pure emoji / waves
-    if (preg_match('/^\p{Zs}*(👋|🤝|🙏|☺️|😊)+\p{Zs}*$/u', $t)) return true;
+    // Strip emoji variation selectors & skin tones so 👋🏻/👋🏾 etc. match
+    $emojiStripped = preg_replace('/[\x{FE0F}\x{1F3FB}-\x{1F3FF}]/u', '', $t ?? '');
+
+    // Pure emoji / waves
+    if (preg_match('/^\p{Zs}*(👋|🤝|🙏|☺️|😊)+\p{Zs}*$/u', $emojiStripped)) {
+        return true;
+    }
 
     // 3) Canonical greeting tokens (allow stretched letters with +)
     $greetCore = '(?:hi+|hello+|helo+|hey+|hiya+|yo+|howdy|g\'?day|alo+h?a|bonjour|hola|mabuhay|oi+|oy+)';
@@ -1246,6 +1306,7 @@ private function isUserGreeting(string $t): bool
 }
 
 
+
 private function looksLikeGreeting(string $t): bool
 {
     $t = $this->normalizeText($t);
@@ -1263,6 +1324,12 @@ private function endsWithQuestion(string $s): bool
 private function isPureGreetingText(string $s): bool
 {
     $t = $this->normalizeText($s);
-    return (bool) preg_match('/^(hi|hello|hey|good (morning|afternoon|evening)|kumusta)[.! ]*$/u', $t);
+    $emojiStripped = preg_replace('/[\x{FE0F}\x{1F3FB}-\x{1F3FF}]/u', '', $t ?? '');
+    return (bool) (
+        preg_match('/^(hi+|hello+|hey+|good (morning|afternoon|evening)|kumusta|kam?usta|musta)[.! ]*$/u', $t)
+        || preg_match('/^\p{Zs}*(👋|🤝|🙏|☺️|😊)+\p{Zs}*$/u', $emojiStripped)
+    );
 }
+
+
 }
