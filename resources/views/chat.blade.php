@@ -250,28 +250,45 @@
                       ? route('appointment.index')
                       : url('/appointment/book'));
 
-    /* --------- Visual styles --------- */
+    // Compact style only while the dots are showing
     const TYPING_TWEAKS = [
-      'display:inline-flex!important','align-items:center!important','justify-content:center!important',
-      'padding:6px 8px!important','min-width:36px!important','min-height:22px!important',
-      'width:auto!important','height:auto!important','border-radius:14px!important'
+      'display:inline-flex!important',
+      'align-items:center!important',
+      'justify-content:center!important',
+      'padding:6px 8px!important',
+      'min-width:36px!important',
+      'min-height:22px!important',
+      'width:auto!important',
+      'height:auto!important',
+      'border-radius:14px!important'
     ].join(';') + ';';
 
+    // Base bubble style
     const BASE = [
-      'display:inline-block!important','box-sizing:border-box!important','width:auto!important',
-      'max-width:min(520px,46ch)!important','min-height:0!important','padding:6px 10px!important',
-      'margin:0!important','border-radius:16px!important','white-space:pre-wrap!important',
-      'word-break:normal!important','overflow-wrap:anywhere!important','font-size:15px!important',
-      'line-height:22px!important','text-align:left!important'
+      'display:inline-block!important',
+      'box-sizing:border-box!important',
+      'width:auto!important',
+      'max-width:min(520px,46ch)!important',
+      'min-height:0!important',
+      'padding:6px 10px!important',
+      'margin:0!important',
+      'border-radius:16px!important',
+      'white-space:pre-wrap!important',
+      'word-break:normal!important',
+      'overflow-wrap:anywhere!important',
+      'font-size:15px!important',
+      'line-height:22px!important',
+      'text-align:left!important'
     ].join(';') + ';';
 
+    // User & bot bubble styles
     const userStyle = `${BASE}background:#4f46e5!important;color:#ffffff!important;align-self:flex-end!important;margin-left:auto!important;border-radius:16px!important;`;
     const botStyle  = () => {
       const dark = document.documentElement.classList.contains('dark');
       return `${BASE}background:${dark ? '#1f2937' : '#f3f4f6'}!important;color:${dark ? '#f8fafc' : '#111827'}!important;align-self:flex-start!important;border-radius:16px!important;`;
     };
 
-    /* --------- Helpers / sanitizers --------- */
+    /* Sanitizers */
     const INVISIBLE_RE = /[\u200B\u200C\u200D\u2060\uFEFF]/g;
     const URL_RE = /(https?:\/\/[^\s<>"']+)/gi;
     const sanitizeClient = raw => (raw || '').replace(INVISIBLE_RE,'').replace(/\s+/g,' ').trim();
@@ -300,7 +317,7 @@
     }
     const renderBotContent = s => /[<>]/.test(s) ? sanitizeBotHtml(s) : sanitizeBotHtml(linkify(s));
 
-    /* --------- Composer counter --------- */
+    /* Counter */
     function updateCounter(){
       let v = input.value || '';
       if (v.length > MAXLEN){ v = v.slice(0, MAXLEN); input.value = v; }
@@ -322,7 +339,7 @@
       updateCounter();
     });
 
-    /* --------- Bubble helpers --------- */
+    /* Bubble appenders */
     function appendUserBubble(text, time=''){
       messages.insertAdjacentHTML('beforeend', `
         <div class="msg-row flex flex-col w-full min-w-0">
@@ -348,6 +365,7 @@
       return messages.lastElementChild.querySelector('.bubble-ai');
     }
 
+    /* Typewriter */
     function typewriter(bubble, finalHTML, speed=24, minDotsMs=650){
       const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
       return new Promise((resolve)=>{
@@ -357,7 +375,9 @@
           messages.scrollTop = messages.scrollHeight;
           resolve();
         };
+
         if (reduced){ finish(); return; }
+
         const start = performance.now();
         const waitDots = () => {
           if (performance.now() - start < minDotsMs) return requestAnimationFrame(waitDots);
@@ -377,30 +397,24 @@
       });
     }
 
-    /* --------- Send queue --------- */
+    /* ---------- Send queue (defined BEFORE send) ---------- */
     let Q = Promise.resolve();
     const runQ = (task) => (Q = Q.then(task).catch(()=>{}));
 
-    /* --------- Time helper --------- */
+    /* ---------- Helpers: time, sendAction, send ---------- */
+
+    // time like "5:47:28 PM"
     const now12h = () =>
       new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
 
-    /* --------- Outage message (single-line only) --------- */
-    async function showOutageNotice(kind){
-      const msg = (kind === 'http')
-        ? 'LumiChat temporarily unavailable.'
-        : 'Sorry, I’m having trouble right now.';
-      await runQ(() => appendBotBubble(msg, ''));
-    }
-
-    /* --------- Actions / send --------- */
     let _pendingDisplayText = null;
 
     function sendAction(displayText, payloadText){
-      appendUserBubble(displayText, now12h());
-      _pendingDisplayText = displayText;
-      send(payloadText ?? displayText);
+      appendUserBubble(displayText, now12h());   // show the nice label + time
+      _pendingDisplayText = displayText;         // remember label so backend gets display_text
+      send(payloadText ?? displayText);          // send actual payload
     }
+
     function sendQuick(text){ sendAction(text, text); }
 
     async function send(message){
@@ -424,14 +438,8 @@
 
         _pendingDisplayText = null;
 
-        if (!res.ok){ await showOutageNotice('http'); return; }
+        if (!res.ok){ await runQ(()=>appendBotBubble('No reply from LumiCHAT Assistant.', '')); return; }
         const data = await res.json();
-
-        // If backend flagged Rasa down, honor the kind (optional)
-        if (data?.rasa_unavailable === true) {
-          await showOutageNotice(data?.outage_kind === 'http' ? 'http' : 'net');
-          return;
-        }
 
         let replies = data?.bot_reply;
         if (!Array.isArray(replies)) replies = [replies];
@@ -442,14 +450,14 @@
         }
       } catch {
         _pendingDisplayText = null;
-        await showOutageNotice('net');
+        await runQ(()=>appendBotBubble('Sorry, I’m having trouble right now.', ''));
       } finally {
         if (sendBtn) sendBtn.disabled = false;
         input?.focus();
       }
     }
 
-    /* --------- Buttons / quick actions --------- */
+    /* Rasa/structured buttons from backend */
     function renderButtons(buttons, bubble){
       if (!Array.isArray(buttons) || !buttons.length) return;
       const wrap = document.createElement('div');
@@ -478,8 +486,8 @@
           btn.textContent = label;
           btn.className = btnClass;
           btn.addEventListener('click', ()=>{
-            sendAction(label, payload);
-            afterClick();
+            sendAction(label, payload); // show label, send payload
+            afterClick();               // prevent double clicks
           });
           wrap.appendChild(btn);
         }
@@ -487,6 +495,7 @@
       bubble.appendChild(wrap);
     }
 
+    /* Quick actions (tips / referral) */
     function addQuickActions(bubble){
       if (bubble.querySelector('[data-qa="qr"]')) return;
 
@@ -497,6 +506,7 @@
         /share\s+coping\s+tips/i.test(raw) ||
         (plain.includes('coping') && /want(\s+them)?\s*now\??/.test(plain));
 
+      // Only trigger referral CTA when message explicitly mentions booking/appointment
       const mentionsReferral =
         /book\s+(a\s*)?counselor|appointment\s+page|open\s+the\s+appointment|schedule\s+an?\s*appointment/i.test(plain);
 
@@ -549,7 +559,7 @@
       if (hasRasaButtons) {
         renderButtons(obj.buttons, bubble);
       } else {
-        addQuickActions(bubble);
+        addQuickActions(bubble); // fallback UI only if no Rasa buttons
       }
 
       if (obj?.id) {
@@ -566,7 +576,7 @@
       messages.scrollTop = messages.scrollHeight;
     }
 
-    /* --------- Send on Enter / submit --------- */
+    /* Enter to send + Submit — use sendAction so display_text + timestamp match quick-replies */
     input.addEventListener('keydown', (e) => {
       if (e.isComposing) return;
       if (e.key === 'Enter' && !e.shiftKey){
@@ -587,11 +597,12 @@
       });
     }
 
-    /* --------- Init / rehydrate --------- */
+    /* Init */
     input.dispatchEvent(new Event('input'));
     updateCounter();
     messages && (messages.scrollTop = messages.scrollHeight);
 
+    // try to rehydrate buttons/quick actions for the last few messages
     (function rehydrateQuickActions(){
       try {
         const bots = Array.from(messages.querySelectorAll('.bubble-ai[data-sender="bot"]'));
@@ -626,11 +637,11 @@
       try { last = JSON.parse(sessionStorage.getItem(KEY))?.ts || 0; } catch {}
       const elapsedMin = (now - last) / 60000;
       if (!hasMessages && (!last || elapsedMin >= 60)){
-        sessionStorage.setItem(KEY, JSON.stringify({ ts: now }));
-        const wrap = document.getElementById('chat-wrapper');
-        const uname = (wrap?.dataset.userName || 'there').trim();
-        runQ(() => appendBotBubble(`Hi ${uname}! I’m Lumi — how can I help you today?`, ""));
-      }
+      sessionStorage.setItem(KEY, JSON.stringify({ ts: now }));
+      const wrap = document.getElementById('chat-wrapper');
+      const uname = (wrap?.dataset.userName || 'there').trim();
+      runQ(() => appendBotBubble(`Hi ${uname}! I’m Lumi — how can I help you today?`, ""));
+    }
     } catch {}
   });
 })();
