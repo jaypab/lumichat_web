@@ -493,16 +493,7 @@ public function store(Request $request)
         }
     } catch (\Throwable $e) { /* swallow */ }
 
-    // 5) Call Rasa — PRESERVE buttons
-    $rasaUrl  = $this->rasaWebhookUrl();
-    $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk) + [
-    'user' => [
-        'id'    => auth()->id(),
-        'name'  => $name,
-        'first' => $first,
-    ],
-];
-    $botReplies = []; // each item: ['text'=>string, 'buttons'=>array]
+
     
 
     $timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
