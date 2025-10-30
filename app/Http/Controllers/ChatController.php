@@ -350,6 +350,7 @@ public function store(Request $request)
 {
     $name  = $this->preferredName();
     $first = preg_split('/\s+/', $name, 2)[0] ?? $name;
+
     // 1) Validation (+ idempotency)
     $request->validate([
         'message'      => ['required', 'string', 'max:2000', function ($attr, $val, $fail) {
@@ -364,38 +365,27 @@ public function store(Request $request)
     $rawInput = (string) $request->input('message', '');
     $text = trim(preg_replace('/\s+/u', ' ', preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawInput) ?? ''));
 
-    // normalize display text
     $rawDisplay = (string) $request->input('display_text', '');
     $display = trim(preg_replace('/\s+/u', ' ', preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawDisplay) ?? ''));
 
-    // prefer “human” text for heuristics
     $analysisText = $display !== '' ? $display : $text;
 
-    // tolerate missing/invalid idempotency key
     $idem = (string) $request->input('_idem', '');
-    if (!Str::isUuid($idem)) {
-        $idem = (string) Str::uuid(); // server-generated fallback
-    }
+    if (!Str::isUuid($idem)) $idem = (string) Str::uuid();
 
-    // --- Detect emotions ONCE (labels + selfThreat) from analysisText
+    // 2) Detect emotions + self-threat (once)
     $emoResult  = $this->detectEmotions($analysisText);
     $labels     = (array)($emoResult['emotions'] ?? []);
     $selfThreat = (bool)($emoResult['self_threat'] ?? false);
-
-    // Ensure at least one label for pure self-threat lines (for KPI/analytics)
-    if ($selfThreat && !in_array('hopeless', $labels, true)) {
-        $labels[] = 'hopeless';
-    }
+    if ($selfThreat && !in_array('hopeless', $labels, true)) $labels[] = 'hopeless';
 
     $userId    = Auth::id();
     $sessionId = session('chat_session_id');
 
-    // 2) Session ownership check (plus safe init of emotions)
+    // 3) Session setup
     $session = null;
     if ($sessionId) {
-        $session = ChatSession::where('id', $sessionId)
-            ->where('user_id', $userId)
-            ->first();
+        $session = ChatSession::where('id', $sessionId)->where('user_id', $userId)->first();
     }
     if (!$session) {
         $session = ChatSession::create([
@@ -406,13 +396,12 @@ public function store(Request $request)
         ]);
         session(['chat_session_id' => $session->id]);
 
-        // init emotions (best-effort)
         try {
             if (!empty($labels)) {
                 $session->emotions = $this->incrementEmotionCounts([], $labels);
                 $session->save();
             }
-        } catch (\Throwable $e) { /* swallow */ }
+        } catch (\Throwable $e) {}
 
         $this->logActivity('chat_session_created', 'New chat session auto-created', $session->id, [
             'is_anonymous' => false,
@@ -421,19 +410,17 @@ public function store(Request $request)
     }
     $sessionId = $session->id;
 
-    // 3) Language + risk (use the same analysisText used for emotions)
+    // 4) Language + risk
     $lang    = $this->inferLanguage($text);
     $msgRisk = $this->evaluateRiskLevel($analysisText);
-    if ($selfThreat) {
-        $msgRisk = 'high';
-    }
+    if ($selfThreat) $msgRisk = 'high';
 
-    // 4) Save user message — idempotent & race-safe
+    // 5) Save user message (idempotent)
     try {
         $userMsg = Chat::firstOrCreate(
             ['idempotency_key' => $idem],
             [
-                'user_id'         => $userId,        // can be null; that’s OK
+                'user_id'         => $userId,
                 'chat_session_id' => $sessionId,
                 'sender'          => 'user',
                 'message'         => Crypt::encryptString($text),
@@ -442,15 +429,14 @@ public function store(Request $request)
         );
     } catch (QueryException $e) {
         $userMsg = Chat::where('idempotency_key', $idem)->first();
-        if (!$userMsg) throw $e; // unexpected
+        if (!$userMsg) throw $e;
     }
 
-    // Persist the FIRST high-risk trigger (id + excerpt + timestamp)
+    // 6) Stamp first high-risk
     try {
         if ($msgRisk === 'high') {
             $session->refresh();
-            $needsStamp = empty($session->high_risk_chat_id);
-            if ($needsStamp) {
+            if (empty($session->high_risk_chat_id)) {
                 $excerpt = \Illuminate\Support\Str::limit($text, 180, '…');
 
                 $sessTable = app(\App\Http\Controllers\Admin\ChatbotSessionController::class)->sessionsTable();
@@ -471,9 +457,9 @@ public function store(Request $request)
                 }
             }
         }
-    } catch (\Throwable $e) { /* non-fatal */ }
+    } catch (\Throwable $e) {}
 
-    // If this is the first user message for the session, generate a topic summary
+    // 7) First message → topic summary
     $count = Chat::where('chat_session_id', $sessionId)->where('sender', 'user')->count();
     if ($count === 1) {
         preg_match('/\b(sad|depress|help|anxious|angry|lonely|stress|tired|happy|excited|not okay|nagool|kapoy|kulba|nalipay)\b/i', $text, $m);
@@ -481,7 +467,7 @@ public function store(Request $request)
         $session->update(['topic_summary' => ucfirst($summary)]);
     }
 
-    // Accumulate emotion counts (best-effort)
+    // 8) Accumulate emotions (best-effort)
     try {
         if (!empty($labels)) {
             $current = $this->emotionsAsCounts($session->emotions ?? []);
@@ -491,24 +477,21 @@ public function store(Request $request)
                 $session->save();
             }
         }
-    } catch (\Throwable $e) { /* swallow */ }
+    } catch (\Throwable $e) {}
 
-    // 5) Call Rasa — PRESERVE buttons
+    // 9) Call Rasa
     $rasaUrl  = $this->rasaWebhookUrl();
     $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk) + [
-    'user' => [
-        'id'    => auth()->id(),
-        'name'  => $name,
-        'first' => $first,
-    ],
-];
-    $botReplies = []; // each item: ['text'=>string, 'buttons'=>array]
-    
+        'user' => ['id' => auth()->id(), 'name' => $name, 'first' => $first],
+    ];
+    $botReplies = []; // ['text'=>..., 'buttons'=>[]]
 
     $timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
     $verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
 
-    $r = null;
+    $rasaDown   = false;
+    $outageKind = null; // 'http' or 'net'
+
     try {
         $r = Http::timeout($timeout)
             ->withOptions(['verify' => $verify])
@@ -525,28 +508,30 @@ public function store(Request $request)
                 if (is_array($piece)) {
                     $txt = isset($piece['text']) ? (string) $piece['text'] : '';
                     $btn = (isset($piece['buttons']) && is_array($piece['buttons'])) ? $piece['buttons'] : [];
-                    if ($txt !== '' || !empty($btn)) {
-                        $botReplies[] = ['text' => $txt, 'buttons' => $btn];
-                    }
+                    if ($txt !== '' || !empty($btn)) $botReplies[] = ['text' => $txt, 'buttons' => $btn];
                 } else {
                     $txt = trim((string) $piece);
                     if ($txt !== '') $botReplies[] = ['text' => $txt, 'buttons' => []];
                 }
             }
+        } else {
+            // HTTP error from Rasa → show "temporarily unavailable."
+            $rasaDown   = true;
+            $outageKind = 'http';
+            $botReplies = [
+                ['text' => 'LumiChat temporarily unavailable.'],
+            ];
         }
     } catch (\Throwable $e) {
-    $botReplies = [
-        ['text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?"],
+        // Network / timeout → show "having trouble right now."
+        $rasaDown   = true;
+        $outageKind = 'net';
+        $botReplies = [
+            ['text' => 'Sorry, I’m having trouble right now.'],
         ];
     }
 
-    if (empty($botReplies)) {
-       $botReplies = [
-        ['text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?"],
-        ];
-    }
-
-    // 6) Risk elevation + crisis prompt
+    // 10) Risk elevation log
     $current = $session->risk_level ?: 'low';
     $order   = ['low' => 0, 'moderate' => 1, 'high' => 2];
     $new     = ($order[$msgRisk] > $order[$current]) ? $msgRisk : $current;
@@ -563,10 +548,9 @@ public function store(Request $request)
         $this->logActivity('crisis_prompt', 'Crisis context sent to Rasa', $sessionId, null);
     }
 
-    // 6.5) Appointment CTA
+    // 11) Appointment CTA if needed (kept same logic)
     $askedForAppt = $this->wantsAppointment($text) || $this->confirmedAfterOffer($text, $sessionId);
 
-    // detect any placeholder in existing bot replies
     $hasApptPlaceholder = false;
     foreach ($botReplies as $rpl) {
         if (is_array($rpl) && isset($rpl['text']) && is_string($rpl['text']) && str_contains($rpl['text'], '{APPOINTMENT_LINK}')) {
@@ -578,7 +562,7 @@ public function store(Request $request)
     if ($askedForAppt && !$hasApptPlaceholder) {
         $ctaReply = "You can book a time with a school counselor here: {APPOINTMENT_LINK} / Pwede ka magpa-book sa school counselor dinhi: {APPOINTMENT_LINK}";
         if ($msgRisk === 'high') {
-            $botReplies[] = ['text' => $ctaReply, 'buttons' => []]; // after crisis info
+            $botReplies[] = ['text' => $ctaReply, 'buttons' => []];
         } else {
             array_unshift($botReplies, ['text' => $ctaReply, 'buttons' => []]);
         }
@@ -587,7 +571,7 @@ public function store(Request $request)
         ]);
     }
 
-    // 7) Build appointment link + response payload
+    // 12) Build appointment link + finalize payload
     $link = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
         ? \Illuminate\Support\Facades\URL::signedRoute('features.enable_appointment')
         : (\Illuminate\Support\Facades\Route::has('appointment.index')
@@ -606,7 +590,8 @@ public function store(Request $request)
         if (str_contains($replyText, '{APPOINTMENT_LINK}')) {
             $replyText = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $replyText);
         }
-         // 🔽🔽🔽 ADD THIS PERSONALIZATION BLOCK 🔽🔽🔽
+
+        // personalization tokens
         $safeName  = e($name);
         $safeFirst = e($first);
         $replyText = str_replace(
@@ -615,7 +600,7 @@ public function store(Request $request)
             $replyText
         );
 
-        // buttons: turn payload "{APPOINTMENT_LINK}" into url $link
+        // buttons normalize
         $normalizedBtns = [];
         foreach ($replyBtns as $b) {
             $title   = (string)($b['title'] ?? 'Open');
@@ -641,7 +626,6 @@ public function store(Request $request)
             'sent_at'         => now(),
         ]);
 
-        // respond with id + buttons so the UI can render & rehydrate
         $botPayload[] = [
             'id'         => $bot->id,
             'text'       => $replyText,
@@ -651,15 +635,17 @@ public function store(Request $request)
         ];
     }
 
-    // return JSON with structured replies
+    // 13) Response
     return response()->json([
-        'user_message' => [
+        'user_message'     => [
             'text'       => $text,
             'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
             'sent_at'    => now()->toIso8601String(),
         ],
-        'bot_reply'  => $botPayload,
-        'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+        'bot_reply'        => $botPayload,
+        'time_human'       => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+        'rasa_unavailable' => $rasaDown,
+        'outage_kind'      => $outageKind, // 'http' or 'net'
     ]);
 }
 
