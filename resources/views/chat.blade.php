@@ -438,7 +438,7 @@
 
         _pendingDisplayText = null;
 
-        if (!res.ok){ await runQ(()=>appendBotBubble('No reply from LumiCHAT Assistant.', '')); return; }
+        if (!res.ok){ await runQ(()=>appendBotBubble('LumiChat temporarily unavailable.', '')); return; }
         const data = await res.json();
 
         let replies = data?.bot_reply;
