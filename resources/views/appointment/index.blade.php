@@ -619,7 +619,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateDateChip();
     loadSlots();
   } else {
-    updateDateChip(); // shows "Choose date"
+    updateDateChip(); // shows "Choose date" 
     if (timeHint) timeHint.textContent = 'Times will appear after you choose a date.';
   }
   updateSubmitState();

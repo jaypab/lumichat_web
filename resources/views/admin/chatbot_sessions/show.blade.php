@@ -92,17 +92,19 @@
             HIGH RISK
           </span>
         @endif
-        @if(!empty($nextAppt))
           @php
-            $__start   = \Carbon\Carbon::parse($nextAppt->scheduled_at);
-            $__minutes = now()->diffInMinutes($__start, false);
-            $__pillClr = $__minutes <= 60*24 ? 'bg-amber-100 text-amber-800 ring-amber-200'
-                                            : 'bg-emerald-100 text-emerald-800 ring-emerald-200';
+            $__start   = !empty($nextAppt?->scheduled_at) ? \Carbon\Carbon::parse($nextAppt->scheduled_at) : null;
+            $__pillCls = $__start
+                ? (now()->diffInMinutes($__start, false) <= 60*24 ? 'bg-amber-100 text-amber-800 ring-amber-200'
+                                                                : 'bg-emerald-100 text-emerald-800 ring-emerald-200')
+                : 'bg-emerald-100 text-emerald-800 ring-emerald-200';
           @endphp
-          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 {{ $__pillClr }}">
-            Upcoming appt: {{ $__start->format('M d, Y • h:i A') }}
+          <span id="hdrUpcomingPill"
+                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 {{ $__pillCls }} {{ empty($nextAppt) ? 'hidden' : '' }}">
+            @if(!empty($nextAppt) && $__start)
+              Upcoming appt: {{ $__start->format('M d, Y • h:i A') }}
+            @endif
           </span>
-        @endif
       </div>
       <p class="mt-0.5 text-sm text-slate-600 leading-snug">Manage and export a single session record.</p>
     </div>
@@ -178,98 +180,114 @@
     </div>
 
     {{-- RIGHT: Risk (row-span) --}}
-    <div class="risk-card card flex flex-col rounded-2xl bg-white ring-1 ring-slate-200 p-3 md:p-4 lg:col-span-3 lg:row-span-2">
+<div class="risk-card card flex flex-col rounded-2xl bg-white ring-1 ring-slate-200 p-3 md:p-4 lg:col-span-3 lg:row-span-2">
 
-      {{-- header --}}
-      <div class="flex items-center justify-between gap-2">
-        <div class="text-[10px] font-medium tracking-wide text-slate-500 uppercase">Risk</div>
-        @php
-          $riskLbl = ucfirst($riskStr ?: '—');
-          $pillCls = match ($riskStr) {
-            'high','high-risk','high_risk' => 'bg-rose-100 text-rose-700 ring-rose-200',
-            'moderate'                     => 'bg-amber-100 text-amber-800 ring-amber-200',
-            'low'                          => 'bg-emerald-100 text-emerald-800 ring-emerald-200',
-            default                        => 'bg-slate-100 text-slate-700 ring-slate-200',
-          };
-        @endphp
-        <span id="riskPill" class="inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[11px] font-medium ring-1 {{ $pillCls }}">
-          @if(in_array($riskStr, ['high','high-risk','high_risk'], true))
-            <img src="{{ asset('images/icons/alert.png') }}" alt="High" class="w-3.5 h-3.5 object-contain">
-          @endif
-          <span id="riskPillText">{{ $riskLbl }}</span>
-        </span>
-      </div>
-
-      {{-- controls --}}
-      <div class="mt-2" role="group" aria-label="Set risk level">
-        <div class="seg w-full rounded-xl ring-1 ring-slate-200 overflow-hidden">
-          @foreach([['low','Low','bg-emerald-600'],['moderate','Moderate','bg-amber-500'],['high','High','bg-rose-600']] as [$val,$lab,$dot])
-            @php $active = ($riskStr === $val) || ($val==='high' && in_array($riskStr,['high','high-risk','high_risk'])); @endphp
-            <button type="button" class="riskChip seg-btn {{ $active ? 'seg-active' : '' }}"
-              data-level="{{ $val }}" aria-pressed="{{ $active ? 'true' : 'false' }}" title="{{ $lab }}">
-              <span class="w-2.5 h-2.5 rounded-full {{ $dot }}"></span>
-              <span class="truncate">{{ $lab }}</span>
-            </button>
-          @endforeach
-        </div>
-      </div>
-
-      <p class="risk-hint mt-1">
-        Use <kbd class="kbd">L</kbd>, <kbd class="kbd">M</kbd>, or <kbd class="kbd">H</kbd>. Downgrades require a brief reason.
-      </p>
-
-      @if(isset($lastRisk))
-        <div class="risk-last mt-2">
-          <div class="flex items-start justify-between gap-3">
-            <div class="text-sm text-slate-900">
-              <strong>{{ ucfirst($lastRisk->from_level ?: '—') }}</strong>
-              <span class="mx-1.5 text-slate-400">→</span>
-              <strong>{{ ucfirst($lastRisk->to_level) }}</strong>
-            </div>
-            @if(($riskLogs->count() ?? 0) > 1)
-              <button type="button" id="btnRiskHistory" class="text-xs font-medium text-indigo-600 hover:text-indigo-700">
-                View history
-              </button>
-            @endif
-          </div>
-
-          <div class="risk-meta">{{ $lastRisk->created_at->format('M d, Y • h:i A') }}</div>
-
-          @if($lastRisk->note)
-            <div class="risk-note line-clamp-2">{{ $lastRisk->note }}</div>
-          @endif
-        </div>
+  {{-- header --}}
+  <div class="flex items-center justify-between gap-2">
+    <div class="text-[10px] font-medium tracking-wide text-slate-500 uppercase">Risk</div>
+    @php
+      $riskLbl = ucfirst($riskStr ?: '—');
+      $pillCls = match ($riskStr) {
+        'high','high-risk','high_risk' => 'bg-rose-100 text-rose-700 ring-rose-200',
+        'moderate'                     => 'bg-amber-100 text-amber-800 ring-amber-200',
+        'low'                          => 'bg-emerald-100 text-emerald-800 ring-emerald-200',
+        default                        => 'bg-slate-100 text-slate-700 ring-slate-200',
+      };
+    @endphp
+    <span id="riskPill" class="inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[11px] font-medium ring-1 {{ $pillCls }}">
+      @if(in_array($riskStr, ['high','high-risk','high_risk'], true))
+        <img src="{{ asset('images/icons/alert.png') }}" alt="High" class="w-3.5 h-3.5 object-contain">
       @endif
+      <span id="riskPillText">{{ $riskLbl }}</span>
+    </span>
+  </div>
 
-      @php
-        $scoreFromLevel = match($riskStr){
-          'high','high-risk','high_risk' => 90,
-          'moderate'                     => 60,
-          'low'                          => 20,
-          default                        => 0,
-        };
-        $riskScore = max(0, min(100, (int)($session->risk_score ?? $scoreFromLevel)));
-        $riskLevel = ucfirst($riskStr ?: '—');
-      @endphp
+  {{-- controls --}}
+  @php
+    $riskButtons = [
+      ['low', 'Low', 'bg-emerald-600'],
+      ['moderate', 'Moderate', 'bg-amber-500'],
+      ['high', 'High', 'bg-rose-600'],
+    ];
+  @endphp
 
-      <div class="mt-3 risk-extras">
-        <div class="risk-meter">
-          <div class="risk-meter-head">
-            <span class="risk-meter-title">Risk level</span>
-          </div>
+  <div class="mt-2" role="group" aria-label="Set risk level">
+    <div class="seg w-full rounded-xl ring-1 ring-slate-200 overflow-hidden">
+      @foreach($riskButtons as $rb)
+        @php
+          $val    = $rb[0];
+          $lab    = $rb[1];
+          $dot    = $rb[2];
+          $active = ($riskStr === $val) || ($val==='high' && in_array($riskStr,['high','high-risk','high_risk'], true));
+        @endphp
+        <button type="button"
+                class="riskChip seg-btn {{ $active ? 'seg-active' : '' }}"
+                data-level="{{ $val }}"
+                aria-pressed="{{ $active ? 'true' : 'false' }}"
+                title="{{ $lab }}">
+          <span class="w-2.5 h-2.5 rounded-full {{ $dot }}"></span>
+          <span class="truncate">{{ $lab }}</span>
+        </button>
+      @endforeach
+    </div>
+  </div>
 
-          <div class="risk-meter-bar" aria-label="Risk level {{ $riskLevel }}">
-            <div class="risk-meter-pin" style="left: {{ $riskScore }}%"></div>
-          </div>
+  <p class="risk-hint mt-1">
+    Use <kbd class="kbd">L</kbd>, <kbd class="kbd">M</kbd>, or <kbd class="kbd">H</kbd>. Downgrades require a brief reason.
+  </p>
 
-          <div class="risk-meter-legend">
-            <span class="leg leg-low">Low</span>
-            <span class="leg leg-mod">Moderate</span>
-            <span class="leg leg-high">High</span>
-          </div>
+  @if(isset($lastRisk))
+    <div class="risk-last mt-2">
+      <div class="flex items-start justify-between gap-3">
+        <div class="text-sm text-slate-900">
+          <strong>{{ ucfirst($lastRisk->from_level ?: '—') }}</strong>
+          <span class="mx-1.5 text-slate-400">→</span>
+          <strong>{{ ucfirst($lastRisk->to_level) }}</strong>
         </div>
+        @if(($riskLogs->count() ?? 0) > 1)
+          <button type="button" id="btnRiskHistory" class="text-xs font-medium text-indigo-600 hover:text-indigo-700">
+            View history
+          </button>
+        @endif
+      </div>
+
+      <div class="risk-meta">{{ $lastRisk->created_at->format('M d, Y • h:i A') }}</div>
+
+      @if($lastRisk->note)
+        <div class="risk-note line-clamp-2">{{ $lastRisk->note }}</div>
+      @endif
+    </div>
+  @endif
+
+  @php
+    $scoreFromLevel = match($riskStr){
+      'high','high-risk','high_risk' => 90,
+      'moderate'                     => 60,
+      'low'                          => 20,
+      default                        => 0,
+    };
+    $riskScore = max(0, min(100, (int)($session->risk_score ?? $scoreFromLevel)));
+    $riskLevel = ucfirst($riskStr ?: '—');
+  @endphp
+
+  <div class="mt-3 risk-extras">
+    <div class="risk-meter">
+      <div class="risk-meter-head">
+        <span class="risk-meter-title">Risk level</span>
+      </div>
+
+      <div class="risk-meter-bar" aria-label="Risk level {{ $riskLevel }}">
+        <div class="risk-meter-pin" style="left: {{ $riskScore }}%"></div>
+      </div>
+
+      <div class="risk-meter-legend">
+        <span class="leg leg-low">Low</span>
+        <span class="leg leg-mod">Moderate</span>
+        <span class="leg leg-high">High</span>
       </div>
     </div>
+  </div>
+</div>
 
     {{-- ROW 2: High-risk (6) + Emotions (3) --}}
     @php $lockIcon = asset('images/icons/security.png'); @endphp
@@ -298,33 +316,42 @@
                   “{{ $highRisk->text ?? $hrText ?? '' }}”
                 </blockquote>
 
-                {{-- === Upcoming appointment banner + disabled action (if already booked) === --}}
-                @if($__hasActive && !empty($nextAppt))
-                  @php
-                    $__start  = \Carbon\Carbon::parse($nextAppt->scheduled_at);
-                    $__mins   = now()->diffInMinutes($__start, false);
-                    $__when   = $__mins > 0
-                      ? 'in '.\Carbon\Carbon::now()->diffForHumans($__start, ['parts'=>2,'short'=>true,'syntax'=>\Carbon\Carbon::DIFF_ABSOLUTE])
-                      : 'soon';
-                    $__pillBg = $__mins <= 60*24 ? 'ring-amber-200 bg-amber-50 text-amber-900'
-                                                : 'ring-emerald-200 bg-emerald-50 text-emerald-900';
-                  @endphp
+                @php
+                  $hasAppt  = !empty($nextAppt?->scheduled_at);
+                  $hasActive = $hasAppt || (bool)($hasAnyActiveForStudent ?? false);
+                @endphp
 
-                  <div class="mt-3 rounded-xl ring-1 {{ $__pillBg }} p-3 text-sm">
-                    <div class="font-semibold">Upcoming appointment {{ $__when }}</div>
-                    <div class="text-slate-700/90">{{ $__start->format('F d, Y • h:i A') }}</div>
-                  </div>
-
-                  <div class="mt-2 no-print">
-                    <button type="button"
-                            class="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2
-                                  text-slate-500 ring-1 ring-slate-200 cursor-not-allowed"
-                            disabled
-                            title="Student already has an active appointment">
-                      You’ve booked an appointment already
-                    </button>
+                {{-- Upcoming appointment banner --}}
+                @if($hasAppt)
+                  <div id="js-nextAppt">
+                    <div class="mt-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 p-3 text-sm">
+                      <div class="font-medium">
+                        Upcoming appointment
+                        {{ \Carbon\Carbon::parse($nextAppt->scheduled_at)->isFuture()
+                            ? 'in ' . \Carbon\Carbon::parse($nextAppt->scheduled_at)->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>\Carbon\Carbon::DIFF_RELATIVE_TO_NOW])
+                            : 'Started ' . \Carbon\Carbon::parse($nextAppt->scheduled_at)->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>\Carbon\Carbon::DIFF_RELATIVE_TO_NOW]) }}
+                      </div>
+                      <div class="text-xs opacity-80">
+                        {{ \Carbon\Carbon::parse($nextAppt->scheduled_at)->format('M d, Y') }} •
+                        {{ \Carbon\Carbon::parse($nextAppt->scheduled_at)->format('g:i A') }}
+                        @if(!empty($nextAppt->counselor_name)) • {{ $nextAppt->counselor_name }} @endif
+                      </div>
+                    </div>
                   </div>
                 @endif
+
+                {{-- Already booked chip --}}
+                @if($hasActive)
+                  <div id="js-hasActiveMsg" class="mt-2">
+                    <div class="inline-flex items-center rounded-lg bg-slate-100 text-slate-700 text-xs px-3 py-1.5">
+                      You’ve booked an appointment already
+                    </div>
+                  </div>
+                @else
+                  <div id="js-hasActiveMsg" class="mt-2 hidden"></div>
+                @endif  
+
+                {{-- All high-risk lines --}} 
 
                 @php $hrCount = is_countable($allHighRisk ?? []) ? count($allHighRisk) : 0; @endphp
                 <div class="mt-3">
@@ -665,6 +692,24 @@
 </div>
 
 <script>
+  /* ===== Server data we want available during JS-only updates ===== */
+    @php
+    $__NEXT_APPT = null;
+    if (!empty($nextAppt?->scheduled_at)) {
+      $dt  = \Carbon\Carbon::parse($nextAppt->scheduled_at);
+      $__NEXT_APPT = [
+        'date_label'     => $dt->format('M d, Y'),
+        'time_label'     => $dt->format('g:i A'),
+        'rel_label'      => $dt->isFuture()
+                              ? 'in ' . $dt->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>\Carbon\Carbon::DIFF_RELATIVE_TO_NOW])
+                              : 'Started ' . $dt->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>\Carbon\Carbon::DIFF_RELATIVE_TO_NOW]),
+        'counselor_name' => $nextAppt->counselor_name ?? null,
+      ];
+    }
+  @endphp
+  const HAS_ACTIVE = @json( (bool)($hasAnyActiveForStudent ?? false) );
+  const NEXT_APPT = @json($__NEXT_APPT);
+
   let epAllHR = @json(route('admin.chatbot-sessions.highrisk_all', $session->id));
 
   /* ===== View/Hide all high-risk items (animated) ===== */
@@ -689,10 +734,7 @@
 
     async function ensureLoaded(){
       if (loaded) return true;
-      if (!epAllHR) {                   // guard if route isn’t available
-        loaded = true;
-        return true;                    // fall back to server-rendered content
-      }
+      if (!epAllHR) { loaded = true; return true; }
       try{
         const res = await fetch(epAllHR, { headers:{ 'X-Requested-With':'XMLHttpRequest' } });
         const data  = await res.json().catch(()=> ({}));
@@ -792,17 +834,12 @@
     const epBook   = @json(route('admin.chatbot-sessions.book', $session->id));
     const epRebook = @json(route('admin.chatbot-sessions.reschedule', $session->id));
 
-    /* ───────── 1-HOUR DEFAULT GRID + 12-hour formatter ───────── */
-    const DEFAULT_HOURLY_SLOTS = [
-      "09:00","10:00","11:00",
-      "13:00","14:00","15:00"
-    ];
+    const DEFAULT_HOURLY_SLOTS = [ "09:00","10:00","11:00","13:00","14:00","15:00" ];
 
-    /* ===== Helpers to normalize minutes -> top-of-the-hour ===== */
     function hourKey(hhmm){
       const m = /^(\d{2}):(\d{2})$/.exec(String(hhmm||'').trim());
       if (!m) return '';
-      return `${m[1]}:00`; // collapse to hour
+      return `${m[1]}:00`;
     }
     function fmt12(hhmm){
       const m = /^(\d{2}):(\d{2})$/.exec(String(hhmm||'').trim());
@@ -812,11 +849,10 @@
       h = h%12 || 12;
       return `${h}:${mm} ${ampm}`;
     }
-    /** Build hourly rows from raw slots (may contain :30), occupied list, and current time */
     function normalizeHourlyRows(rawRows, occupiedArr, currentStr){
       const occSet = new Set((occupiedArr||[]).map(v => String(v).slice(0,5)));
       const curH   = hourKey(currentStr||'');
-      const bucket = new Map(); // hour -> {present, disabledAll, busy, current}
+      const bucket = new Map();
 
       DEFAULT_HOURLY_SLOTS.forEach(h => {
         if (h !== '12:00') bucket.set(h, {present:false, disabledAll:true, busy:false, current:false});
@@ -830,7 +866,6 @@
         if(!bucket.has(hour)) bucket.set(hour, {present:false, disabledAll:true, busy:false, current:false});
         const b = bucket.get(hour);
 
-        // busy if: explicit flags OR listed in occupied set (by exact half-hour OR by hour)
         const isBusy = Boolean(
           s?.busy || s?.occupied ||
           occSet.has(val.slice(0,5)) || occSet.has(hour)
@@ -839,7 +874,7 @@
 
         b.present     = true;
         b.disabledAll = b.disabledAll && isDis;
-        b.busy        = b.busy || isBusy;       // any half-hour busy ⇒ hour busy
+        b.busy        = b.busy || isBusy;
         b.current     = b.current || (hour === curH);
       });
 
@@ -852,7 +887,6 @@
         });
     }
 
-    // Buttons in unlocked card (initial + delegated for dynamic)
     function rewireHRActionButtons(scope = document){
       const b1 = scope.querySelector('#btnBookHR');
       const b2 = scope.querySelector('#btnReschedHR');
@@ -860,7 +894,6 @@
       if (b2) b2.addEventListener('click', () => open('resched'), { once:true });
     }
     rewireHRActionButtons();
-
     document.addEventListener('click', (e) => {
       const b1 = e.target.closest?.('#btnBookHR');
       const b2 = e.target.closest?.('#btnReschedHR');
@@ -868,7 +901,6 @@
       if (b2) { e.preventDefault(); open('resched'); }
     });
 
-    // Modal + form refs
     const modal    = document.getElementById('hrActionModal');
     const titleEl  = document.getElementById('hrActionTitle');
     const closeBtn = document.getElementById('hrActionClose');
@@ -885,16 +917,14 @@
     const timePills   = document.getElementById('hrTimePills');
     const noSlotsHint = document.getElementById('hrNoSlotsHint');
 
-    // Booking mini-calendar refs
     const calGrid  = document.getElementById('bkCalGrid');
     const calMonth = document.getElementById('bkCalMonth');
     const calPrev  = document.getElementById('bkCalPrev');
     const calNext  = document.getElementById('bkCalNext');
 
-    let mode = 'book'; // 'book' | 'resched'
+    let mode = 'book';
     const busy = (b)=>{ submit.disabled=b; spin.classList.toggle('hidden', !b); label.textContent = b ? (mode==='book'?'Booking…':'Rescheduling…') : (mode==='book'?'Book':'Reschedule'); };
 
-    // --- Calendar helpers
     const today = new Date(); today.setHours(0,0,0,0);
     let view = new Date(today.getFullYear(), today.getMonth(), 1);
     let picked = null;
@@ -928,10 +958,8 @@
           btn.addEventListener('click', () => {
             picked = cur;
             iDate.value = ymd(cur);
-            // highlight
             Array.from(calGrid.querySelectorAll('.bk-day')).forEach(b => b.classList.remove('bk-day--selected'));
             btn.classList.add('bk-day--selected');
-            // refresh slots for selected date
             loadSlots();
           });
         } else {
@@ -949,65 +977,10 @@
 
     function defaultNextWeekday(){
       const d = new Date(); d.setDate(d.getDate()+1); d.setHours(0,0,0,0);
-      if (d.getDay()===6) d.setDate(d.getDate()+2); // Sat -> Mon
-      if (d.getDay()===0) d.setDate(d.getDate()+1); // Sun -> Mon
+      if (d.getDay()===6) d.setDate(d.getDate()+2);
+      if (d.getDay()===0) d.setDate(d.getDate()+1);
       return d;
     }
-
-    function buildOccupiedSet(counselorId, payload){
-      const set = new Set();
-
-      // A) top-level global occupied: ["09:00","10:00",...]
-      if (Array.isArray(payload?.occupied)) {
-        payload.occupied.forEach(x => set.add(String(x).trim().slice(0,5)));
-      }
-
-      // B) per-counselor occupied map:
-      //    occupied_map: { "5": ["09:00","14:00"], "all": ["10:00"] }
-      const omap = payload?.occupied_map || payload?.occupiedHours || null;
-      if (omap && (omap.all || omap[counselorId])) {
-        (omap.all || []).forEach(x => set.add(String(x).trim().slice(0,5)));
-+       (omap[counselorId] || []).forEach(x => set.add(String(x).trim().slice(0,5)));
-      }
-
-      // C) bookings array:
-      //    bookings: [{ counselor_id: 5, time: "09:00" }, ...]
-      if (Array.isArray(payload?.bookings)) {
-        payload.bookings.forEach(b => {
-          if (!b) return;
-          const cid = String(b.counselor_id ?? b.counselorId ?? '').trim();
-          if (cid === String(counselorId)) {
-            const t = String(b.time || b.hhmm || '').trim();
-            if (t) set.add(t.slice(0,5));
-          }
-        });
-      }
-
-      return set;
-    }
-
-    function open(m){
-      mode = m;
-      titleEl.textContent = (mode==='book') ? 'Book urgent appointment' : 'Move appointment earlier';
-      label.textContent   = (mode==='book') ? 'Book' : 'Reschedule';
-      result.classList.add('hidden');
-      form.classList.remove('hidden');
-      modal.classList.remove('hidden');
-
-      // Default date = next weekday
-      picked = defaultNextWeekday();
-      iDate.value = ymd(picked);
-      view = new Date(picked.getFullYear(), picked.getMonth(), 1);
-      renderCalendar();
-      loadSlots();
-    }
-    function close(){ modal.classList.add('hidden'); }
-    closeBtn?.addEventListener('click', close);
-    cancelBtn?.addEventListener('click', close);
-    modal?.firstElementChild?.addEventListener('click', close);
-
-    // When date changes programmatically, reload slots
-    iDate?.addEventListener('change', loadSlots);
 
     async function loadSlots(forceCounselorId = null){
       const date = iDate.value;
@@ -1016,14 +989,12 @@
       try{
         const url = new URL(epSlots, window.location.origin);
         url.searchParams.set('date', date);
-        // optional: let backend tailor the response to currently selected counselor
         const cid = forceCounselorId || iCoun.value || '';
         if (cid) url.searchParams.set('counselor_id', cid);
 
         const res = await fetch(url, { headers:{'X-Requested-With':'XMLHttpRequest'} });
         const j = await res.json();
 
-        // counselors (keep or update)
         iCoun.innerHTML = '';
         (j.counselors||[]).forEach(c => {
           const opt = document.createElement('option');
@@ -1038,25 +1009,18 @@
           return;
         }
 
-        // reselect previously chosen counselor if possible
         if (cid && [...iCoun.options].some(o => o.value === cid)) iCoun.value = cid;
 
-        const occBy   = j.occupied_by || {};          // NEW: map per counselor
-        const slots   = j.slots || {};                // same shape as before
+        const occBy   = j.occupied_by || {};
+        const slots   = j.slots || {};
         const current = (j.current_time || '').trim();
         const ref     = j.ref_time || j.suggest || null;
 
-        // initial fill
         const activeCid = iCoun.value;
         const occRaw = occBy[activeCid] || [];
-        const occNorm = occRaw.map(x => String(x).padStart(5,'0')); // "9:00" -> "09:00"
-        fillTimes(activeCid, slots, {
-          occupied: occNorm,
-          current,
-          ref
-        });
+        const occNorm = occRaw.map(x => String(x).padStart(5,'0'));
+        fillTimes(activeCid, slots, { occupied: occNorm, current, ref });
 
-        // on counselor change, refetch so we always have fresh occupied data
         iCoun.onchange = () => loadSlots(iCoun.value);
 
       }catch(e){
@@ -1066,21 +1030,14 @@
         console.error(e);
       }
     }
-  
-    /**
-     * Render time slots as pills; show:
-     *  - busy/occupied → red pill (not selectable)
-     *  - current time (for this session) → gray “Current” badge (not selectable)
-     */
+
     function fillTimes(counselorId, slotsByCounselor, extras = {}){
       const occ = Array.isArray(extras.occupied) ? extras.occupied.map(String) : [];
       const cur = (extras.current || '').trim();
 
-      // 1) Normalize to hours
       const raw  = (slotsByCounselor?.[counselorId] || []);
       const rows = normalizeHourlyRows(raw, occ, cur);
 
-      // 2) Keep <select> in sync for form submit
       iTime.innerHTML = '';
       rows.forEach(s => {
         const opt = new Option(s.label, s.value, false, false);
@@ -1088,7 +1045,6 @@
         iTime.add(opt);
       });
 
-      // 3) Pills
       timePills.innerHTML = '';
       let anyEnabled = false;
 
@@ -1096,7 +1052,6 @@
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'time-pill';
-        // If busy, show a red badge; else plain label
         btn.innerHTML = s.busy
           ? `${s.label} <span class="time-pill-badge time-pill-badge--danger">No Slots</span>`
           : s.label;
@@ -1138,7 +1093,6 @@
         timePills.appendChild(btn);
       });
 
-      // 4) Fallback + preselect
       if (!anyEnabled) {
         const noSlotsHint = document.getElementById('hrNoSlotsHint');
         let ref = (extras.ref || '').trim() || '09:00';
@@ -1166,40 +1120,34 @@
     }
 
     form?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    busy(true);
-    try{
-      // ✅ Make sure date exists even if user didn’t click the mini-calendar
-      if (!iDate.value || !iDate.value.trim()) {
-        if (picked instanceof Date) {
-          iDate.value = ymd(picked);
-        } else {
-          const fallback = defaultNextWeekday();
-          picked = fallback;
-          iDate.value = ymd(fallback);
+      e.preventDefault();
+      busy(true);
+      try{
+        if (!iDate.value || !iDate.value.trim()) {
+          if (picked instanceof Date) {
+            iDate.value = ymd(picked);
+          } else {
+            const fallback = defaultNextWeekday();
+            picked = fallback;
+            iDate.value = ymd(fallback);
+          }
         }
-      }
+        if (!iTime.value && timePills) {
+          const firstEnabled = timePills.querySelector('.time-pill:not([aria-disabled="true"])');
+          firstEnabled?.click();
+        }
+        if (!iDate.value) {
+          if (window.Swal) Swal.fire({icon:'warning', title:'Pick a date', text:'Please select a weekday for the appointment.'});
+          busy(false); return;
+        }
+        if (!iTime.value) {
+          if (window.Swal) Swal.fire({icon:'warning', title:'Pick a time', text:'Please choose a time slot.'});
+          busy(false); return;
+        }
 
-      // ✅ If no time is chosen, try to auto-select the first enabled pill
-      if (!iTime.value && timePills) {
-        const firstEnabled = timePills.querySelector('.time-pill:not([aria-disabled="true"])');
-        firstEnabled?.click();
-      }
-
-      // If still nothing, give a friendly prompt (prevents backend “date required”)
-      if (!iDate.value) {
-        if (window.Swal) Swal.fire({icon:'warning', title:'Pick a date', text:'Please select a weekday for the appointment.'});
-        busy(false); return;
-      }
-      if (!iTime.value) {
-        if (window.Swal) Swal.fire({icon:'warning', title:'Pick a time', text:'Please choose a time slot.'});
-        busy(false); return;
-      }
-
-      const fd = new FormData(form);
-      fd.append('_token', csrf);
-      // ensure 'date' key is explicitly present
-      if (!fd.get('date')) fd.set('date', iDate.value || '');
+        const fd = new FormData(form);
+        fd.append('_token', csrf);
+        if (!fd.get('date')) fd.set('date', iDate.value || '');
 
         const ep = (mode==='book') ? epBook : epRebook;
         const res = await fetch(ep, {
@@ -1212,7 +1160,6 @@
           const msg = j?.message || 'Request failed.';
           if (window.Swal) Swal.fire({ icon:'error', title:'Error', text: msg });
 
-          // 👉 Flip the selected pill to "busy" (red) immediately
           const selected = iTime.value;
           if (selected) {
             const selectedLabel = fmt12(selected).trim();
@@ -1226,28 +1173,70 @@
               if (!pill.querySelector('.time-pill-badge--danger')) {
                 pill.innerHTML = `${selectedLabel} <span class="time-pill-badge time-pill-badge--danger">No Slots</span>`;
               }
-              // try select another available slot
               timePills.querySelector('.time-pill:not([aria-disabled="true"])')?.click();
             }
           }
-
           throw new Error(msg);
         }
 
-        
-        // Show the server-composed HTML (includes the generated note)
         result.innerHTML = j.html || '<div class="text-slate-700">Done.</div>';
         form.classList.add('hidden');
         result.classList.remove('hidden');
         if (window.Swal) Swal.fire({ toast:true, position:'top-end', icon:'success', title:(mode==='book'?'Booked':'Rescheduled'), timer:1300, showConfirmButton:false });
-        // Refresh small banner near header if needed
-        document.getElementById('hrActionMsg')?.replaceChildren();
+
+        if (j.appt) {
+          const pillWrap = document.getElementById('js-nextAppt');
+          if (pillWrap) {
+            pillWrap.classList.remove('hidden');
+            pillWrap.innerHTML = `
+              <div class="mt-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 p-3 text-sm">
+                <div class="font-medium">Upcoming appointment ${j.appt.rel_label}</div>
+                <div class="text-xs opacity-80">
+                  ${j.appt.date_label} • ${j.appt.time_label}${j.appt.counselor_name ? ' • ' + j.appt.counselor_name : ''}
+                </div>
+              </div>`;
+          }
+          const msgChip  = document.getElementById('js-hasActiveMsg');
+          if (msgChip) msgChip.classList.remove('hidden');
+
+          const hdr = document.getElementById('hdrUpcomingPill');
+          if (hdr) {
+            hdr.textContent = `Upcoming appt: ${j.appt.date_label} • ${j.appt.time_label}`;
+            hdr.classList.remove('hidden');
+          }
+          document.getElementById('btnBookHR')?.classList.add('hidden');
+          document.getElementById('hrActionsWrap')?.classList.add('hidden');
+        }
       } catch(e){
         console.error(e);
       } finally {
         busy(false);
       }
     });
+
+    function open(m){
+      mode = m;
+      titleEl.textContent = (mode==='book') ? 'Book urgent appointment' : 'Move appointment earlier';
+      label.textContent   = (mode==='book') ? 'Book' : 'Reschedule';
+      result.classList.add('hidden');
+      form.classList.remove('hidden');
+      modal.classList.remove('hidden');
+
+      picked = (function defaultNextWeekday(){
+        const d = new Date(); d.setDate(d.getDate()+1); d.setHours(0,0,0,0);
+        if (d.getDay()===6) d.setDate(d.getDate()+2);
+        if (d.getDay()===0) d.setDate(d.getDate()+1);
+        return d;
+      })();
+      iDate.value = ymd(picked);
+      view = new Date(picked.getFullYear(), picked.getMonth(), 1);
+      renderCalendar();
+      loadSlots();
+    }
+    function close(){ modal.classList.add('hidden'); }
+    closeBtn?.addEventListener('click', close);
+    cancelBtn?.addEventListener('click', close);
+    modal?.firstElementChild?.addEventListener('click', close);
   })();
 
   /* ===== Calendar (weekly counts) ===== */
@@ -1541,7 +1530,7 @@
         // step 3: fetch ALL matched high-risk lines (for expandable list)
         const allHighRiskItems = await fetchAllHighRisk();
 
-        // step 4: render into card (show only latest; others hidden until "View all")
+        // step 4: render into card (show latest + controls)
         if (card){
           const listItems = Array.isArray(allHighRiskItems) ? allHighRiskItems : [];
 
@@ -1611,6 +1600,35 @@
                   “${(data.txt || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}”
                 </blockquote>
 
+                <!-- Upcoming appointment banner (rendered on unlock if available) -->
+                ${
+                  NEXT_APPT
+                    ? `
+                      <div id="js-nextAppt">
+                        <div class="mt-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 p-3 text-sm">
+                          <div class="font-medium">Upcoming appointment ${NEXT_APPT.rel_label}</div>
+                          <div class="text-xs opacity-80">
+                            ${NEXT_APPT.date_label} • ${NEXT_APPT.time_label}${NEXT_APPT.counselor_name ? ' • ' + NEXT_APPT.counselor_name : ''}
+                          </div>
+                        </div>
+                      </div>
+                    `
+                    : `<div id="js-nextAppt" class="hidden"></div>`
+                }
+
+                <!-- Already-booked chip -->
+                ${
+                  HAS_ACTIVE
+                    ? `
+                      <div id="js-hasActiveMsg" class="mt-2">
+                        <div class="inline-flex items-center rounded-lg bg-slate-100 text-slate-700 text-xs px-3 py-1.5">
+                          You’ve booked an appointment already
+                        </div>
+                      </div>
+                    `
+                    : `<div id="js-hasActiveMsg" class="mt-2 hidden"></div>`
+                }
+
                 ${listHtml}
               </div>
             </div>
@@ -1618,7 +1636,13 @@
           card.classList.remove('border-slate-200','bg-white');
           card.classList.add('border-rose-200','bg-rose-50');
 
-          // re-wire the toggle for the newly inserted button/list
+          // Sync header pill right after unlock
+          const hdr = document.getElementById('hdrUpcomingPill');
+          if (hdr && NEXT_APPT) {
+            hdr.textContent = `Upcoming appt: ${NEXT_APPT.date_label} • ${NEXT_APPT.time_label}`;
+            hdr.classList.remove('hidden');
+          }
+
           wireHRListToggle(card);
         }
 
@@ -1639,6 +1663,8 @@
 
 {{-- ===== Styles ===== --}}
 <style>
+
+  #js-nextAppt { transition: opacity .25s ease; opacity: 1; }
 /* Busy (occupied) slot = red outline, light background */
 .time-pill--busy{
   position: relative;

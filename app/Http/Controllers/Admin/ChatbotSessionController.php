@@ -87,6 +87,17 @@ class ChatbotSessionController extends Controller
         RateLimiter::clear($key);
         session(['admin.reauth_sensitive_until' => now()->addMinutes(self::REAUTH_SENSITIVE_MINUTES)]);
         return response()->json(['ok' => true]);
+
+        return response()->json([
+        'ok' => true,
+        'html' => view('partials.appointment_success', compact('appointment'))->render(),
+        'appt' => [
+            'date_label'     => $slot->format('M d, Y'),
+            'time_label'     => $slot->format('h:i A'),
+            'rel_label'      => 'in ' . $slot->diffForHumans(now(), ['parts' => 2, 'short' => true]),
+            'counselor_name' => $counselorName ?? null
+        ]
+    ]);
     }
 
     /**
@@ -536,8 +547,10 @@ class ChatbotSessionController extends Controller
         $counselorName = DB::table('tbl_counselors')->where('id',$counselorId)->value('name') ?? null;
         $note          = $this->composeBookingNote($session, $slot, $counselorName);
 
+        $createdId = null;
+
         try {
-            DB::transaction(function () use ($studentId, $counselorId, $slot, $session, $note) {
+            DB::transaction(function () use ($studentId, $counselorId, $slot, $session, $note, &$createdId) {
                 // re-check for race
                 $activeNowForStudent = DB::table('tbl_appointments')
                     ->where('student_id', $studentId)
@@ -554,34 +567,69 @@ class ChatbotSessionController extends Controller
                     ->exists();
                 if ($taken) throw new \RuntimeException('TAKEN');
 
-                DB::table('tbl_appointments')->insert([
-                    'student_id'         => $studentId,
-                    'counselor_id'       => $counselorId,
-                    'scheduled_at'       => $slot,
-                    'status'             => 'confirmed',
-                    'note'               => $note,
-                    'chatbot_session_id' => $session->id,
-                    'created_at'         => now(),
-                    'updated_at'         => now(),
-                ]);
-
-                // Optional notification
-                if (Schema::hasTable('tbl_notifications')) {
-                    DB::table('tbl_notifications')->insert([
-                        'user_id'    => $studentId,
-                        'title'      => 'Appointment Scheduled',
-                        'body'       => $note,
-                        'type'       => 'appointment',
-                        'created_at' => now(),
-                        'updated_at' => now(),
+                        $createdId = DB::table('tbl_appointments')->insertGetId([
+                        'student_id'         => $studentId,
+                        'counselor_id'       => $counselorId,
+                        'scheduled_at'       => $slot,
+                        'status'             => 'confirmed',
+                        'note'               => $note,
+                        'chatbot_session_id' => $session->id,
+                        'created_at'         => now(),
+                        'updated_at'         => now(),
                     ]);
-                }
-            });
-        } catch (\RuntimeException $e) {
-            if ($e->getMessage() === 'TAKEN')          return response()->json(['message'=>'That counselor/time just filled. Pick another slot.'], 409);
-            if ($e->getMessage() === 'STUDENT_ACTIVE') return response()->json(['message'=>'This student already has an active appointment (pending/confirmed).'], 409);
-            throw $e;
-        }
+
+                    // optional notification (unchanged) ...
+                    if (Schema::hasTable('tbl_notifications')) {
+                        DB::table('tbl_notifications')->insert([
+                            'user_id'    => $studentId,
+                            'title'      => 'Appointment Scheduled',
+                            'body'       => $note,
+                            'type'       => 'appointment',
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    }
+                });
+            } catch (\RuntimeException $e) {
+                if ($e->getMessage() === 'TAKEN')
+                    return response()->json(['message'=>'That counselor/time just filled. Pick another slot.'], 409);
+                if ($e->getMessage() === 'STUDENT_ACTIVE')
+                    return response()->json(['message'=>'This student already has an active appointment (pending/confirmed).'], 409);
+                throw $e;
+            }
+        $start = $slot->copy()->second(0);
+        $rel   = $start->isFuture()
+            ? 'in '.$start->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW])
+            : 'Started '.$start->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW]);
+
+        return response()->json([
+            'ok' => true,
+            'appointment' => [
+                'id'                => $createdId,
+                'scheduled_at_iso'  => $start->toIso8601String(),
+                'date_label'        => $start->format('M d, Y'),
+                'time_label'        => $start->format('g:i A'),
+                'rel_label'         => $rel,                  // e.g., "in 11h 2m"
+                'counselor_name'    => $counselorName,        // may be null
+            ],
+            'html' => sprintf(
+                '
+                <div class="kv-grid">
+                <div class="kv"><span class="label">Student:</span>   <span class="value">%s</span></div>
+                <div class="kv"><span class="label">Counselor:</span> <span class="value">%s</span></div>
+                <div class="kv"><span class="label">Date:</span>      <span class="value">%s</span></div>
+                <div class="kv"><span class="label">Time:</span>      <span class="value">%s</span></div>
+                </div>
+                <div style="margin:6px 0 2px"><b>Note sent to student:</b></div>
+                <div style="white-space:pre-wrap">%s</div>
+                ',
+                e($session->user->name ?? ('#'.$studentId)),
+                e($counselorName ?? '—'),
+                e($start->format('M d, Y')),
+                e($start->format('g:i A')),
+                e($note)
+            ),
+        ]);
 
         return response()->json([
             'ok'   => true,
