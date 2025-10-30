@@ -7,6 +7,9 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Auth;
+use App\Models\Appointment;
+use App\Models\CaseNote;
 
 class AppointmentController extends Controller
 {
@@ -109,36 +112,63 @@ class AppointmentController extends Controller
     /** Show a single appointment (must belong to this counselor) */
     public function show(int $id)
     {
-        $cid = $this->myCounselorId(); 
-        abort_unless($cid, 404);
+        $cid = $this->myCounselorId(); abort_unless($cid, 404);
 
         $row = DB::table('tbl_appointments as a')
             ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-            ->select(
-                'a.*',
+            ->select('a.*',
                 DB::raw("COALESCE(s.name,'—') as student_name"),
-                DB::raw("COALESCE(s.email,'') as student_email")
-            )
-            ->where('a.id', $id)
-            ->where('a.counselor_id', $cid)
-            ->first();
-
+                DB::raw("COALESCE(s.email,'') as student_email"))
+            ->where('a.id', $id)->where('a.counselor_id', $cid)->first();
         abort_unless($row, 404);
 
-        // Optional safety: only query if the column exists
-        $latestReport = null;
-        if (Schema::hasTable('tbl_diagnosis_reports') && Schema::hasColumn('tbl_diagnosis_reports', 'appointment_id')) {
-            $latestReport = DB::table('tbl_diagnosis_reports')
-                ->where('appointment_id', $row->id)
-                ->latest('id')
-                ->first();
-        }
+        $caseNote = CaseNote::where('appointment_id', $row->id)->first();
 
         return view('Counselor_Interface.appointments.show', [
-            'appointment'  => $row,
-            'latestReport' => $latestReport,
+            'appointment' => $row,
+            'caseNote'    => $caseNote,   // <-- pass to Blade
         ]);
     }
+
+    public function caseNotePdf(int $id)
+{
+    $cid = $this->myCounselorId(); abort_unless($cid, 404);
+
+    $appointment = DB::table('tbl_appointments as a')
+        ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
+        ->select('a.*',
+            DB::raw("COALESCE(s.name,'—') as student_name"),
+            DB::raw("COALESCE(s.email,'') as student_email"))
+        ->where('a.id', $id)->where('a.counselor_id', $cid)->first();
+    abort_unless($appointment, 404);
+
+    $caseNote = \App\Models\CaseNote::where('appointment_id', $appointment->id)->first();
+    abort_unless($caseNote, 404);
+
+    // Optional logo embed (set to your actual path or null)
+    $logoPath = public_path('images/chatbot.png');
+    $logoData = file_exists($logoPath)
+        ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath))
+        : null;
+
+    $pdf = app('dompdf.wrapper');
+    $pdf->setPaper('a4', 'portrait')->setOptions([
+        // Either omit defaultFont or use a built-in one like Helvetica
+        'defaultFont' => 'Helvetica',
+        'isHtml5ParserEnabled' => true,
+        'isRemoteEnabled' => true,
+    ]);
+
+    $pdf->loadView('Counselor_Interface.appointments.pdf-case-note', [
+        'appointment' => $appointment,
+        'note'        => $caseNote,
+        'generatedAt' => now()->format('F d, Y · g:i A'),
+        'logoData'    => $logoData,
+    ]);
+
+    $filename = 'Case_Note_Appointment_'.$appointment->id.'.pdf';
+    return request()->boolean('download') ? $pdf->download($filename) : $pdf->stream($filename);
+}
 
     /** PATCH /counselor/appointments/{id}/status — actions: done (we keep confirm on Admin) */
     public function updateStatus(Request $r, int $id)
@@ -170,6 +200,75 @@ class AppointmentController extends Controller
 
         return back()->with('swal', ['icon'=>'info','title'=>'No change','text'=>'Unsupported action.']);
     }
+
+    public function storeCaseNote(int $id, Request $request)
+    {
+        $appointment = Appointment::findOrFail($id);
+
+        // (Optional) Gate: only allow when completed
+        if (!in_array(strtolower((string)$appointment->status), ['completed'])) {
+            return back()->with('swal', [
+                'icon'  => 'error',
+                'title' => 'Not allowed yet',
+                'text'  => 'You can only save the Case Note after the appointment is Completed.'
+            ]);
+        }
+
+        $v = $request->validate([
+            'case_note.student_name'           => ['nullable','string','max:255'],
+            'case_note.date'                   => ['nullable','date'],
+            'case_note.program_year'           => ['nullable','string','max:255'],
+            'case_note.address'                => ['nullable','string','max:255'],
+
+            'case_note.presenting_problem'     => ['nullable','string','max:4000'],
+            'case_note.observations'           => ['nullable','string','max:4000'],
+            'case_note.interventions'          => ['nullable','string','max:4000'],
+            'case_note.response'               => ['nullable','string','max:4000'],
+            'case_note.plan_followup'          => ['nullable','string','max:4000'],
+
+            'case_note.emergency_contact_person' => ['nullable','string','max:255'],
+            'case_note.emergency_relationship'   => ['nullable','string','max:255'],
+            'case_note.emergency_contact_no'     => ['nullable','string','max:255'],
+            'case_note.emergency_address'        => ['nullable','string','max:255'],
+        ]);
+
+        $cn = $v['case_note'] ?? [];
+
+        // Upsert by appointment_id (1:1)
+        $note = CaseNote::updateOrCreate(
+            ['appointment_id' => $appointment->id],
+            [
+                'counselor_id' => Auth::id(),
+                'student_id'   => $appointment->student_id ?? null, // adjust field name if different
+
+                'student_name' => $cn['student_name'] ?? $appointment->student_name ?? null,
+                'note_date'    => $cn['date'] ?? now()->toDateString(),
+                'program_year' => $cn['program_year'] ?? null,
+                'address'      => $cn['address'] ?? null,
+
+                'presenting_problem' => $cn['presenting_problem'] ?? null,
+                'observations'       => $cn['observations'] ?? null,
+                'interventions'      => $cn['interventions'] ?? null,
+                'response'           => $cn['response'] ?? null,
+                'plan_followup'      => $cn['plan_followup'] ?? null,
+
+                'emergency_contact_person' => $cn['emergency_contact_person'] ?? null,
+                'emergency_relationship'   => $cn['emergency_relationship'] ?? null,
+                'emergency_contact_no'     => $cn['emergency_contact_no'] ?? null,
+                'emergency_address'        => $cn['emergency_address'] ?? null,
+
+                'created_by' => $note?->created_by ?? Auth::id(),
+                'updated_by' => Auth::id(),
+            ]
+        );
+
+        return back()->with('swal', [
+            'icon'  => 'success',
+            'title' => 'Case Note saved',
+            'text'  => 'Your counselor case note has been saved successfully.'
+        ]);
+    }
+
 
     /** POST /counselor/appointments/{id}/no-show — after grace */
     public function markNoShow(int $id)

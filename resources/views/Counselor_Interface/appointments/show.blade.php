@@ -224,55 +224,149 @@
       </section>
     </div>
 
-    {{-- Final Diagnosis --}}
+    {{-- =========================
+     CASE NOTE FORM (NEW)
+   ========================= --}}
     <div class="px-6 pb-6">
       <div class="rounded-2xl bg-indigo-50/40 ring-1 ring-indigo-200/70 overflow-hidden">
         <div class="flex items-center justify-between px-4 py-3">
-          <div class="text-xs font-semibold tracking-wide uppercase text-slate-700">Diagnosis Remarks (Report)</div>
-          @isset($latestReport)
+          <div class="text-xs font-semibold tracking-wide uppercase text-slate-700">Counselor Case Note Form</div>
+          @isset($caseNote)
             <div class="text-xs text-slate-500">
-              Last saved {{ \Carbon\Carbon::parse($latestReport->updated_at)->format('M d, Y g:i A') }}
+              Last saved {{ \Carbon\Carbon::parse($caseNote->updated_at)->format('M d, Y g:i A') }}
             </div>
           @endisset
         </div>
 
         <div class="px-4 pb-4">
           @if($status === 'completed')
-            <form method="POST" action="{{ route('counselor.appointments.report', $appointment->id) }}" class="space-y-5">
-              @csrf
+            <form method="POST"
+                  action="{{ route('counselor.appointments.case_note.store', $appointment->id) }}"
+                  class="space-y-5">
+              @csrf   {{-- ✅ REQUIRED to avoid 419 --}}
 
-              <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">
-                  Diagnosis Remarks<span class="text-rose-600">*</span>
-                </label>
-                <div class="relative">
-                  <textarea name="diagnosis" rows="4" required maxlength="4000"
-                            class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3 js-counted"
-                            data-max="4000" placeholder="Write the diagnosis remarks...">{{ old('diagnosis') }}</textarea>
-                  <div class="absolute right-2 bottom-1.5 text-[11px] text-slate-400">
-                    <span class="js-count">0</span>/4000
-                  </div>
+              <input type="hidden" name="type" value="case_note">
+
+              {{-- Header fields --}}
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">Student Name</label>
+                  <input type="text" name="case_note[student_name]"
+                        value="{{ old('case_note.student_name', $caseNote->student_name ?? $appointment->student_name) }}"
+                        class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3" required>
                 </div>
-                @error('diagnosis') <div class="text-sm text-rose-600 mt-1">• {{ $message }}</div> @enderror
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">Date</label>
+                  <input type="date" name="case_note[date]"
+                        value="{{ old('case_note.date', optional($caseNote->note_date ?? null)->format('Y-m-d') ?? now()->format('Y-m-d')) }}"
+                        class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3" required>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">Program &amp; Year</label>
+                  <input type="text" name="case_note[program_year]"
+                        value="{{ old('case_note.program_year', $caseNote->program_year ?? '') }}"
+                        class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3" placeholder="e.g., BSIT - 3rd Year">
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">Address</label>
+                  <input type="text" name="case_note[address]"
+                        value="{{ old('case_note.address', $caseNote->address ?? '') }}"
+                        class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3" placeholder="Home address">
+                </div>
               </div>
 
+              {{-- I. Presenting Problem --}}
               <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Note (optional)</label>
+                <label class="block text-xs font-medium text-slate-600 mb-1">I. Presenting Problem</label>
                 <div class="relative">
-                  <textarea name="final_note" rows="3" maxlength="4000"
+                  <textarea name="case_note[presenting_problem]" rows="4" maxlength="4000"
                             class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3 js-counted"
-                            data-max="4000" placeholder="Additional context for internal use...">{{ old('final_note') }}</textarea>
-                  <div class="absolute right-2 bottom-1.5 text-[11px] text-slate-400">
-                    <span class="js-count">0</span>/4000
+                            data-max="4000" placeholder="Describe the client's main concerns..." required>{{ old('case_note.presenting_problem', $caseNote->presenting_problem ?? '') }}</textarea>
+                  <div class="absolute right-2 bottom-1.5 text-[11px] text-slate-400"><span class="js-count">0</span>/4000</div>
+                </div>
+              </div>
+
+              {{-- II. Observations --}}
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">II. Observations</label>
+                <div class="relative">
+                  <textarea name="case_note[observations]" rows="4" maxlength="4000"
+                            class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3 js-counted"
+                            data-max="4000" placeholder="Counselor's observations (appearance, behavior, affect)...">{{ old('case_note.observations', $caseNote->observations ?? '') }}</textarea>
+                  <div class="absolute right-2 bottom-1.5 text-[11px] text-slate-400"><span class="js-count">0</span>/4000</div>
+                </div>
+              </div>
+
+              {{-- III. Interventions / Counselor’s Actions --}}
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">III. Interventions / Counselor’s Actions</label>
+                <div class="relative">
+                  <textarea name="case_note[interventions]" rows="4" maxlength="4000"
+                            class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3 js-counted"
+                            data-max="4000" placeholder="What was done during the session (e.g., CBT techniques, grounding)?">{{ old('case_note.interventions', $caseNote->interventions ?? '') }}</textarea>
+                  <div class="absolute right-2 bottom-1.5 text-[11px] text-slate-400"><span class="js-count">0</span>/4000</div>
+                </div>
+              </div>
+
+              {{-- IV. Student’s Response / Insight --}}
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">IV. Student’s Response / Insight</label>
+                <div class="relative">
+                  <textarea name="case_note[response]" rows="4" maxlength="4000"
+                            class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3 js-counted"
+                            data-max="4000" placeholder="How did the student respond? Key insights or changes observed.">{{ old('case_note.response', $caseNote->response ?? '') }}</textarea>
+                  <div class="absolute right-2 bottom-1.5 text-[11px] text-slate-400"><span class="js-count">0</span>/4000</div>
+                </div>
+              </div>
+
+              {{-- V. Plan / Follow-Up --}}
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">V. Plan / Follow-Up</label>
+                <div class="relative">
+                  <textarea name="case_note[plan_followup]" rows="4" maxlength="4000"
+                            class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3 js-counted"
+                            data-max="4000" placeholder="Next steps, referrals, frequency of sessions, etc.">{{ old('case_note.plan_followup', $caseNote->plan_followup ?? '') }}</textarea>
+                  <div class="absolute right-2 bottom-1.5 text-[11px] text-slate-400"><span class="js-count">0</span>/4000</div>
+                </div>
+              </div>
+
+              {{-- VI. Emergency Safety Plan (Optional) --}}
+              <div class="rounded-xl border border-slate-200 p-4 bg-white">
+                <div class="text-[13px] font-medium text-slate-700 mb-3">VI. Emergency Safety Plan (Optional)</div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Contact Person</label>
+                    <input type="text" name="case_note[emergency_contact_person]"
+                          value="{{ old('case_note.emergency_contact_person', $caseNote->emergency_contact_person ?? '') }}"
+                          class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3" placeholder="Full name">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Relationship</label>
+                    <input type="text" name="case_note[emergency_relationship]"
+                          value="{{ old('case_note.emergency_relationship', $caseNote->emergency_relationship ?? '') }}"
+                          class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3" placeholder="e.g., Mother">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Contact No.</label>
+                    <input type="text" name="case_note[emergency_contact_no]"
+                          value="{{ old('case_note.emergency_contact_no', $caseNote->emergency_contact_no ?? '') }}"
+                          class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3" placeholder="+63 9xx xxx xxxx">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Address</label>
+                    <input type="text" name="case_note[emergency_address]"
+                          value="{{ old('case_note.emergency_address', $caseNote->emergency_address ?? '') }}"
+                          class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3" placeholder="Address">
                   </div>
                 </div>
-                @error('final_note') <div class="text-sm text-rose-600 mt-1">• {{ $message }}</div> @enderror
               </div>
+
+              @error('case_note') <div class="text-sm text-rose-600 mt-1">• {{ $message }}</div> @enderror
 
               <div class="flex justify-end">
                 <button type="submit"
                         class="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
-                  Save Diagnosis
+                  Save Case Note
                 </button>
               </div>
             </form>
@@ -281,13 +375,86 @@
               <textarea rows="3" class="w-full rounded-md border-0 ring-0 bg-transparent" disabled
                         placeholder="Available after the appointment is marked Completed."></textarea>
               <div class="text-xs text-slate-500 mt-2">
-                You can add the final diagnosis once this appointment is <b>Completed</b>.
+                You can fill the Case Note once this appointment is <b>Completed</b>.
               </div>
             </div>
           @endif
         </div>
       </div>
     </div>
+
+    {{-- SHOW SAVED CASE NOTE (read-only) --}}
+    @if($caseNote)
+      <div class="px-6 pb-6">
+        <div class="rounded-2xl border border-slate-200 bg-white">
+          <div class="flex items-center justify-between px-4 py-3">
+            <div class="text-xs font-semibold tracking-wide uppercase text-slate-700">Saved Case Note</div>
+            <a href="{{ route('counselor.appointments.case_note.pdf', $appointment->id) }}"
+              target="_blank" rel="noopener"
+              class="inline-flex items-center gap-2 bg-emerald-600 text-white px-3 py-1.5 h-9 rounded-lg hover:bg-emerald-700">
+              Print / PDF
+            </a>
+          </div>
+
+          <div class="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <div class="text-slate-500">Student Name</div>
+              <div class="font-medium text-slate-900">{{ $caseNote->student_name ?: '—' }}</div>
+            </div>
+            <div>
+              <div class="text-slate-500">Date</div>
+              <div class="font-medium text-slate-900">{{ $caseNote->note_date ? \Carbon\Carbon::parse($caseNote->note_date)->format('F d, Y') : '—' }}</div>
+            </div>
+            <div>
+              <div class="text-slate-500">Program & Year</div>
+              <div class="font-medium text-slate-900">{{ $caseNote->program_year ?: '—' }}</div>
+            </div>
+            <div>
+              <div class="text-slate-500">Address</div>
+              <div class="font-medium text-slate-900">{{ $caseNote->address ?: '—' }}</div>
+            </div>
+          </div>
+
+          @php
+            $toBr = fn($v) => nl2br(e($v ?? '—'));
+          @endphp
+
+          <div class="px-4 pb-4 space-y-4 text-sm">
+            <div>
+              <div class="text-slate-500 mb-1">I. Presenting Problem</div>
+              <div class="whitespace-pre-line">{!! $toBr($caseNote->presenting_problem) !!}</div>
+            </div>
+            <div>
+              <div class="text-slate-500 mb-1">II. Observations</div>
+              <div class="whitespace-pre-line">{!! $toBr($caseNote->observations) !!}</div>
+            </div>
+            <div>
+              <div class="text-slate-500 mb-1">III. Interventions / Counselor’s Actions</div>
+              <div class="whitespace-pre-line">{!! $toBr($caseNote->interventions) !!}</div>
+            </div>
+            <div>
+              <div class="text-slate-500 mb-1">IV. Student’s Response / Insight</div>
+              <div class="whitespace-pre-line">{!! $toBr($caseNote->response) !!}</div>
+            </div>
+            <div>
+              <div class="text-slate-500 mb-1">V. Plan / Follow-Up</div>
+              <div class="whitespace-pre-line">{!! $toBr($caseNote->plan_followup) !!}</div>
+            </div>
+
+            <div class="rounded-xl border border-slate-200 p-4 bg-slate-50">
+              <div class="text-[13px] font-medium text-slate-700 mb-2">VI. Emergency Safety Plan</div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div><span class="text-slate-500">Contact Person:</span> <span class="font-medium">{{ $caseNote->emergency_contact_person ?: '—' }}</span></div>
+                <div><span class="text-slate-500">Relationship:</span> <span class="font-medium">{{ $caseNote->emergency_relationship ?: '—' }}</span></div>
+                <div><span class="text-slate-500">Contact No.:</span> <span class="font-medium">{{ $caseNote->emergency_contact_no ?: '—' }}</span></div>
+                <div><span class="text-slate-500">Address:</span> <span class="font-medium">{{ $caseNote->emergency_address ?: '—' }}</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    @endif
+
 
     <div class="px-6 pb-6 border-t border-slate-200 flex items-center justify-end">
       <div class="text-xs text-slate-500">
@@ -320,7 +487,7 @@
     return false;
   }
 
-  // Character counters (unchanged)
+  // Character counters (reused for textareas)
   (function () {
     const fields = document.querySelectorAll('.js-counted');
     const clamp = (s, m) => s.length > m ? s.slice(0, m) : s;
@@ -341,7 +508,7 @@
     });
   })();
 
-  // Live elapsed timer when ongoing (HCI: status visibility, temporal feedback)
+  // Live elapsed timer when ongoing
   @if ($isOngoing)
     (function(){
       const el = document.getElementById('js-elapsed');
