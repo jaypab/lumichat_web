@@ -43,7 +43,22 @@ Route::middleware(['auth', 'counselor'])
         Route::post('/appointments/{id}/follow-up',    [CounselorAppointmentController::class, 'followUpStore'])->whereNumber('id')->name('appointments.follow.store');
         Route::post('/appointments/{id}/no-show',      [CounselorAppointmentController::class, 'markNoShow'])->whereNumber('id')->name('appointments.no_show');
         Route::get('/appointments/{id}/export/pdf',    [CounselorAppointmentController::class, 'exportShowPdf'])->whereNumber('id')->name('appointments.export.show.pdf');
-    });
+
+       Route::post('/appointments/{id}/case-note',
+            [\App\Http\Controllers\Counselor\AppointmentController::class, 'storeCaseNote'])
+            ->whereNumber('id')
+            ->name('appointments.case_note.store');
+
+        Route::put('/appointments/{id}/case-note',
+            [\App\Http\Controllers\Counselor\AppointmentController::class, 'storeCaseNote'])
+            ->whereNumber('id')
+            ->name('appointments.case_note.update');
+
+        Route::get('/appointments/{id}/case-note/pdf',
+            [\App\Http\Controllers\Counselor\AppointmentController::class, 'caseNotePdf'])
+            ->whereNumber('id')
+            ->name('appointments.case_note.pdf');
+        });
 
 // Slots API (kept)
 Route::middleware(['auth'])

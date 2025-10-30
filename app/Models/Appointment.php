@@ -12,4 +12,5 @@ class Appointment extends Model
 
     public function student()   { return $this->belongsTo(User::class, 'student_id'); }
     public function counselor() { return $this->belongsTo(Counselor::class, 'counselor_id'); }
+    public function caseNote()  { return $this->hasOne(\App\Models\CaseNote::class, 'appointment_id'); }
 }
