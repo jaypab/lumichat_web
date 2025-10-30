@@ -301,7 +301,16 @@
             <div class="flex items-start gap-2.5">
               <img src="{{ asset('images/icons/alert.png') }}" alt="High risk" class="h-5 w-5 mt-0.5 object-contain" />
               <div class="flex-1">
-                <div class="font-semibold text-rose-700">High-risk trigger (student message)</div>
+                <div class="flex items-center justify-between">
+                    <div class="font-semibold text-rose-700">High-risk trigger (student message)</div>
+                      <!-- Hidden by default; shown after booking -->
+                      <button id="hrMarkDone"
+                              type="button"
+                              class="hidden text-xs font-medium rounded-lg px-2 py-1 ring-1 ring-slate-200 text-slate-700 hover:bg-slate-50"
+                              title="Mark as handled (visual only)">
+                        Done
+                      </button>
+                    </div>
                 <div class="mt-0.5 text-xs text-rose-800/80">
                   {{ isset($highRisk)
                         ? \Carbon\Carbon::parse($highRisk->sent_at ?? $highRisk->created_at)->format('F d, Y • h:i A')
@@ -321,9 +330,9 @@
                   $hasActive = $hasAppt || (bool)($hasAnyActiveForStudent ?? false);
                 @endphp
 
-                {{-- Upcoming appointment banner --}}
-                @if($hasAppt)
-                  <div id="js-nextAppt">
+                {{-- Upcoming appointment banner (always render placeholder) --}}
+                <div id="js-nextAppt" class="{{ !empty($nextAppt?->scheduled_at) ? '' : 'hidden' }}">
+                  @if(!empty($nextAppt?->scheduled_at))
                     <div class="mt-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 p-3 text-sm">
                       <div class="font-medium">
                         Upcoming appointment
@@ -337,8 +346,8 @@
                         @if(!empty($nextAppt->counselor_name)) • {{ $nextAppt->counselor_name }} @endif
                       </div>
                     </div>
-                  </div>
-                @endif
+                  @endif
+                </div>
 
                 {{-- Already booked chip --}}
                 @if($hasActive)
@@ -692,6 +701,39 @@
 </div>
 
 <script>
+    function setHRVisual(mode){
+    const card = document.getElementById('hrCard');
+    if (!card) return;
+
+    // remove all known states
+    card.classList.remove('border-rose-200','bg-rose-50','border-amber-200','bg-amber-50','border-slate-200','bg-white');
+
+    // title color tweak (optional)
+    const titleEl = card.querySelector('.font-semibold');
+    if (titleEl) titleEl.classList.remove('text-rose-700');
+
+    // apply target state
+    if (mode === 'danger'){
+      card.classList.add('border-rose-200','bg-rose-50');
+      if (titleEl) titleEl.classList.add('text-rose-700');
+    } else if (mode === 'booked'){
+      // after booking, soften to amber “attention” state
+      card.classList.add('border-amber-200','bg-amber-50');
+    } else {
+      // neutral
+      card.classList.add('border-slate-200','bg-white');
+    }
+  }
+
+  (() => {
+    const btnDone = document.getElementById('hrMarkDone');
+    if (btnDone){
+      btnDone.addEventListener('click', () => {
+        setHRVisual('booked');
+        btnDone.classList.add('hidden'); // hide after press
+      });
+    }
+  })();
   /* ===== Server data we want available during JS-only updates ===== */
     @php
     $__NEXT_APPT = null;
@@ -824,420 +866,289 @@
     }).catch(()=>{ /* ignore */ });
   }
 
-  /* ===== Book/Resched flow ===== */
   (() => {
-    const canBook        = @json($canBook);
-    const canMoveEarlier = @json($canMoveEarlier);
-    const csrf           = @json(csrf_token());
+  const canBook        = @json($canBook);
+  const canMoveEarlier = @json($canMoveEarlier);
+  const csrf           = @json(csrf_token());
 
-    const epSlots  = @json(route('admin.chatbot-sessions.slots', $session->id));
-    const epBook   = @json(route('admin.chatbot-sessions.book', $session->id));
-    const epRebook = @json(route('admin.chatbot-sessions.reschedule', $session->id));
+  const epSlots  = @json(route('admin.chatbot-sessions.slots', $session->id));
+  const epBook   = @json(route('admin.chatbot-sessions.book', $session->id));
+  const epRebook = @json(route('admin.chatbot-sessions.reschedule', $session->id));
 
-    const DEFAULT_HOURLY_SLOTS = [ "09:00","10:00","11:00","13:00","14:00","15:00" ];
+  const DEFAULT_HOURLY_SLOTS = [ "09:00","10:00","11:00","13:00","14:00","15:00" ];
 
-    function hourKey(hhmm){
-      const m = /^(\d{2}):(\d{2})$/.exec(String(hhmm||'').trim());
-      if (!m) return '';
-      return `${m[1]}:00`;
-    }
-    function fmt12(hhmm){
-      const m = /^(\d{2}):(\d{2})$/.exec(String(hhmm||'').trim());
-      if(!m) return String(hhmm||'');
-      let h = +m[1], mm = m[2];
-      const ampm = h>=12 ? 'PM':'AM';
-      h = h%12 || 12;
-      return `${h}:${mm} ${ampm}`;
-    }
-    function normalizeHourlyRows(rawRows, occupiedArr, currentStr){
-      const occSet = new Set((occupiedArr||[]).map(v => String(v).slice(0,5)));
-      const curH   = hourKey(currentStr||'');
-      const bucket = new Map();
+  // ---- DOM refs
+  const modal    = document.getElementById('hrActionModal');
+  const titleEl  = document.getElementById('hrActionTitle');
+  const closeBtn = document.getElementById('hrActionClose');   // ✕ button
+  const cancelBtn= document.getElementById('hrActionCancel');
+  const form     = document.getElementById('hrActionForm');
+  const submit   = document.getElementById('hrActionSubmit');
+  const spin     = document.getElementById('hrActionSpin');
+  const label    = document.getElementById('hrActionLabel');
+  const result   = document.getElementById('hrActionResult');
 
-      DEFAULT_HOURLY_SLOTS.forEach(h => {
-        if (h !== '12:00') bucket.set(h, {present:false, disabledAll:true, busy:false, current:false});
-      });
+  const iDate    = document.getElementById('hrDate');
+  const iCoun    = document.getElementById('hrCounselor');
+  const iTime    = document.getElementById('hrTime');
+  const timePills   = document.getElementById('hrTimePills');
+  const noSlotsHint = document.getElementById('hrNoSlotsHint');
 
-      (Array.isArray(rawRows) ? rawRows : []).forEach(s => {
-        const val  = String(s?.value ?? s?.label ?? '').trim();
-        const hour = hourKey(val);
-        if (!hour || hour === '12:00') return;
+  const calGrid  = document.getElementById('bkCalGrid');
+  const calMonth = document.getElementById('bkCalMonth');
+  const calPrev  = document.getElementById('bkCalPrev');
+  const calNext  = document.getElementById('bkCalNext');
 
-        if(!bucket.has(hour)) bucket.set(hour, {present:false, disabledAll:true, busy:false, current:false});
-        const b = bucket.get(hour);
+  // ---- NEW: track successful action so ✕ can refresh
+  let __justBookedOrRescheduled = false;
 
-        const isBusy = Boolean(
-          s?.busy || s?.occupied ||
-          occSet.has(val.slice(0,5)) || occSet.has(hour)
-        );
-        const isDis  = Boolean(s?.disabled);
+  // ---- helpers
+  const pad = n => String(n).padStart(2,'0');
+  const ymd = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const hourKey = hhmm => {
+    const m = /^(\d{2}):(\d{2})$/.exec(String(hhmm||'').trim());
+    return m ? `${m[1]}:00` : '';
+  };
+  const fmt12 = hhmm => {
+    const m = /^(\d{2}):(\d{2})$/.exec(String(hhmm||'').trim());
+    if (!m) return String(hhmm||'');
+    let h = +m[1], mm = m[2]; const ampm = h>=12 ? 'PM':'AM'; h = h%12 || 12;
+    return `${h}:${mm} ${ampm}`;
+  };
 
-        b.present     = true;
-        b.disabledAll = b.disabledAll && isDis;
-        b.busy        = b.busy || isBusy;
-        b.current     = b.current || (hour === curH);
-      });
-
-      return Array.from(bucket.keys())
-        .filter(h => h !== '12:00')
-        .map(h => {
-          const b = bucket.get(h);
-          const disabled = b.disabledAll || b.busy || b.current;
-          return { value:h, label:fmt12(h), disabled, busy:b.busy, current:b.current };
-        });
-    }
-
-    function rewireHRActionButtons(scope = document){
-      const b1 = scope.querySelector('#btnBookHR');
-      const b2 = scope.querySelector('#btnReschedHR');
-      if (b1) b1.addEventListener('click', () => open('book'), { once:true });
-      if (b2) b2.addEventListener('click', () => open('resched'), { once:true });
-    }
-    rewireHRActionButtons();
-    document.addEventListener('click', (e) => {
-      const b1 = e.target.closest?.('#btnBookHR');
-      const b2 = e.target.closest?.('#btnReschedHR');
-      if (b1) { e.preventDefault(); open('book'); }
-      if (b2) { e.preventDefault(); open('resched'); }
+  function normalizeHourlyRows(rawRows, occupiedArr, currentStr){
+    const occSet = new Set((occupiedArr||[]).map(v => String(v).slice(0,5)));
+    const curH   = hourKey(currentStr||'');
+    const bucket = new Map();
+    DEFAULT_HOURLY_SLOTS.forEach(h => { if (h!=='12:00') bucket.set(h, {present:false, disabledAll:true, busy:false, current:false}); });
+    (Array.isArray(rawRows) ? rawRows : []).forEach(s => {
+      const val  = String(s?.value ?? s?.label ?? '').trim();
+      const hour = hourKey(val); if (!hour || hour==='12:00') return;
+      if(!bucket.has(hour)) bucket.set(hour, {present:false, disabledAll:true, busy:false, current:false});
+      const b = bucket.get(hour);
+      const isBusy = Boolean(s?.busy || s?.occupied || occSet.has(val.slice(0,5)) || occSet.has(hour));
+      const isDis  = Boolean(s?.disabled);
+      b.present=true; b.disabledAll = b.disabledAll && isDis; b.busy = b.busy || isBusy; b.current = b.current || (hour===curH);
     });
+    return Array.from(bucket.keys())
+      .filter(h => h!=='12:00')
+      .map(h => {
+        const b = bucket.get(h);
+        const disabled = b.disabledAll || b.busy || b.current;
+        return { value:h, label:fmt12(h), disabled, busy:b.busy, current:b.current };
+      });
+  }
 
-    const modal    = document.getElementById('hrActionModal');
-    const titleEl  = document.getElementById('hrActionTitle');
-    const closeBtn = document.getElementById('hrActionClose');
-    const cancelBtn= document.getElementById('hrActionCancel');
-    const form     = document.getElementById('hrActionForm');
-    const submit   = document.getElementById('hrActionSubmit');
-    const spin     = document.getElementById('hrActionSpin');
-    const label    = document.getElementById('hrActionLabel');
-    const result   = document.getElementById('hrActionResult');
+  function setBusy(b){ submit.disabled=b; spin.classList.toggle('hidden', !b); label.textContent = b ? (mode==='book'?'Booking…':'Rescheduling…') : (mode==='book'?'Book':'Reschedule'); }
 
-    const iDate    = document.getElementById('hrDate');
-    const iCoun    = document.getElementById('hrCounselor');
-    const iTime    = document.getElementById('hrTime');
-    const timePills   = document.getElementById('hrTimePills');
-    const noSlotsHint = document.getElementById('hrNoSlotsHint');
+  // ---- wire main action buttons (already present elsewhere)
+  function rewireHRActionButtons(scope=document){
+    const b1 = scope.querySelector('#btnBookHR');
+    const b2 = scope.querySelector('#btnReschedHR');
+    if (b1) b1.addEventListener('click', () => open('book'), { once:true });
+    if (b2) b2.addEventListener('click', () => open('resched'), { once:true });
+  }
+  rewireHRActionButtons();
+  document.addEventListener('click', (e) => {
+    const b1 = e.target.closest?.('#btnBookHR');
+    const b2 = e.target.closest?.('#btnReschedHR');
+    if (b1) { e.preventDefault(); open('book'); }
+    if (b2) { e.preventDefault(); open('resched'); }
+  });
 
-    const calGrid  = document.getElementById('bkCalGrid');
-    const calMonth = document.getElementById('bkCalMonth');
-    const calPrev  = document.getElementById('bkCalPrev');
-    const calNext  = document.getElementById('bkCalNext');
+  // ---- calendar state
+  let mode = 'book';
+  const today = new Date(); today.setHours(0,0,0,0);
+  let view = new Date(today.getFullYear(), today.getMonth(), 1);
+  let picked = null;
 
-    let mode = 'book';
-    const busy = (b)=>{ submit.disabled=b; spin.classList.toggle('hidden', !b); label.textContent = b ? (mode==='book'?'Booking…':'Rescheduling…') : (mode==='book'?'Book':'Reschedule'); };
-
-    const today = new Date(); today.setHours(0,0,0,0);
-    let view = new Date(today.getFullYear(), today.getMonth(), 1);
-    let picked = null;
-
-    const pad = n => String(n).padStart(2,'0');
-    const ymd = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-    const sameYM = (a,b) => a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth();
+  function renderCalendar(){
+    calGrid.innerHTML = '';
+    calMonth.textContent = new Intl.DateTimeFormat('en',{month:'long',year:'numeric'}).format(view).toUpperCase();
+    const firstDow = new Date(view.getFullYear(), view.getMonth(), 1).getDay();
+    const days = new Date(view.getFullYear(), view.getMonth()+1, 0).getDate();
+    for (let i=0;i<firstDow;i++) calGrid.appendChild(document.createElement('div'));
     const isWeekend = d => [0,6].includes(d.getDay());
-
-    function renderCalendar(){
-      calGrid.innerHTML = '';
-      calMonth.textContent = new Intl.DateTimeFormat('en', {month:'long',year:'numeric'}).format(view).toUpperCase();
-
-      calPrev.disabled = sameYM(view, today);
-      calPrev.classList.toggle('opacity-50', calPrev.disabled);
-
-      const firstDow = new Date(view.getFullYear(), view.getMonth(), 1).getDay();
-      const days = new Date(view.getFullYear(), view.getMonth()+1, 0).getDate();
-      for (let i=0;i<firstDow;i++) calGrid.appendChild(document.createElement('div'));
-
-      for (let d=1; d<=days; d++){
-        const cur = new Date(view.getFullYear(), view.getMonth(), d); cur.setHours(0,0,0,0);
-        const disabled = cur < today || isWeekend(cur);
-
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.textContent = d;
-        btn.className = 'bk-day' + (disabled ? ' bk-day--disabled' : '');
-
-        if (!disabled){
-          btn.addEventListener('click', () => {
-            picked = cur;
-            iDate.value = ymd(cur);
-            Array.from(calGrid.querySelectorAll('.bk-day')).forEach(b => b.classList.remove('bk-day--selected'));
-            btn.classList.add('bk-day--selected');
-            loadSlots();
-          });
-        } else {
-          btn.title = isWeekend(cur) ? 'Closed (Sat–Sun)' : 'Past date';
-          btn.disabled = true;
-        }
-
-        if (picked && cur.getTime() === picked.getTime()) btn.classList.add('bk-day--selected');
-        calGrid.appendChild(btn);
-      }
-    }
-
-    calPrev?.addEventListener('click', () => { if (!calPrev.disabled){ view.setMonth(view.getMonth()-1); renderCalendar(); }});
-    calNext?.addEventListener('click', () => { view.setMonth(view.getMonth()+1); renderCalendar(); });
-
-    function defaultNextWeekday(){
-      const d = new Date(); d.setDate(d.getDate()+1); d.setHours(0,0,0,0);
-      if (d.getDay()===6) d.setDate(d.getDate()+2);
-      if (d.getDay()===0) d.setDate(d.getDate()+1);
-      return d;
-    }
-
-    async function loadSlots(forceCounselorId = null){
-      const date = iDate.value;
-      if (!date) return;
-
-      try{
-        const url = new URL(epSlots, window.location.origin);
-        url.searchParams.set('date', date);
-        const cid = forceCounselorId || iCoun.value || '';
-        if (cid) url.searchParams.set('counselor_id', cid);
-
-        const res = await fetch(url, { headers:{'X-Requested-With':'XMLHttpRequest'} });
-        const j = await res.json();
-
-        iCoun.innerHTML = '';
-        (j.counselors||[]).forEach(c => {
-          const opt = document.createElement('option');
-          opt.value = c.id; opt.textContent = c.name;
-          iCoun.appendChild(opt);
+    for (let d=1; d<=days; d++){
+      const cur = new Date(view.getFullYear(), view.getMonth(), d); cur.setHours(0,0,0,0);
+      const disabled = cur < today || isWeekend(cur);
+      const btn = document.createElement('button');
+      btn.type='button'; btn.textContent=d; btn.className='bk-day'+(disabled?' bk-day--disabled':'');
+      if (!disabled){
+        btn.addEventListener('click', () => {
+          picked = cur;
+          iDate.value = ymd(cur);
+          Array.from(calGrid.querySelectorAll('.bk-day')).forEach(b => b.classList.remove('bk-day--selected'));
+          btn.classList.add('bk-day--selected');
+          loadSlots();
         });
-
-        if (!iCoun.options.length) {
-          timePills.innerHTML = '';
-          noSlotsHint.textContent = 'No active counselors available for booking.';
-          noSlotsHint.classList.remove('hidden');
-          return;
-        }
-
-        if (cid && [...iCoun.options].some(o => o.value === cid)) iCoun.value = cid;
-
-        const occBy   = j.occupied_by || {};
-        const slots   = j.slots || {};
-        const current = (j.current_time || '').trim();
-        const ref     = j.ref_time || j.suggest || null;
-
-        const activeCid = iCoun.value;
-        const occRaw = occBy[activeCid] || [];
-        const occNorm = occRaw.map(x => String(x).padStart(5,'0'));
-        fillTimes(activeCid, slots, { occupied: occNorm, current, ref });
-
-        iCoun.onchange = () => loadSlots(iCoun.value);
-
-      }catch(e){
-        iCoun.innerHTML=''; iTime.innerHTML='';
-        timePills && (timePills.innerHTML='');
-        noSlotsHint && noSlotsHint.classList.add('hidden');
-        console.error(e);
-      }
+      } else { btn.title = isWeekend(cur) ? 'Closed (Sat–Sun)' : 'Past date'; btn.disabled = true; }
+      if (picked && cur.getTime() === picked.getTime()) btn.classList.add('bk-day--selected');
+      calGrid.appendChild(btn);
     }
+  }
+  const sameYM = (a,b) => a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth();
+  document.getElementById('bkCalPrev')?.addEventListener('click',()=>{ if (!sameYM(view,today)) { view.setMonth(view.getMonth()-1); renderCalendar(); }});
+  document.getElementById('bkCalNext')?.addEventListener('click',()=>{ view.setMonth(view.getMonth()+1); renderCalendar(); });
 
-    function fillTimes(counselorId, slotsByCounselor, extras = {}){
-      const occ = Array.isArray(extras.occupied) ? extras.occupied.map(String) : [];
-      const cur = (extras.current || '').trim();
+  async function loadSlots(forceCounselorId=null){
+    const date = iDate.value; if (!date) return;
+    try{
+      const url = new URL(epSlots, window.location.origin);
+      url.searchParams.set('date', date);
+      const cid = forceCounselorId || iCoun.value || '';
+      if (cid) url.searchParams.set('counselor_id', cid);
 
-      const raw  = (slotsByCounselor?.[counselorId] || []);
-      const rows = normalizeHourlyRows(raw, occ, cur);
+      const res = await fetch(url, { headers:{'X-Requested-With':'XMLHttpRequest'} });
+      const j = await res.json();
 
-      iTime.innerHTML = '';
-      rows.forEach(s => {
-        const opt = new Option(s.label, s.value, false, false);
-        if (s.disabled) opt.disabled = true;
-        iTime.add(opt);
-      });
+      iCoun.innerHTML = '';
+      (j.counselors||[]).forEach(c => iCoun.add(new Option(c.name, c.id)));
+      if (!iCoun.options.length){
+        timePills.innerHTML=''; noSlotsHint.textContent='No active counselors available for booking.'; noSlotsHint.classList.remove('hidden'); return;
+      }
+      if (cid && [...iCoun.options].some(o => o.value===cid)) iCoun.value=cid;
 
-      timePills.innerHTML = '';
-      let anyEnabled = false;
+      const occBy = j.occupied_by || {};
+      const slots = j.slots || {};
+      const current = (j.current_time || '').trim();
+      const ref     = j.ref_time || j.suggest || null;
 
-      rows.forEach(s => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'time-pill';
-        btn.innerHTML = s.busy
-          ? `${s.label} <span class="time-pill-badge time-pill-badge--danger">No Slots</span>`
-          : s.label;
+      const activeCid = iCoun.value;
+      const occRaw = occBy[activeCid] || [];
+      const occNorm = occRaw.map(x => String(x).padStart(5,'0'));
+      fillTimes(activeCid, slots, { occupied: occNorm, current, ref });
 
-        if (s.busy) {
-          btn.classList.add('time-pill--busy');
-          btn.setAttribute('aria-disabled','true');
-          btn.title = 'Occupied (another appointment exists)';
-        } else if (s.current) {
-          btn.classList.add('time-pill--current');
-          btn.setAttribute('aria-disabled','true');
-          btn.title = 'Current appointment time for this session';
-          const badge = document.createElement('span');
-          badge.className = 'time-pill-badge';
-          badge.textContent = 'Current';
-          btn.appendChild(badge);
-        } else if (s.disabled) {
-          btn.setAttribute('aria-disabled','true');
-        }
+      iCoun.onchange = () => loadSlots(iCoun.value);
+    }catch(e){
+      iCoun.innerHTML=''; iTime.innerHTML=''; timePills && (timePills.innerHTML=''); noSlotsHint && noSlotsHint.classList.add('hidden');
+      console.error(e);
+    }
+  }
 
-        if (!s.disabled) {
-          anyEnabled = true;
-          btn.addEventListener('click', () => {
-            iTime.value = s.value;
-            [...timePills.querySelectorAll('.time-pill')].forEach(p => p.classList.remove('time-pill--active'));
-            btn.classList.add('time-pill--active');
-          }, { passive:true });
-        } else {
-          btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (window.Swal) Swal.fire({
-              icon:'error',
-              title:'Time not available',
-              text: s.busy ? 'That time is already taken. Pick another.' : 'You cannot choose this time.',
-              confirmButtonText:'OK'
-            });
-          }, { passive:false });
-        }
-        timePills.appendChild(btn);
-      });
+  function fillTimes(counselorId, slotsByCounselor, extras={}){
+    const occ = Array.isArray(extras.occupied) ? extras.occupied.map(String) : [];
+    const cur = (extras.current || '').trim();
+    const raw  = (slotsByCounselor?.[counselorId] || []);
+    const rows = normalizeHourlyRows(raw, occ, cur);
 
-      if (!anyEnabled) {
-        const noSlotsHint = document.getElementById('hrNoSlotsHint');
-        let ref = (extras.ref || '').trim() || '09:00';
-        const refLabel = fmt12(ref);
+    iTime.innerHTML=''; rows.forEach(s => { const opt = new Option(s.label, s.value, false, false); if (s.disabled) opt.disabled=true; iTime.add(opt); });
 
-        noSlotsHint.textContent = 'No available slots for this counselor/date. You may try this reference time:';
-        noSlotsHint.classList.remove('hidden');
+    timePills.innerHTML=''; let anyEnabled=false;
+    rows.forEach(s => {
+      const btn = document.createElement('button');
+      btn.type='button'; btn.className='time-pill';
+      btn.innerHTML = s.busy ? `${s.label} <span class="time-pill-badge time-pill-badge--danger">No Slots</span>` : s.label;
 
-        const refBtn = document.createElement('button');
-        refBtn.type = 'button';
-        refBtn.className = 'time-pill time-pill--ref';
-        refBtn.innerHTML = `Ref: ${refLabel}`;
-        refBtn.addEventListener('click', () => {
-          let opt = [...iTime.options].find(o => o.value === ref);
-          if (!opt) iTime.add(new Option(refLabel, ref, true, true)); else iTime.value = ref;
+      if (s.busy){ btn.classList.add('time-pill--busy'); btn.setAttribute('aria-disabled','true'); btn.title='Occupied'; }
+      else if (s.current){ btn.classList.add('time-pill--current'); btn.setAttribute('aria-disabled','true'); btn.title='Current';
+        const badge=document.createElement('span'); badge.className='time-pill-badge'; badge.textContent='Current'; btn.appendChild(badge);
+      } else if (s.disabled){ btn.setAttribute('aria-disabled','true'); }
+
+      if (!s.disabled){
+        anyEnabled=true;
+        btn.addEventListener('click', () => {
+          iTime.value=s.value;
           [...timePills.querySelectorAll('.time-pill')].forEach(p => p.classList.remove('time-pill--active'));
-          refBtn.classList.add('time-pill--active');
+          btn.classList.add('time-pill--active');
         }, { passive:true });
-        timePills.appendChild(refBtn);
-      } else {
-        document.getElementById('hrNoSlotsHint')?.classList.add('hidden');
-        const firstEnabled = timePills.querySelector('.time-pill:not([aria-disabled="true"])');
-        firstEnabled?.click();
       }
-    }
-
-    form?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      busy(true);
-      try{
-        if (!iDate.value || !iDate.value.trim()) {
-          if (picked instanceof Date) {
-            iDate.value = ymd(picked);
-          } else {
-            const fallback = defaultNextWeekday();
-            picked = fallback;
-            iDate.value = ymd(fallback);
-          }
-        }
-        if (!iTime.value && timePills) {
-          const firstEnabled = timePills.querySelector('.time-pill:not([aria-disabled="true"])');
-          firstEnabled?.click();
-        }
-        if (!iDate.value) {
-          if (window.Swal) Swal.fire({icon:'warning', title:'Pick a date', text:'Please select a weekday for the appointment.'});
-          busy(false); return;
-        }
-        if (!iTime.value) {
-          if (window.Swal) Swal.fire({icon:'warning', title:'Pick a time', text:'Please choose a time slot.'});
-          busy(false); return;
-        }
-
-        const fd = new FormData(form);
-        fd.append('_token', csrf);
-        if (!fd.get('date')) fd.set('date', iDate.value || '');
-
-        const ep = (mode==='book') ? epBook : epRebook;
-        const res = await fetch(ep, {
-          method: 'POST',
-          headers: { 'X-Requested-With':'XMLHttpRequest' },
-          body: fd
-        });
-        const j = await res.json().catch(()=> ({}));
-        if (!res.ok || !j?.ok) {
-          const msg = j?.message || 'Request failed.';
-          if (window.Swal) Swal.fire({ icon:'error', title:'Error', text: msg });
-
-          const selected = iTime.value;
-          if (selected) {
-            const selectedLabel = fmt12(selected).trim();
-            const pill = [...timePills.querySelectorAll('.time-pill')]
-              .find(b => (b.textContent || b.innerText || '').trim().startsWith(selectedLabel));
-            if (pill) {
-              pill.classList.remove('time-pill--active');
-              pill.classList.add('time-pill--busy');
-              pill.setAttribute('aria-disabled','true');
-              pill.title = 'Occupied (another appointment exists)';
-              if (!pill.querySelector('.time-pill-badge--danger')) {
-                pill.innerHTML = `${selectedLabel} <span class="time-pill-badge time-pill-badge--danger">No Slots</span>`;
-              }
-              timePills.querySelector('.time-pill:not([aria-disabled="true"])')?.click();
-            }
-          }
-          throw new Error(msg);
-        }
-
-        result.innerHTML = j.html || '<div class="text-slate-700">Done.</div>';
-        form.classList.add('hidden');
-        result.classList.remove('hidden');
-        if (window.Swal) Swal.fire({ toast:true, position:'top-end', icon:'success', title:(mode==='book'?'Booked':'Rescheduled'), timer:1300, showConfirmButton:false });
-
-        if (j.appt) {
-          const pillWrap = document.getElementById('js-nextAppt');
-          if (pillWrap) {
-            pillWrap.classList.remove('hidden');
-            pillWrap.innerHTML = `
-              <div class="mt-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 p-3 text-sm">
-                <div class="font-medium">Upcoming appointment ${j.appt.rel_label}</div>
-                <div class="text-xs opacity-80">
-                  ${j.appt.date_label} • ${j.appt.time_label}${j.appt.counselor_name ? ' • ' + j.appt.counselor_name : ''}
-                </div>
-              </div>`;
-          }
-          const msgChip  = document.getElementById('js-hasActiveMsg');
-          if (msgChip) msgChip.classList.remove('hidden');
-
-          const hdr = document.getElementById('hdrUpcomingPill');
-          if (hdr) {
-            hdr.textContent = `Upcoming appt: ${j.appt.date_label} • ${j.appt.time_label}`;
-            hdr.classList.remove('hidden');
-          }
-          document.getElementById('btnBookHR')?.classList.add('hidden');
-          document.getElementById('hrActionsWrap')?.classList.add('hidden');
-        }
-      } catch(e){
-        console.error(e);
-      } finally {
-        busy(false);
-      }
+      timePills.appendChild(btn);
     });
 
-    function open(m){
-      mode = m;
-      titleEl.textContent = (mode==='book') ? 'Book urgent appointment' : 'Move appointment earlier';
-      label.textContent   = (mode==='book') ? 'Book' : 'Reschedule';
-      result.classList.add('hidden');
-      form.classList.remove('hidden');
-      modal.classList.remove('hidden');
-
-      picked = (function defaultNextWeekday(){
-        const d = new Date(); d.setDate(d.getDate()+1); d.setHours(0,0,0,0);
-        if (d.getDay()===6) d.setDate(d.getDate()+2);
-        if (d.getDay()===0) d.setDate(d.getDate()+1);
-        return d;
-      })();
-      iDate.value = ymd(picked);
-      view = new Date(picked.getFullYear(), picked.getMonth(), 1);
-      renderCalendar();
-      loadSlots();
+    if (!anyEnabled){
+      const ref = (extras.ref || '').trim() || '09:00';
+      noSlotsHint.textContent = 'No available slots. You may try this reference time:'; noSlotsHint.classList.remove('hidden');
+      const refBtn=document.createElement('button'); refBtn.type='button'; refBtn.className='time-pill time-pill--ref'; refBtn.innerHTML=`Ref: ${fmt12(ref)}`;
+      refBtn.addEventListener('click', () => {
+        let opt=[...iTime.options].find(o=>o.value===ref); if(!opt)iTime.add(new Option(fmt12(ref), ref, true, true)); else iTime.value=ref;
+        [...timePills.querySelectorAll('.time-pill')].forEach(p => p.classList.remove('time-pill--active'));
+        refBtn.classList.add('time-pill--active');
+      }, { passive:true });
+      timePills.appendChild(refBtn);
+    } else {
+      noSlotsHint.classList.add('hidden');
+      timePills.querySelector('.time-pill:not([aria-disabled="true"])')?.click();
     }
-    function close(){ modal.classList.add('hidden'); }
-    closeBtn?.addEventListener('click', close);
-    cancelBtn?.addEventListener('click', close);
-    modal?.firstElementChild?.addEventListener('click', close);
-  })();
+  }
+
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try{
+      if (!iDate.value) {
+        const d = new Date(); d.setDate(d.getDate()+1); if (d.getDay()==6) d.setDate(d.getDate()+2); if (d.getDay()==0) d.setDate(d.getDate()+1);
+        picked=d; iDate.value = ymd(d);
+      }
+      if (!iTime.value) timePills.querySelector('.time-pill:not([aria-disabled="true"])')?.click();
+
+      const fd = new FormData(form);
+      fd.append('_token', csrf);
+      if (!fd.get('date')) fd.set('date', iDate.value || '');
+
+      const ep = (mode==='book') ? epBook : epRebook;
+      const res = await fetch(ep, { method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body: fd });
+      const j = await res.json().catch(()=> ({}));
+      if (!res.ok || !j?.ok) { throw new Error(j?.message || 'Request failed.'); }
+
+      // success view
+      result.innerHTML = j.html || '<div class="text-slate-700">Done.</div>';
+      form.classList.add('hidden');
+      result.classList.remove('hidden');
+
+      // FLAG: used by ✕ to trigger page refresh
+      __justBookedOrRescheduled = true;
+
+      if (j.appt){
+        // soften card + show banners handled by your other code
+        const hdr = document.getElementById('hdrUpcomingPill');
+        if (hdr){ hdr.textContent = `Upcoming appt: ${j.appt.date_label} • ${j.appt.time_label}`; hdr.classList.remove('hidden'); }
+        const chip = document.getElementById('js-hasActiveMsg'); chip?.classList.remove('hidden');
+        const wrap = document.getElementById('js-nextAppt');
+        if (wrap){ wrap.classList.remove('hidden'); wrap.innerHTML =
+          `<div class="mt-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 p-3 text-sm">
+             <div class="font-medium">Upcoming appointment ${j.appt.rel_label}</div>
+             <div class="text-xs opacity-80">${j.appt.date_label} • ${j.appt.time_label}${j.appt.counselor_name ? ' • '+j.appt.counselor_name : ''}</div>
+           </div>`; }
+        document.getElementById('btnBookHR')?.classList.add('hidden');
+        document.getElementById('hrActionsWrap')?.classList.add('hidden');
+        document.getElementById('hrMarkDone')?.classList.remove('hidden');
+      }
+    } catch(err){
+      console.error(err);
+      if (window.Swal) Swal.fire({ icon:'error', title:'Error', text:String(err.message||err) });
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  function open(m){
+    mode = m;
+    titleEl.textContent = (mode==='book') ? 'Book urgent appointment' : 'Move appointment earlier';
+    label.textContent   = (mode==='book') ? 'Book' : 'Reschedule';
+    result.classList.add('hidden'); form.classList.remove('hidden');
+    modal.classList.remove('hidden');
+    __justBookedOrRescheduled = false;   // reset flag on open
+
+    const d = new Date(); d.setDate(d.getDate()+1); if (d.getDay()==6) d.setDate(d.getDate()+2); if (d.getDay()==0) d.setDate(d.getDate()+1);
+    picked=d; iDate.value = ymd(d);
+    view = new Date(d.getFullYear(), d.getMonth(), 1);
+    renderCalendar(); loadSlots();
+  }
+  function close(){ modal.classList.add('hidden'); }
+
+  // ✕ should refresh only after a successful booking/rescheduling
+  closeBtn?.addEventListener('click', () => {
+    const successVisible = __justBookedOrRescheduled && !result.classList.contains('hidden');
+    close();
+    if (successVisible) setTimeout(() => window.location.reload(), 120);
+  });
+
+  // cancel/backdrop = just close, no reload
+  cancelBtn?.addEventListener('click', close);
+  modal?.firstElementChild?.addEventListener('click', close);
+})();
+
 
   /* ===== Calendar (weekly counts) ===== */
   (() => {

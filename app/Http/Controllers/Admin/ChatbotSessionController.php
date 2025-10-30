@@ -87,17 +87,6 @@ class ChatbotSessionController extends Controller
         RateLimiter::clear($key);
         session(['admin.reauth_sensitive_until' => now()->addMinutes(self::REAUTH_SENSITIVE_MINUTES)]);
         return response()->json(['ok' => true]);
-
-        return response()->json([
-        'ok' => true,
-        'html' => view('partials.appointment_success', compact('appointment'))->render(),
-        'appt' => [
-            'date_label'     => $slot->format('M d, Y'),
-            'time_label'     => $slot->format('h:i A'),
-            'rel_label'      => 'in ' . $slot->diffForHumans(now(), ['parts' => 2, 'short' => true]),
-            'counselor_name' => $counselorName ?? null
-        ]
-    ]);
     }
 
     /**
@@ -627,28 +616,6 @@ class ChatbotSessionController extends Controller
                 e($counselorName ?? '—'),
                 e($start->format('M d, Y')),
                 e($start->format('g:i A')),
-                e($note)
-            ),
-        ]);
-
-        return response()->json([
-            'ok'   => true,
-            'html' => sprintf(
-                '
-                <div class="kv-grid">
-                <div class="kv"><span class="label">Student:</span>   <span class="value">%s</span></div>
-                <div class="kv"><span class="label">Counselor:</span> <span class="value">%s</span></div>
-                <div class="kv"><span class="label">Date:</span>      <span class="value">%s</span></div>
-                <div class="kv"><span class="label">Time:</span>      <span class="value">%s</span></div>
-                </div>
-
-                <div style="margin:6px 0 2px"><b>Note sent to student:</b></div>
-                <div style="white-space:pre-wrap">%s</div>
-                ',
-                e($session->user->name ?? ('#'.$studentId)),
-                e($counselorName ?? '—'),
-                e($slot->format('M d, Y')),
-                e($slot->format('g:i A')),
                 e($note)
             ),
         ]);
