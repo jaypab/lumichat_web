@@ -82,63 +82,73 @@ class ChatController extends Controller
     }
 
     private function evaluateRiskLevel(string $text): string
-    {
-        $t = RiskHeuristics::normalizeMsg($text);
-        $t = preg_replace('/\s+/u', ' ', $t ?? '');
+{
+    $t = RiskHeuristics::normalizeMsg($text);
+    $t = preg_replace('/\s+/u', ' ', $t ?? '');
 
-        // HIGH
-        $high = [
-            '\bi\s*(?:just\s*)?(?:(?:will|would|could|can|might|gonna|going\s+to)\s*)?die\b',
-            '\bi\s*(?:wanna|want(?:\s*to)?|plan|planning|intend|need|will|gonna)\s*(?:to\s*)?(?:die|kill myself|end (?:it|my life)|commit suicide|unalive|disappear|be gone)\b',
-            '\b(?:kill myself|commit suicide|end it all|no reason to live|life is pointless)\b',
-            '\bi\s*(?:wish|want)\s*(?:i\s*)?(?:were|was)\s*dead\b',
-            '\bi\s*(?:can\'?t|cannot)\s*go on\b',
-            '\b(?:jump off|overdose|poison myself|hang myself)\b',
-            '\b(?:self[- ]harm|cut(?:ting)? myself)\b',
-            '\bgusto na ko mamatay\b',
-            '\bmaghikog\b',
-            '\bwala na koy paglaum\b',
-            '\bgusto ko mawala\b',
-            '\btapuson na nako tanan\b',
-        ];
-        $negatedDie = (bool) preg_match('/\b(?:don\'?t|do\s+not)\s+i\s+[^.?!]*\bdie\b/iu', $t);
-        foreach ($high as $p) {
-            if ($p === '\bi\s*(?:just\s*)?(?:(?:will|would|could|can|might|gonna|going\s+to)\s*)?die\b') {
-                if ($negatedDie) { /* skip this one */ }
-                elseif (preg_match('/'.$p.'/iu', $t)) return 'high';
-                continue;
-            }
-            if (preg_match('/'.$p.'/iu', $t)) return 'high';
-        }
-
-        // Co-occurrence heuristic
-        $acts   = ['suicide', 'die', 'unalive', 'kill myself', 'end my life', 'end it', 'jump', 'overdose', 'poison', 'cut', 'disappear', 'be gone', 'mamatay', 'hikog', 'wala na koy paglaum', 'mawala'];
-        $intent = ['wanna', 'want', 'plan', 'planning', 'thinking', 'feel like', 'i should', 'i will', 'i might', 'really want', 'gonna', 'gusto', 'buot', 'tingali', 'murag'];
-        foreach ($acts as $a) foreach ($intent as $b) {
-            if (str_contains($t, $a) && str_contains($t, $b)) return 'high';
-        }
-
-        // MODERATE
-        $moderate = [
-            '\bi\s*(?:hate|loath|despise)\s*myself\b',
-            '\b(?:i (?:want|wish) (?:to )?disappear|i (?:don\'?t|do not) want to exist|i wish i wasn\'?t here|i wish i never existed)\b',
-            '\b(?:i(?:\'m| am)? (?:not ?ok(?:ay)?|empty|worthless|a burden|beyond help))\b',
-            '\b(?:give up on life|i don\'?t want to live|i feel like dying)\b',
-            '\b(?:depress(?:ed|ing)?|anxious|panic|overwhelmed|burnout|stressed)\b',
-            '\bnagkabalaka ko\b',
-            '\bkulba\b',
-            '\bkapoy kaayo\b',
-            '\bbug-at kaayo\b',
-            '\bna[- ]?overwhelm\b',
-            '\bdili ko okay\b',
-            '\bwala koy gana\b',
-        ];
-        foreach ($moderate as $p) {
-            if (preg_match('/' . $p . '/iu', $t)) return 'moderate';
-        }
-
+    // === APPOINTMENT SHIELD ===
+    // If clearly asking to book/schedule with counselor and no self-harm cue → force LOW.
+    $selfHarmAny = (bool) preg_match('/\b(kill myself|commit suicide|end (?:it|my life)|unalive|die|wish i (?:were|was) dead|jump off|overdose|poison myself|hang myself|cut(?:ting)? myself|self[- ]harm|no reason to live|life is pointless|mamatay|maghikog|wala na koy paglaum|mawala|taposon(?:\s+na)?\s+nako\s+tanan)\b/iu', $t);
+    if ($this->wantsAppointment($t) && !$selfHarmAny) {
         return 'low';
     }
+
+    // ===== HIGH =====
+    // Direct phrases (keep yours)
+    $high = [
+        '\bi\s*(?:just\s*)?(?:(?:will|would|could|can|might|gonna|going\s+to)\s*)?die\b',
+        '\bi\s*(?:wanna|want(?:\s*to)?|plan|planning|intend|need|will|gonna)\s*(?:to\s*)?(?:die|kill myself|end (?:it|my life)|commit suicide|unalive|disappear|be gone)\b',
+        '\b(?:kill myself|commit suicide|end it all|no reason to live|life is pointless)\b',
+        '\bi\s*(?:wish|want)\s*(?:i\s*)?(?:were|was)\s*dead\b',
+        '\bi\s*(?:can\'?t|cannot)\s*go on\b',
+        '\b(?:jump off|overdose|poison myself|hang myself)\b',
+        '\b(?:self[- ]harm|cut(?:ting)? myself)\b',
+        '\bgusto na ko mamatay\b',
+        '\bmaghikog\b',
+        '\bwala na koy paglaum\b',
+        '\bgusto ko mawala\b',
+        '\btapuson na nako tanan\b',
+    ];
+
+    // respect negation for "die"
+    $negatedDie = (bool) preg_match('/\b(?:don\'?t|do\s+not)\s+i\s+[^.?!]*\bdie\b/iu', $t);
+    foreach ($high as $p) {
+        if ($p === '\bi\s*(?:just\s*)?(?:(?:will|would|could|can|might|gonna|going\s+to)\s*)?die\b') {
+            if (!$negatedDie && preg_match('/'.$p.'/iu', $t)) return 'high';
+        } else if (preg_match('/'.$p.'/iu', $t)) {
+            return 'high';
+        }
+    }
+
+    // Co-occurrence with proximity (intent within ~8 words of act), both orders
+    $acts   = '(suicide|die|unalive|kill myself|end my life|end it|jump|overdose|poison|cut|disappear|be gone|mamatay|hikog|wala na koy paglaum|mawala)';
+    $intent = '(wanna|want|plan|planning|thinking|feel like|i should|i will|i might|really want|gonna|gusto|buot|tingali|murag|need)';
+    if (preg_match('/\b' . $intent . '\b(?:\W+\w+){0,8}?\b' . $acts . '\b/iu', $t)
+        || preg_match('/\b' . $acts . '\b(?:\W+\w+){0,8}?\b' . $intent . '\b/iu', $t)) {
+        return 'high';
+    }
+
+    // ===== MODERATE (keep yours) =====
+    $moderate = [
+        '\bi\s*(?:hate|loath|despise)\s*myself\b',
+        '\b(?:i (?:want|wish) (?:to )?disappear|i (?:don\'?t|do not) want to exist|i wish i wasn\'?t here|i wish i never existed)\b',
+        '\b(?:i(?:\'m| am)? (?:not ?ok(?:ay)?|empty|worthless|a burden|beyond help))\b',
+        '\b(?:give up on life|i don\'?t want to live|i feel like dying)\b',
+        '\b(?:depress(?:ed|ing)?|anxious|panic|overwhelmed|burnout|stressed)\b',
+        '\bnagkabalaka ko\b',
+        '\bkulba\b',
+        '\bkapoy kaayo\b',
+        '\bbug-at kaayo\b',
+        '\bna[- ]?overwhelm\b',
+        '\bdili ko okay\b',
+        '\bwala koy gana\b',
+    ];
+    foreach ($moderate as $p) {
+        if (preg_match('/' . $p . '/iu', $t)) return 'moderate';
+    }
+
+    return 'low';
+}
 
     private function buildRasaMetadata(int $sessionId, string $lang, string $risk): array
     {
@@ -158,31 +168,34 @@ class ChatController extends Controller
     }
 
     private function wantsAppointment(string $text): bool
-    {
-        $t = mb_strtolower($text);
+{
+    $t = mb_strtolower($text);
 
-        // Strong signals: action + counselor/therapy/advisor
-        $strong = [
-            '/\b(appoint(?:ment)?|schedule|book|booking|reserve|set\s*an?\s*appointment)\b[\s\S]{0,80}\b(counsel(?:or|ling)|therap(?:ist|y)|advisor)\b/iu',
-            '/\b(counsel(?:or|ling)|therap(?:ist|y)|advisor)\b[\s\S]{0,80}\b(appoint(?:ment)?|schedule|book|booking|reserve|set\s*an?\s*appointment)\b/iu',
-            '/\b(i\s+want|i\'?d\s+like|can\s+i|please)\b[\s\S]{0,40}\b(schedule|book|appointment)\b[\s\S]{0,40}\b(counsel(?:or|ling)|therap(?:ist|y)|advisor)\b/iu',
-            '/\bsee\s+(?:a\s+)?counselor\b/iu',
-            '/\b(pa-?schedule|magpa-?iskedyul|mo-?book)\b[\s\S]{0,80}\b(counsel(?:or|ing)?|konselor|tambag|makig[- ]?istorya)\b/iu',
-        ];
-        foreach ($strong as $r) if (preg_match($r, $t)) return true;
+    // ===== Strong, explicit patterns (keep yours, cleaned) =====
+    $strong = [
+        // ENG: action near counselor
+        '/\b(appoint(?:ment)?|schedule|book|booking|reserve|set\s*an?\s*appointment)\b[\s\S]{0,80}\b(counsel(?:or|ling)|therap(?:ist|y)|advisor)\b/iu',
+        '/\b(counsel(?:or|ling)|therap(?:ist|y)|advisor)\b[\s\S]{0,80}\b(appoint(?:ment)?|schedule|book|booking|reserve|set\s*an?\s*appointment)\b/iu',
+        '/\b(i\s+want|i\'?d\s+like|can\s+i|please)\b[\s\S]{0,40}\b(schedule|book|appointment)\b[\s\S]{0,40}\b(counsel(?:or|ling)|therap(?:ist|y)|advisor)\b/iu',
+        '/\bsee\s+(?:a\s+)?counselor\b/iu',
 
-        // Soft signals
-        if (preg_match('/\b(appoint(?:ment)?|schedule|book(?:ing)?|reserve|set\s*(?:an?|up)?\s*appointment)\b/iu', $t)) {
-            return true;
-        }
+        // CEB: booking a counselor
+        '/\b(pa-?schedule|magpa-?iskedyul|mo-?book)\b[\s\S]{0,80}\b(counsel(?:or|ing)?|konselor|tambag|makig[- ]?istorya)\b/iu',
+    ];
+    foreach ($strong as $r) if (preg_match($r, $t)) return true;
 
-        // Conversational phrasing
-        if (preg_match('/\b(talk to|speak with|see|meet)\b[\s\S]{0,40}\b(someone|somebody|counsel(?:or)?|advisor|therap(?:ist)?)\b/iu', $t)) {
-            return true;
-        }
+    // ===== Soft but still “counselor-context required” =====
+    // e.g. “Can I set an appointment?” followed by “with the counselor” on next message
+    // Here we only trigger if both sides (action + counselor) appear (anywhere) in the same text,
+    // not just "book" alone.
+    $hasAction     = (bool) preg_match('/\b(appoint(?:ment)?|schedule|book(?:ing)?|reserve|set\s*(?:an?|up)?\s*appointment)\b/iu', $t);
+    $hasCounselor  = (bool) preg_match('/\b(counsel(?:or|ling)|therap(?:ist|y)|advisor|konselor|tambag)\b/iu', $t);
 
-        return false;
-    }
+    if ($hasAction && $hasCounselor) return true;
+
+    return false;
+}
+
 
     /**
      * Build the full Rasa webhook URL from env/config safely.
@@ -421,12 +434,14 @@ public function store(Request $request)
     }
     $sessionId = $session->id;
 
-    // 3) Language + risk (use the same analysisText used for emotions)
-    $lang    = $this->inferLanguage($text);
-    $msgRisk = $this->evaluateRiskLevel($analysisText);
-    if ($selfThreat) {
-        $msgRisk = 'high';
-    }
+ // 3) Language + risk (use the same analysisText used for emotions)
+$lang    = $this->inferLanguage($text);
+$msgRisk = $this->evaluateRiskLevel($analysisText);
+
+// keep "high" only if it's not just a booking ask
+if ($selfThreat && !$this->wantsAppointment($analysisText)) {
+    $msgRisk = 'high';
+}
 
     // 4) Save user message — idempotent & race-safe
     try {
@@ -447,7 +462,7 @@ public function store(Request $request)
 
     // Persist the FIRST high-risk trigger (id + excerpt + timestamp)
     try {
-        if ($msgRisk === 'high') {
+    if ($msgRisk === 'high' && !$this->wantsAppointment($analysisText)) {
             $session->refresh();
             $needsStamp = empty($session->high_risk_chat_id);
             if ($needsStamp) {
