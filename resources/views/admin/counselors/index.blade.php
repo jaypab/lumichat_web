@@ -14,12 +14,6 @@
         <span class="text-slate-600">{{ $total }} {{ Str::plural('counselor', $total) }}</span>
       </p>
     </div>
-
-    <a href="{{ route('admin.counselors.create') }}"
-       class="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl shadow-sm hover:bg-indigo-700 active:scale-[.99]">
-      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-      Add Counselor
-    </a>
   </div>
 
   {{-- Table --}}
@@ -140,9 +134,6 @@
               {{-- Actions --}}
               <td class="px-6 py-4 text-right whitespace-nowrap">
                 <div class="flex items-center justify-end gap-2">
-                  <a href="{{ route('admin.counselors.edit',$c) }}"
-                     class="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 hover:ring-slate-300 active:scale-[.97] transition"
-                     title="Edit">✏️</a>
                   <form id="delete-form-{{ $c->id }}" action="{{ route('admin.counselors.destroy',$c) }}" method="POST">
                     @csrf @method('DELETE')
                     <button type="button" onclick="confirmDelete({{ $c->id }})"
