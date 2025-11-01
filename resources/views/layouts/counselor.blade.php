@@ -173,22 +173,6 @@
         <span class="rail-tip">My Availability</span>
       </a>
 
-      {{-- High-Risk Reviews --}}
-        <a href="{{ route('counselor.highrisk.index') }}"
-        aria-current="{{ request()->routeIs('counselor.highrisk.*') ? 'page' : 'false' }}"
-        class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
-                {{ request()->routeIs('counselor.highrisk.*') ? 'is-active' : '' }}">
-        <span class="inline-flex w-10 h-10 items-center justify-center">
-            {{-- Red triangle alert icon --}}
-            <svg class="w-6 h-6 danger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 9v4m0 4h.01" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-            </svg>
-        </span>
-        <span class="nav-label font-medium">High-Risk Reviews</span>
-        <span class="rail-tip">High-Risk Reviews</span>
-        </a>
-
         {{-- My Appointments --}}
         <a href="{{ route('counselor.appointments.index') }}"
           aria-current="{{ request()->routeIs('counselor.appointments.*') ? 'page' : 'false' }}"
