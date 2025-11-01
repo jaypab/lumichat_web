@@ -1,6 +1,6 @@
 {{-- resources/views/Counselor_Interface/availability/index.blade.php --}}
 @extends('layouts.counselor')
-@section('title','My Availability')
+@section('title','Counselor - Manage Availability')
 @section('page_title','My Availability')
 
 @section('content')
@@ -46,9 +46,27 @@
 
     {{-- Weekday Quick Editor --}}
     <section class="border-t border-slate-200/70 bg-white/80 p-5 lg:p-8">
-      <div class="mb-3">
-        <h3 class="text-slate-900 font-semibold tracking-tight">Weekday Quick Editor</h3>
-        <p class="text-sm text-slate-500">Click “Update” to disable hour tiles (students won’t see disabled hours).</p>
+      <div class="mb-3 flex items-center justify-between">
+        <div>
+          <h3 class="text-slate-900 font-semibold tracking-tight">Weekday Quick Editor</h3>
+          <p class="text-sm text-slate-500">Click “Update” to disable hour tiles (students won’t see disabled hours).</p>
+        </div>
+        <a id="openTableBtn"
+          href="{{ route('counselor.availability.table') }}"
+          class="table-btn-floating ui-peel inline-flex items-center gap-2"
+          aria-label="Open full availability table"
+          title="Open full availability table • Shortcut: T"
+        >
+          <img
+            class="btn-icon-img"
+            src="{{ asset('images/icons/table.png') }}"
+            width="18" height="18"
+            alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"
+          />
+          <span class="btn-label">View full availability table</span>
+          <kbd class="kbd kbd-ghost" aria-hidden="true">T</kbd>
+          <span class="btn-spinner" aria-hidden="true"></span>
+        </a>
       </div>
 
       <ul class="mt-2 space-y-2.5" role="list">
@@ -142,6 +160,54 @@ async function confirmDialog({ title='Are you sure?', text='', confirmText='Yes'
      SCRIPTS (drop-in replacement)
      ============================ --}}
 <script>
+(function(){
+  const btn = document.getElementById('openTableBtn');
+  if(!btn) return;
+
+  // Open with loader unless user is using new-tab gestures
+  function shouldBypass(e){
+    return e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button === 1; // new tab/window
+  }
+
+  btn.addEventListener('click', (e) => {
+    if (shouldBypass(e)) return;        // let browser handle it
+    e.preventDefault();
+
+    const url = btn.getAttribute('href');
+    // visual state on the button
+    btn.classList.add('is-loading');
+    btn.setAttribute('aria-busy','true');
+
+    // SweetAlert loader
+    Swal.fire({
+      title: 'Opening full table…',
+      html: '<div style="font-size:12px;color:#64748b">Please wait</div>',
+      allowOutsideClick: false,
+      showConfirmButton: false,
+      didOpen: () => Swal.showLoading()
+    });
+
+    // small delay for UX (and to show the effect)
+    setTimeout(() => {
+      window.location.assign(url);
+    }, 600);
+  });
+
+  // Keyboard shortcut: T
+  document.addEventListener('keydown', (e) => {
+    // ignore when typing in inputs/textareas/contenteditable
+    const a = document.activeElement;
+    const typing = a && (
+      a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable
+    );
+    if (typing) return;
+
+    if ((e.key === 't' || e.key === 'T')) {
+      e.preventDefault();
+      btn.click();
+    }
+  });
+})();
 /* ------- tiny helpers ------- */
 const $  = (s, r=document)=>r.querySelector(s);
 const $$ = (s, r=document)=>Array.from(r.querySelectorAll(s));
@@ -419,10 +485,10 @@ const isWeekend = (d)=>[0,6].includes(d.getDay());
               const name = esc(c.student_name || 'Student');
               const url  = c.appt_url || '#';
               return `
-                <span class="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white ring-1 ring-slate-200 text-slate-700">
-                  <span class="px-1.5 py-0.5 text-xs font-semibold rounded-md bg-slate-100 ring-1 ring-slate-200">${time}</span>
-                  <a href="${url}" target="_blank" class="underline decoration-indigo-400 hover:decoration-2" title="Open appointment in new tab">${name}</a>
-                </span>`;
+              <span class="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white ring-1 ring-slate-200 text-slate-700">
+                <span class="px-1.5 py-0.5 text-xs font-semibold rounded-md bg-slate-100 ring-1 ring-slate-200">${time}</span>
+                <a href="${url}" class="swal-link underline decoration-indigo-400 hover:decoration-2" title="Open appointment">${name}</a>
+              </span>`;
             }).join('<br>');
 
           await Swal.fire({
@@ -431,7 +497,7 @@ const isWeekend = (d)=>[0,6].includes(d.getDay());
             html: `
               <p class="text-slate-700 mb-2">There are appointment(s) on <b>${esc(activeDate)}</b> inside the time(s) you tried to disable.</p>
               <div class="text-left">${rows || '—'}</div>
-              <p class="mt-3 text-[12px] text-slate-500">Tip: click a student name to open the appointment in a new tab.</p>
+              <p class="mt-3 text-[12px] text-slate-500">Tip: click a student name to open the appointment.</p>
             `,
             confirmButtonColor: '#e11d48',
           });
@@ -516,6 +582,15 @@ const isWeekend = (d)=>[0,6].includes(d.getDay());
      ============================ --}}
 @if (session('swal'))
 <script>
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a.swal-link');
+    if (!a) return;
+    e.preventDefault();
+    const href = a.getAttribute('href');
+    try { if (typeof Swal !== 'undefined') Swal.close(); } catch(_){}
+    window.location.assign(href); // same tab
+  });
+
   (function(){
     const data = @json(session('swal'));
     Swal.fire({
@@ -569,5 +644,118 @@ const isWeekend = (d)=>[0,6].includes(d.getDay());
 .tile-off{ text-decoration:line-through; }
 .tile-off--danger{ background: linear-gradient(180deg,#fda4af,#fb7185); border-color:#fb7185; color:#fff; box-shadow:0 2px 10px rgba(225,29,72,.18);}
 .tile-off--danger:hover{ filter:brightness(1.03); transform:none; }
+
+/* PNG icon + spinner */
+.table-btn { position: relative; }
+.table-btn .btn-icon-img{
+  width: 18px; height: 18px;
+  display: inline-block;
+  object-fit: contain;       /* keep aspect ratio */
+  image-rendering: -webkit-optimize-contrast; /* crisper on some displays */
+  opacity: .9;
+}
+
+.kbd-ghost { background: #f8fafc; border-color: #e5e7eb; }
+
+.table-btn .btn-spinner{
+  display: none;
+  width: 16px; height: 16px;
+  border-radius: 999px;
+  border: 2px solid rgba(15,23,42,.2);
+  border-top-color: rgba(79,70,229,1);
+  animation: spin .7s linear infinite;
+  margin-left: 6px;
+}
+
+.table-btn.is-loading{
+  pointer-events: none;
+  opacity: .9;
+}
+
+.table-btn.is-loading .btn-spinner{
+  display: inline-block;
+}
+/* Floating pill button (Option C) */
+.table-btn-floating{
+  --btn-h: 42px;
+  height: var(--btn-h);
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid rgba(148,163,184,.35); /* slate-400-ish */
+  box-shadow: 0 1px 2px rgba(15,23,42,.06), 0 6px 16px rgba(99,102,241,.10);
+  color: #0f172a;
+  font-weight: 700;
+  transition: border-color .15s ease, box-shadow .2s ease, transform .18s ease, background-color .15s ease, opacity .2s ease;
+  will-change: transform, box-shadow, opacity;
+}
+
+.table-btn-floating:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(15,23,42,.08), 0 12px 26px rgba(99,102,241,.18);
+}
+
+/* Fade-in on hover (icon + label) */
+.table-btn-floating .btn-icon-img,
+.table-btn-floating .btn-label{
+  opacity: .92;
+  transition: transform .18s ease, opacity .18s ease;
+}
+
+.table-btn-floating:hover .btn-icon-img,
+.table-btn-floating:hover .btn-label{
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+/* Icon size + spacing */
+.table-btn-floating .btn-icon-img{
+  width: 18px; height: 18px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* KBD chip style that matches ghost chips you use */
+.kbd-ghost{
+  margin-left: 6px;
+  font-weight: 600;
+  background: #fff;
+  color: #475569;
+  border-color: #e2e8f0;
+}
+
+/* Focus ring for a11y */
+.table-btn-floating:focus-visible{
+  outline: 2px solid #6366f1; /* indigo-500 */
+  outline-offset: 2px;
+}
+
+/* Loading state (spinner shows, label dims) */
+.table-btn-floating.is-loading{
+  pointer-events: none;
+  opacity: .85;
+}
+
+.table-btn-floating .btn-spinner{
+  display: none;
+  width: 14px; height: 14px; margin-left: 6px;
+  border-radius: 50%;
+  border: 2px solid #c7d2fe;          /* indigo-200 */
+  border-top-color: #4f46e5;          /* indigo-600 */
+  animation: spin .7s linear infinite;
+}
+
+.table-btn-floating.is-loading .btn-spinner{ display: inline-block; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce){
+  .table-btn-floating, .table-btn-floating *{
+    transition: none !important;
+    animation: none !important;
+  }
+}
+@keyframes spin{ to { transform: rotate(360deg); } }
 </style>
 @endsection

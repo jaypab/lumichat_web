@@ -318,5 +318,76 @@
         title="Help – Restart tutorial"
         aria-label="Restart tutorial">?</button>
 @stack('scripts')
+
+{{-- ===== Global SweetAlert flash renderer (robust + guarded) ===== --}}
+@php
+  if (!function_exists('lumi_flash_text')) {
+    function lumi_flash_text($key) {
+        $val = session($key);
+        if ($val instanceof \Illuminate\Support\MessageBag) return implode(' ', $val->all());
+        if ($val instanceof \Illuminate\View\View) return trim((string)$val);
+        if (is_array($val)) {
+            $flat = [];
+            array_walk_recursive($val, function($v) use (&$flat){ $flat[] = $v; });
+            return implode(' ', array_map('strval', $flat));
+        }
+        return is_scalar($val) ? (string)$val : '';
+    }
+  }
+@endphp
+
+@php
+  // Decide which alert should fire (at most one)
+  $flashPayload = null;
+  if (session('swal')) {
+      $flashPayload = ['type' => 'swal', 'data' => session('swal')];
+  } elseif (session()->has('error')) {
+      $flashPayload = ['type' => 'error', 'text' => lumi_flash_text('error')];
+  } elseif (session()->has('warning')) {
+      $flashPayload = ['type' => 'warning', 'text' => lumi_flash_text('warning')];
+  } elseif (session()->has('info')) {
+      $flashPayload = ['type' => 'info', 'text' => lumi_flash_text('info')];
+  } elseif (session()->has('success')) {
+      $flashPayload = ['type' => 'success', 'text' => lumi_flash_text('success')];
+  } elseif ($errors->any()) {
+      $flashPayload = ['type' => 'error', 'text' => $errors->first()];
+  }
+@endphp
+
+@if ($flashPayload)
+  <script>
+    (function(){
+      const payload = @json($flashPayload);
+      function fireSwal(){
+        try{
+          if (payload.type === 'swal') {
+            return Swal.fire(payload.data);
+          }
+          const base = {
+            icon: payload.type,
+            title: payload.type === 'error' ? 'Error'
+                 : payload.type === 'warning' ? 'Warning'
+                 : payload.type === 'info' ? 'Info' : 'Success',
+            text: payload.text || '',
+          };
+          // brand colors
+          if (payload.type === 'error')   base.confirmButtonColor = '#e11d48';
+          if (payload.type === 'success') base.confirmButtonColor = '#4f46e5';
+          if (payload.type === 'warning') base.confirmButtonColor = '#f59e0b';
+          if (payload.type === 'info')    base.confirmButtonColor = '#4f46e5';
+          Swal.fire(base);
+        } catch(e){
+          // Fallback if Swal isn’t ready for some reason
+          alert((payload.type.toUpperCase()) + ': ' + (payload.text || ''));
+        }
+      }
+      if (document.readyState === 'loading'){
+        document.addEventListener('DOMContentLoaded', fireSwal);
+      } else {
+        fireSwal();
+      }
+    })();
+  </script>
+@endif
 </body>
 </html>
