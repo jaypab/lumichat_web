@@ -400,7 +400,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 .manage-on  .sel-col{ display:table-cell; }
 
 /* Keep bulk bars hidden unless Manage is ON */
-.manage-off ~ .bulkbar .bulk-card{ display: none !important; }
+#wrapRecurring.manage-off ~ #bulkBarRecurring .bulk-card{ display: none !important; }
+#wrapUpcoming.manage-off  ~ #bulkBar          .bulk-card{ display: none !important; }
 
 /* Where the table header should stick */
 :root { --stick-top: 0px; }

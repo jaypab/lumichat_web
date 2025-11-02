@@ -32,6 +32,12 @@ Route::middleware(['auth', 'counselor'])
         Route::post('/availability/weekday-blocks', [CounselorAvailabilityController::class, 'weekdayBlocks'])
             ->name('availability.weekdayBlocks');
 
+        Route::post('/availability/weekday-store',  [CounselorAvailabilityController::class, 'weekdayStore'])
+            ->name('availability.weekdayStore');
+
+        Route::get('/availability/weekday/precheck', [CounselorAvailabilityController::class, 'weekdayDisablePrecheck'])
+            ->name('availability.weekdayDisable.precheck');
+
         // Table view
         Route::get('/availability/table', [CounselorAvailabilityController::class, 'table'])
             ->name('availability.table');
@@ -62,7 +68,7 @@ Route::middleware(['auth', 'counselor'])
             ->name('availability.bulkDestroy');
 
         // RECURRING weekday windows (top section Manage) -> POST
-       Route::match(['POST', 'DELETE'], '/availability/recurring/bulk-destroy', [CounselorAvailabilityController::class, 'bulkDestroyRecurring'])
+        Route::match(['POST', 'DELETE'], '/availability/recurring/bulk-destroy', [CounselorAvailabilityController::class, 'bulkDestroyRecurring'])
             ->name('availability.bulkDestroyRecurring');
 
 
