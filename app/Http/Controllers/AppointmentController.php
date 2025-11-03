@@ -112,6 +112,21 @@ class AppointmentController extends Controller
             ->get(['start_time', 'end_time', 'slot_type']);
     }
 
+    /**
+     * Day is disabled for this counselor when resolved availability rows
+     * for that date contain **no** 'available' ranges at all.
+     */
+    private function dayDisabledForCounselor(int $cid, Carbon $date): bool
+    {
+        $rows = $this->rangesForCounselorOnDate($cid, $date);
+        foreach ($rows as $r) {
+            if (($r->slot_type ?? 'available') === 'available') {
+                return false;
+            }
+        }
+        return true;
+    }
+
     // GET /appointment/counselors?date=YYYY-MM-DD&time=HH:MM
     public function counselors(Request $request)
     {
@@ -158,26 +173,24 @@ class AppointmentController extends Controller
         $date    = $slotStart->copy()->startOfDay();
         $slotEnd = $slotStart->copy()->addMinutes(self::SLOT_MINUTES);
 
-        $cids = DB::table('tbl_counselors')->where('is_active', 1)->pluck('id')->all();
+        $cids = DB::table('tbl_counselors')
+            ->where('is_active', 1)
+            ->where('is_accepting_appointments', 1)
+            ->pluck('id')->all();
         if (empty($cids)) return 0;
 
         $count = 0;
         foreach ($cids as $cid) {
-            $ranges = $this->rangesForCounselorOnDate($cid, $date)
-                ->filter(fn($r) => !isset($r->slot_type) || $r->slot_type === 'available');
+            $cid = (int)$cid;
 
-            foreach ($ranges as $r) {
-                if (!\is_string($r->start_time) || !\is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') {
-                    continue;
-                }
-                $start = Carbon::parse($date->toDateString().' '.$r->start_time);
-                $end   = Carbon::parse($date->toDateString().' '.$r->end_time);
+            // If the counselor disabled this weekday entirely, skip
+            if ($this->dayDisabledForCounselor($cid, $date)) {
+                continue;
+            }
 
-                // slot fully inside range (end is exclusive)
-                if ($slotStart->gte($start) && $slotEnd->lte($end)) {
-                    $count++;
-                    break;
-                }
+            // Count only if the specific slot is allowed (inside any available AND not inside any blocked)
+            if ($this->slotAllowedForCounselor($cid, $slotStart, $slotEnd, $date)) {
+                $count++;
             }
         }
         return $count;
@@ -240,9 +253,21 @@ class AppointmentController extends Controller
             return response()->json(['slots'=>[], 'reason'=>'weekend', 'message'=>'Appointments are available Monday to Friday only.']);
         }
 
-        $cids = DB::table('tbl_counselors')->where('is_active', 1)->pluck('id')->all();
+        $cids = DB::table('tbl_counselors')
+            ->where('is_active', 1)
+            ->where('is_accepting_appointments', 1)   // ← ADD THIS
+            ->pluck('id')->all();
         if (empty($cids)) {
             return response()->json(['slots'=>[], 'reason'=>'no_counselor', 'message'=>'No counselors are currently available.']);
+        }
+
+        // ⬇️ NEW: if all active counselors disabled this weekday, return none (explicit reason)
+        $allDisabled = true;
+        foreach ($cids as $cid) {
+            if (!$this->dayDisabledForCounselor((int)$cid, $date)) { $allDisabled = false; break; }
+        }
+        if ($allDisabled) {
+            return response()->json(['slots'=>[], 'reason'=>'disabled_weekday', 'message'=>'This weekday is disabled by all counselors.']);
         }
 
         $candidate = [];
@@ -276,10 +301,12 @@ class AppointmentController extends Controller
         $slots = [];
         foreach ($candidate as $hhmm => $slotStart) {
             $remaining = $this->remainingCapacityAt($slotStart);
+
+            // ✅ NEW: always include the slot; UI will disable/red it when available === 0
             $slots[] = [
                 'value'     => $hhmm,
                 'label'     => $slotStart->format('g:i A'),
-                'available' => $remaining,
+                'available' => max(0, (int)$remaining),
             ];
         }
 
@@ -606,6 +633,40 @@ class AppointmentController extends Controller
 
     /* ------------------------------ Helpers ---------------------------- */
 
+    /**
+     * True if the slot is within ANY 'available' range AND NOT inside ANY 'blocked' range
+     * after resolving date-specific vs recurring rows.
+     * Blocked always overrides available on overlap.
+     */
+    private function slotAllowedForCounselor(int $cid, Carbon $slotStart, Carbon $slotEnd, Carbon $date): bool
+    {
+        $rows = $this->rangesForCounselorOnDate($cid, $date);
+
+        $insideAvailable = false;
+        foreach ($rows as $r) {
+            if (!\is_string($r->start_time) || !\is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') {
+                continue;
+            }
+            $st = Carbon::parse($date->toDateString().' '.$r->start_time);
+            $en = Carbon::parse($date->toDateString().' '.$r->end_time);
+
+            $inside = $slotStart->gte($st) && $slotEnd->lte($en);
+            if (!$inside) continue;
+
+            // If any matching row is BLOCKED -> immediately disallow
+            if (($r->slot_type ?? 'available') === 'blocked') {
+                return false;
+            }
+
+            // Mark that at least one matching row is available
+            if (($r->slot_type ?? 'available') === 'available') {
+                $insideAvailable = true;
+            }
+        }
+
+        return $insideAvailable;
+    }
+
     /** Return counselor IDs who are free at the exact $scheduledAt slot (date-aware, hourly). */
     private function counselorsFreeAt(Carbon $scheduledAt): array
     {
@@ -614,25 +675,25 @@ class AppointmentController extends Controller
 
         $active = DB::table('tbl_counselors')
             ->where('is_active', 1)
+            ->where('is_accepting_appointments', 1)
             ->pluck('id')->all();
         if (empty($active)) return [];
 
         $free = [];
         foreach ($active as $cid) {
-            $ranges = $this->rangesForCounselorOnDate($cid, $date)
-                ->filter(fn($r) => !isset($r->slot_type) || $r->slot_type === 'available');
+            $cid = (int)$cid;
 
-            $fits = false;
-            foreach ($ranges as $r) {
-                if (!\is_string($r->start_time) || !\is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') {
-                    continue;
-                }
-                $start = Carbon::parse($date->toDateString().' '.$r->start_time);
-                $end   = Carbon::parse($date->toDateString().' '.$r->end_time);
-                if ($scheduledAt->gte($start) && $endOfSlot->lte($end)) { $fits = true; break; }
+            // Skip fully disabled day
+            if ($this->dayDisabledForCounselor($cid, $date)) {
+                continue;
             }
-            if (!$fits) continue;
 
+            // Blocked overrides available: slot must be allowed
+            if (!$this->slotAllowedForCounselor($cid, $scheduledAt, $endOfSlot, $date)) {
+                continue;
+            }
+
+            // No conflicting appt at exact start
             $taken = DB::table('tbl_appointments')
                 ->where('counselor_id', $cid)
                 ->where('scheduled_at', $scheduledAt)

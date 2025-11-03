@@ -20,6 +20,9 @@ Route::middleware(['auth', 'counselor'])
         // =========================
         // Availability
         // =========================
+        Route::post('/availability/accepting', [CounselorAvailabilityController::class, 'setAccepting'])
+            ->name('availability.accepting');
+
         Route::get('/availability',  [CounselorAvailabilityController::class, 'index'])
             ->name('availability.index');
 

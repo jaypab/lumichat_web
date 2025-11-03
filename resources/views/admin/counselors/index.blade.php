@@ -27,7 +27,6 @@
             <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] w-[12rem]">Status / Load</th>
             <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] w-[18rem] md:w-[20rem]">Upcoming Appointment</th>
             <th class="px-6 lg:pl-12 py-3 text-left font-semibold uppercase tracking-wide text-[11px] w-[24rem]">Weekly Availability</th>
-            <th class="px-6 py-3 text-right font-semibold uppercase tracking-wide text-[11px] w-[7rem]">Action</th>
           </tr>
         </thead>
 
@@ -127,19 +126,6 @@
                       <span class="text-slate-400 text-xs">No slots</span>
                     @endforelse
                   </div>
-                </div>
-              </td>
-
-
-              {{-- Actions --}}
-              <td class="px-6 py-4 text-right whitespace-nowrap">
-                <div class="flex items-center justify-end gap-2">
-                  <form id="delete-form-{{ $c->id }}" action="{{ route('admin.counselors.destroy',$c) }}" method="POST">
-                    @csrf @method('DELETE')
-                    <button type="button" onclick="confirmDelete({{ $c->id }})"
-                            class="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-rose-600/10 text-rose-700 ring-1 ring-rose-200 hover:bg-rose-600/15 hover:ring-rose-300 active:scale-[.97] transition"
-                            title="Delete">🗑️</button>
-                  </form>
                 </div>
               </td>
             </tr>

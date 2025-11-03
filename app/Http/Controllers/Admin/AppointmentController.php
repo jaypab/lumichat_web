@@ -398,6 +398,89 @@ public function index(Request $r): View
         return $pdf->stream($filename); // inline view (opens in new tab from the Blade link)
     }
 
+    // Prefer date-specific rows; fall back to recurring weekday
+    private function rangesForCounselorOnDate(int $cid, Carbon $date)
+    {
+        $dated = DB::table('tbl_counselor_availabilities')
+            ->where('counselor_id', $cid)
+            ->whereDate('date', $date->toDateString())
+            ->orderBy('start_time')
+            ->get(['start_time','end_time','slot_type']);
+
+        if ($dated->count() > 0) return $dated;
+
+        $dow = $date->isoWeekday(); // 1..7
+        return DB::table('tbl_counselor_availabilities')
+            ->where('counselor_id', $cid)
+            ->whereNull('date')
+            ->where('weekday', $dow)
+            ->orderBy('start_time')
+            ->get(['start_time','end_time','slot_type']);
+    }
+
+    /**
+     * Check if counselor is truly selectable for this 60-min slot:
+     * - active
+     * - accepting appointments (if column exists; otherwise treated as accepting)
+     * - inside an "available" window (and not inside a "blocked")
+     * - no conflicting appointment at the exact start
+     * - not weekend; not past
+     */
+    private function checkCounselorAtSlot(int $cid, Carbon $slotStart): array
+    {
+        $slotEnd = $slotStart->copy()->addMinutes(60);
+        $date    = $slotStart->copy()->startOfDay();
+
+        // flags ...
+        // (unchanged)
+
+        if ($slotStart->lte(now()))   return ['ok' => false, 'reason' => 'Past time'];
+        if ($slotStart->isoWeekday() >= 6) return ['ok' => false, 'reason' => 'Weekend'];
+
+        // ⬇️ NEW: if counselor disabled this whole weekday, bail out
+        if ($this->isFullyDisabledOnDate($cid, $date)) {
+            return ['ok' => false, 'reason' => 'Disabled day'];
+        }
+
+        // availability rows (date overrides recurring); respect blocked tiles
+        $rows = $this->rangesForCounselorOnDate($cid, $date);
+
+        $isInsideAvailable = false;
+        $isInsideBlocked   = false;
+
+        foreach ($rows as $r) {
+            if (!\is_string($r->start_time) || !\is_string($r->end_time) || $r->start_time==='' || $r->end_time==='') {
+                continue;
+            }
+            $st = Carbon::parse($date->toDateString().' '.$r->start_time);
+            $en = Carbon::parse($date->toDateString().' '.$r->end_time);
+
+            $inside = $slotStart->gte($st) && $slotEnd->lte($en);
+            if (!$inside) continue;
+
+            if (($r->slot_type ?? 'available') === 'blocked') {
+                $isInsideBlocked = true;
+                break;
+            } else {
+                $isInsideAvailable = true;
+            }
+        }
+
+        if ($isInsideBlocked)    return ['ok' => false, 'reason' => 'Blocked window'];
+        if (!$isInsideAvailable) return ['ok' => false, 'reason' => 'Off-hours'];
+
+        // conflict at the exact start time
+        $hasConflict = DB::table('tbl_appointments')
+            ->where('counselor_id', $cid)
+            ->where('scheduled_at', $slotStart)
+            ->whereIn('status', ['pending','confirmed','ongoing'])
+            ->exists();
+
+        if ($hasConflict) return ['ok' => false, 'reason' => 'Already booked'];
+
+        return ['ok' => true, 'reason' => null];
+    }
+
     public function assignForm(int $id)
     {
         $appointment = $this->appointments->findDetailedById($id);
@@ -413,39 +496,17 @@ public function index(Request $r): View
                 ]);
         }
 
-        $slotStart = \Carbon\Carbon::parse($appointment->scheduled_at);
-        $slotEnd   = $slotStart->copy()->addMinutes(30); // matches your slot length
-        $dow       = $slotStart->isoWeekday();           // 1..7
-
-        $counselors = \DB::table('tbl_counselors')
+        $slotStart = Carbon::parse($appointment->scheduled_at)->second(0); // align to :00
+        // 60-minute slot to match student side logic
+        $counselors = DB::table('tbl_counselors')
             ->where('is_active', 1)
             ->orderBy('name')
-            ->get(['id','name','email']);
+            ->get(['id','name','email','phone']);
 
         foreach ($counselors as $c) {
-            // fits counselor’s weekly schedule?
-            $fits = \DB::table('tbl_counselor_availabilities')
-                ->where('counselor_id', $c->id)
-                ->where('weekday', $dow)
-                ->where('start_time', '<=', $slotStart->format('H:i:s'))
-                ->where('end_time',   '>=', $slotEnd->format('H:i:s'))
-                ->exists();
-
-            // already booked at that exact time?
-            $booked = \DB::table('tbl_appointments')
-                ->where('counselor_id', $c->id)
-                ->where('scheduled_at', $appointment->scheduled_at)
-                ->whereIn('status', ['pending','confirmed','completed'])
-                ->exists();
-
-            $c->available   = ($fits && !$booked) ? 1 : 0;
-            $c->busy_reason = null;
-
-            if (!$fits) {
-                $c->busy_reason = 'Off-hours';
-            } elseif ($booked) {
-                $c->busy_reason = 'Has an appointment at this time';
-            }
+            $check = $this->checkCounselorAtSlot((int)$c->id, $slotStart);
+            $c->available   = $check['ok'] ? 1 : 0;
+            $c->busy_reason = $check['ok'] ? null : $check['reason'];
         }
 
         return view('admin.appointments.assign', compact('appointment', 'counselors'));
@@ -579,10 +640,23 @@ public function index(Request $r): View
         }
         /* ───────────── end email notices ───────────── */
 
-        return redirect()->route('admin.appointments.index')->with(self::FLASH_SWAL, [
+        return redirect()
+        ->route('admin.appointments.show', $id)
+        ->with(self::FLASH_SWAL, [
             'icon'  => 'success',
             'title' => 'Counselor assigned',
-            'text'  => 'Appointment has been confirmed.',
+            'html'  => sprintf(
+                '<div style="text-align:left">
+                <div><b>Date:</b> %s</div>
+                <div><b>Time:</b> %s</div>
+                <div style="margin-top:.35rem;color:#475569">
+                    Student and counselor have been notified via email.
+                </div>
+                </div>',
+                e(\Carbon\Carbon::parse($ap->scheduled_at)->format('M d, Y')),
+                e(\Carbon\Carbon::parse($ap->scheduled_at)->format('g:i A'))
+            ),
+            'confirmButtonText' => 'OK',
         ]);
     }
 
@@ -780,5 +854,20 @@ public function index(Request $r): View
                 'msg'   => 'Something went wrong.',
             ], 500);
         }
+    }
+    /**
+     * A day is considered "disabled" for a counselor if, after resolving
+     * date-specific overrides vs. recurring rows, there are **no** rows
+     * marked as available for that date.
+     */
+    private function isFullyDisabledOnDate(int $cid, Carbon $date): bool
+    {
+        $rows = $this->rangesForCounselorOnDate($cid, $date);
+        foreach ($rows as $r) {
+            if (($r->slot_type ?? 'available') === 'available') {
+                return false; // there is at least one available range
+            }
+        }
+        return true; // nothing available => full-day disabled
     }
 }

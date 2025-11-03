@@ -20,18 +20,25 @@ class CounselorAvailabilityController extends Controller
     {
         $counselorId = $this->counselorId();
 
-        // prune past dated rows
+        // (optional) prune old dated rows
         DB::table('tbl_counselor_availabilities')
             ->where('counselor_id', $counselorId)
             ->whereNotNull('date')
             ->where('date', '<', now()->toDateString())
             ->delete();
 
-        // seed defaults if none
+        // 🔹 NEW: get accepting flag
+        $flags = DB::table('tbl_counselors')
+            ->where('id', $counselorId)
+            ->first(['is_active','is_accepting_appointments']);
+
+        $accepting = $flags && (int)($flags->is_accepting_appointments ?? 1) === 1;
+
+        // seed defaults if none (only if accepting)
         $hasAny = DB::table('tbl_counselor_availabilities')
             ->where('counselor_id', $counselorId)->exists();
 
-        if (!$hasAny) {
+        if (!$hasAny && $accepting) {
             $now = now();
             $rows = [];
             foreach ([1,2,3,4,5] as $wd) {
@@ -54,10 +61,11 @@ class CounselorAvailabilityController extends Controller
             $blockedByWeekday[$r->weekday][] = [substr($r->start_time, 0, 5), substr($r->end_time, 0, 5)];
         }
 
-        return view('Counselor_Interface.availability.index', compact('blockedByWeekday'));
+        // 🔹 pass $accepting to the view
+        return view('Counselor_Interface.availability.index', compact('blockedByWeekday','accepting'));
     }
 
-  public function weekdayBlocks(Request $request)
+    public function weekdayBlocks(Request $request)
     {
         $counselorId = $this->counselorId();
 
@@ -70,36 +78,71 @@ class CounselorAvailabilityController extends Controller
 
         $weekday = (int) $data['weekday'];
 
-        // Normalize & de-dup input (also skip locked lunch 12:00–13:00)
+        // Normalize & de-dup input (skip locked lunch 12:00–13:00)
         $uniq = [];
         foreach (($data['blocks'] ?? []) as $b) {
             $s = substr($b['start'],0,5);
             $e = substr($b['end'],0,5);
-            if ($s === '12:00' && $e === '13:00') continue; // lunch is locked
+            if ($s === '12:00' && $e === '13:00') continue;
             $uniq["$s|$e"] = ['start'=>$s,'end'=>$e];
         }
         $pairs = array_values($uniq);
 
         return DB::transaction(function() use ($counselorId, $weekday, $pairs) {
 
-            // 1) hard reset: remove ALL recurring blocked rows for this weekday (date IS NULL)
+            // ✅ Only remove *blocked* recurring rows for this weekday.
             DB::table('tbl_counselor_availabilities')
                 ->where('counselor_id', $counselorId)
                 ->whereNull('date')
                 ->where('weekday', $weekday)
+                ->where('slot_type', 'blocked')
                 ->delete();
 
-            // 2) insert the new pattern (if any)
+            // If user pressed "Restore defaults" (no blocks),
+            // ensure recurring "available" rows exist for this weekday.
             if (empty($pairs)) {
+                $hasAvail = DB::table('tbl_counselor_availabilities')
+                    ->where('counselor_id', $counselorId)
+                    ->whereNull('date')
+                    ->where('weekday', $weekday)
+                    ->where('slot_type', 'available')
+                    ->exists();
+
+                if (!$hasAvail) {
+                    DB::table('tbl_counselor_availabilities')->insert([
+                        [
+                            'counselor_id' => $counselorId,
+                            'date'         => null,
+                            'weekday'      => $weekday,
+                            'slot_type'    => 'available',
+                            'start_time'   => '09:00',
+                            'end_time'     => '12:00',
+                            'created_at'   => now(),
+                            'updated_at'   => now(),
+                        ],
+                        [
+                            'counselor_id' => $counselorId,
+                            'date'         => null,
+                            'weekday'      => $weekday,
+                            'slot_type'    => 'available',
+                            'start_time'   => '13:00',
+                            'end_time'     => '16:00',
+                            'created_at'   => now(),
+                            'updated_at'   => now(),
+                        ],
+                    ]);
+                }
+
                 return response()->json(['ok' => true, 'cleared' => true], 200);
             }
 
+            // Insert the new *blocked* tiles
             $now  = now();
             $rows = [];
             foreach ($pairs as $p) {
                 $rows[] = [
                     'counselor_id' => $counselorId,
-                    'date'         => null,          // recurring
+                    'date'         => null,
                     'weekday'      => $weekday,
                     'slot_type'    => 'blocked',
                     'start_time'   => $p['start'],
@@ -114,7 +157,6 @@ class CounselorAvailabilityController extends Controller
             return response()->json(['ok' => true, 'saved' => count($rows)], 200);
         });
     }
-
     public function getDateBlocks(Request $request)
     {
         $counselorId = $this->counselorId();
@@ -1031,22 +1073,13 @@ class CounselorAvailabilityController extends Controller
             ->where('date', '<', now()->toDateString())
             ->delete();
 
-        $hasAny = DB::table('tbl_counselor_availabilities')
-            ->where('counselor_id', $counselorId)->exists();
-
-        if (!$hasAny) {
-            $now = now();
-            $rows = [];
-            foreach ([1,2,3,4,5] as $wd) {
-                $rows[] = ['counselor_id'=>$counselorId,'date'=>null,'weekday'=>$wd,'slot_type'=>'available','start_time'=>'09:00','end_time'=>'12:00','created_at'=>$now,'updated_at'=>$now];
-                $rows[] = ['counselor_id'=>$counselorId,'date'=>null,'weekday'=>$wd,'slot_type'=>'available','start_time'=>'13:00','end_time'=>'16:00','created_at'=>$now,'updated_at'=>$now];
-            }
-            DB::table('tbl_counselor_availabilities')->insert($rows);
-        }
+        // default: show only 'available'; pass ?show=all to include blocked
+        $show = $request->query('show', 'available');
 
         $recurring = DB::table('tbl_counselor_availabilities')
             ->where('counselor_id', $counselorId)
             ->whereNull('date')
+            ->when($show !== 'all', fn($q) => $q->where('slot_type', 'available'))  // 👈 hide blocked by default
             ->orderBy('weekday')->orderBy('start_time')
             ->paginate(10, ['id','weekday','slot_type','start_time','end_time'], 'recurring_page');
 
@@ -1057,7 +1090,8 @@ class CounselorAvailabilityController extends Controller
             ->orderBy('date')->orderBy('start_time')
             ->paginate(10, ['id','date','weekday','slot_type','start_time','end_time'], 'dated_page');
 
-        return view('Counselor_Interface.availability.table', compact('recurring','dated'));
+        return view('Counselor_Interface.availability.table', compact('recurring','dated'))
+            ->with('show', $show);
     }
 
     /**
@@ -1081,22 +1115,12 @@ class CounselorAvailabilityController extends Controller
             ->whereNull('date')
             ->delete();
 
-        // If no recurring rows remain, regenerate defaults automatically
-        $remain = DB::table('tbl_counselor_availabilities')
-            ->where('counselor_id', $counselorId)
-            ->whereNull('date')
-            ->count();
-
-        $note = '';
-        if ($remain === 0) {
-            $this->seedDefaultRecurring($counselorId); // <-- regenerate defaults
-            $note = ' • All recurring rows were cleared, defaults were regenerated.';
-        }
-
+        // ❌ DO NOT reseed defaults here. If counselor cleared all recurring rows,
+        //    that should mean: “no recurring availability”.
         return back()->with('swal', [
             'icon'  => 'success',
             'title' => 'Deleted',
-            'text'  => "{$deleted} recurring window".($deleted===1?'':'s')." removed.$note",
+            'text'  => "{$deleted} recurring window".($deleted===1?'':'s')." removed.",
         ]);
     }
 
@@ -1147,6 +1171,30 @@ class CounselorAvailabilityController extends Controller
         return response()->json([
             'conflicts'     => $conflicts,
             'weekday_label' => "Every {$weekdayLabel}",
+        ]);
+    }
+
+    public function setAccepting(Request $request)
+    {
+        $request->validate([
+            'accepting' => ['required','boolean'],
+        ]);
+
+        $cid = $this->counselorId();
+
+        \DB::table('tbl_counselors')
+            ->where('id', $cid)
+            ->update([
+                'is_accepting_appointments' => $request->boolean('accepting') ? 1 : 0,
+                'updated_at' => now(),
+            ]);
+
+        return back()->with('swal', [
+            'icon'  => 'success',
+            'title' => $request->boolean('accepting') ? 'Accepting appointments' : 'Paused',
+            'text'  => $request->boolean('accepting')
+                ? 'Students can now see and book your available times.'
+                : 'Students will no longer see any slots for you.',
         ]);
     }
 }

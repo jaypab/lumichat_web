@@ -17,10 +17,28 @@
           <h3 class="text-slate-900 font-semibold tracking-tight">Interactive Calendar</h3>
           <p class="text-sm text-slate-500">Weekends disabled. Hover to preview, click to select. Keyboard friendly.</p>
         </div>
-        <div class="inline-flex items-center gap-2">
-          <button id="calPrev" type="button" class="ui-ghost" aria-label="Previous month">‹</button>
-          <div id="calMonth" class="font-semibold text-indigo-600 tabular-nums"></div>
-          <button id="calNext" type="button" class="ui-ghost" aria-label="Next month">›</button>
+        <div class="flex items-center gap-3">
+
+          {{-- 🔹 Accepting/Pause toggle --}}
+            <form action="{{ route('counselor.availability.accepting') }}" method="POST" class="inline-flex items-center">
+              @csrf
+              <input type="hidden" name="accepting" value="{{ ($accepting ?? true) ? 0 : 1 }}">
+              <button
+                type="submit"
+                class="px-3 py-1.5 rounded-lg text-sm font-semibold transition
+                      {{ ($accepting ?? true)
+                          ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                          : 'bg-slate-200 text-slate-700 hover:bg-slate-300' }}">
+                {{ ($accepting ?? true) ? 'Accepting appointments' : 'Paused (hidden from students)' }}
+              </button>
+            </form>
+            
+          {{-- Month nav --}}
+          <div class="inline-flex items-center gap-2">
+            <button id="calPrev" type="button" class="ui-ghost" aria-label="Previous month">‹</button>
+            <div id="calMonth" class="font-semibold text-indigo-600 tabular-nums"></div>
+            <button id="calNext" type="button" class="ui-ghost" aria-label="Next month">›</button>
+          </div>
         </div>
       </div>
 

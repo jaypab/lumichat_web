@@ -392,8 +392,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (available === 0) {
         btn.disabled = true;
+        btn.setAttribute('tabindex','-1');        // add this
         btn.classList.add('time-pill--full');
-        btn.setAttribute('aria-disabled', 'true');
         btn.title = 'Fully booked — please select another time';
       }
 
@@ -443,13 +443,19 @@ document.addEventListener('DOMContentLoaded', () => {
       const ph = document.createElement('option'); ph.value=''; ph.textContent='Choose a preferred time *'; timeSel.appendChild(ph);
 
       if (Array.isArray(data.slots) && data.slots.length){
-        data.slots.forEach(s => {
-          const opt = document.createElement('option');
-          opt.value = s.value;
-          opt.textContent = s.label + (s.available > 1 ? `  (${s.available} slots)` : (s.available === 1 ? '  (1 slot)' : '  (No Slots Available)'));
-          opt.dataset.available = String(s.available);
-          timeSel.appendChild(opt);
-        });
+        // inside loadSlots(), after: if (Array.isArray(data.slots) && data.slots.length) {
+          data.slots.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.value;
+
+            // 🔁 REPLACE your existing textContent line with this:
+            opt.textContent = s.available === 0
+              ? `${s.label}  (Full)`
+              : (s.available === 1 ? `${s.label}  (1 slot)` : `${s.label}  (${s.available} slots)`);
+
+            opt.dataset.available = String(s.available);
+            timeSel.appendChild(opt);
+          });
         if (timeHint) timeHint.textContent = 'Choose one available time slot.';
       } else {
         const reason = data.reason || '';
