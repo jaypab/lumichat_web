@@ -53,7 +53,6 @@
                    class="w-full h-11 input-h border-0 bg-transparent text-sm placeholder-gray-400 focus:outline-none focus:ring-0"
                    placeholder="Enter your full name">
           </div>
-          {{-- Full name error --}}
           @error('full_name')
             <p class="mt-1 text-sm text-red-600 server-error" data-error-for="full_name">{{ $message }}</p>
           @enderror
@@ -66,10 +65,41 @@
                    class="w-full h-11 input-h border-0 bg-transparent text-sm placeholder-gray-400 focus:outline-none focus:ring-0"
                    placeholder="your.email@example.com">
           </div>
-          {{-- Email error --}}
           @error('email')
             <p class="mt-1 text-sm text-red-600 server-error" data-error-for="email">{{ $message }}</p>
           @enderror
+
+          {{-- OTP controls (Send + Verify + Resend with cooldown) --}}
+          <div class="mt-3 space-y-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <button id="btnSendCode" type="button"
+                      class="h-11 px-4 rounded-lg bg-blue-600 text-white text-sm font-medium shadow-sm hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                Send code
+              </button>
+              <p class="text-xs text-gray-600">We’ll email a 6-digit code to verify your address.</p>
+            </div>
+
+            <div id="codeRow" class="hidden">
+              <label class="block text-sm font-medium text-gray-700">Verification code</label>
+              <div class="mt-1 flex gap-2">
+                <input id="code" type="text" inputmode="numeric" maxlength="6"
+                       class="flex-1 h-11 rounded-lg border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                       placeholder="Enter 6-digit code">
+                <button id="btnVerify" type="button"
+                        class="h-11 px-3 rounded-lg bg-emerald-600 text-white text-sm font-medium shadow-sm hover:bg-emerald-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                  Verify
+                </button>
+              </div>
+              <div class="text-xs mt-1">
+                <span id="countdown" class="text-gray-600"></span>
+                <button id="btnResend" type="button" class="h-8 px-2 rounded text-blue-600 underline ml-2 hidden">Resend code</button>
+              </div>
+              <div id="otpStatus" class="text-sm mt-2"></div>
+            </div>
+
+            {{-- Hidden: filled after successful verify (optional) --}}
+            <input type="hidden" id="verified_token" name="verified_token" value="{{ old('verified_token') }}">
+          </div>
 
           {{-- Contact --}}
           <label for="contact_number" class="mt-4 block text-sm font-medium text-gray-700">Contact Number</label>
@@ -79,10 +109,9 @@
                    class="w-full h-11 input-h border-0 bg-transparent text-sm placeholder-gray-400 focus:outline-none focus:ring-0"
                    placeholder="+63 900 000 0000">
           </div>
-          {{-- Contact error --}}
           @error('contact_number')
-          <p class="mt-1 text-sm text-red-600 server-error" data-error-for="contact_number">{{ $message }}</p>
-        @enderror
+            <p class="mt-1 text-sm text-red-600 server-error" data-error-for="contact_number">{{ $message }}</p>
+          @enderror
         </section>
 
         {{-- ===================== Card 2: Academic ===================== --}}
@@ -109,7 +138,6 @@
               <option value="BSBA"      {{ old('course') == 'BSBA' ? 'selected' : '' }}>College of Business</option>
             </select>
           </div>
-          {{-- Course error --}}
           @error('course')
             <p class="mt-1 text-sm text-red-600 server-error" data-error-for="course">{{ $message }}</p>
           @enderror
@@ -126,10 +154,9 @@
               <option value="4th year" {{ old('year_level') == '4th year' ? 'selected' : '' }}>4th year</option>
             </select>
           </div>
-          {{-- Year level error --}}
-         @error('year_level')
-          <p class="mt-1 text-sm text-red-600 server-error" data-error-for="year_level">{{ $message }}</p>
-        @enderror
+          @error('year_level')
+            <p class="mt-1 text-sm text-red-600 server-error" data-error-for="year_level">{{ $message }}</p>
+          @enderror
         </section>
 
         {{-- ===================== Card 3: Security ===================== --}}
@@ -144,13 +171,11 @@
           <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
           <div class="mt-1 relative rounded-lg border border-gray-300 focus-within:ring-2 focus-within:ring-indigo-500 px-3">
             <input id="password" name="password" type="password" autocomplete="new-password" required minlength="12"
-                  class="w-full h-11 input-h border-0 bg-transparent text-sm placeholder-gray-400 focus:outline-none focus:ring-0 pr-10"
-                  placeholder="Create a strong password"
-                  aria-describedby="passwordHelp meterText">
-            {{-- Eye toggle (PNG icon) --}}
+                   class="w-full h-11 input-h border-0 bg-transparent text-sm placeholder-gray-400 focus:outline-none focus:ring-0 pr-10"
+                   placeholder="Create a strong password" aria-describedby="passwordHelp meterText">
             @php
-              $eye    = asset('images/icons/eye-off.png');      // update path if needed
-              $eyeOff = asset('images/icons/eye.png');  // update path if needed
+              $eye    = asset('images/icons/eye-off.png');  // update path if needed
+              $eyeOff = asset('images/icons/eye.png');      // update path if needed
             @endphp
             <button type="button"
                     class="absolute inset-y-0 right-2 inline-flex items-center justify-center px-2 text-gray-500"
@@ -159,7 +184,6 @@
               <img data-hide src="{{ $eyeOff }}" alt="" class="h-5 w-5 hidden">
             </button>
           </div>
-          {{-- Password error --}}
           @error('password')
             <p class="mt-1 text-sm text-red-600 server-error" data-error-for="password">{{ $message }}</p>
           @enderror
@@ -180,18 +204,16 @@
           <label for="password_confirmation" class="mt-4 block text-sm font-medium text-gray-700">Confirm Password</label>
           <div class="mt-1 relative rounded-lg border border-gray-300 focus-within:ring-2 focus-within:ring-indigo-500 px-3">
             <input id="password_confirmation" name="password_confirmation" type="password" autocomplete="new-password" required minlength="12"
-                  class="w-full h-11 input-h border-0 bg-transparent text-sm placeholder-gray-400 focus:outline-none focus:ring-0 pr-10"
-                  placeholder="Confirm your password" aria-describedby="confirmErr">
-            {{-- Eye toggle (PNG icon) --}}
+                   class="w-full h-11 input-h border-0 bg-transparent text-sm placeholder-gray-400 focus:outline-none focus:ring-0 pr-10"
+                   placeholder="Confirm your password" aria-describedby="confirmErr">
             <button type="button"
                     class="absolute inset-y-0 right-2 inline-flex items-center justify-center px-2 text-gray-500"
                     aria-pressed="false" aria-label="Show confirm password" data-toggle="password_confirmation">
-              <img data-hide src="{{ $eyeOff }}"    alt="" class="h-5 w-5 hidden">
-              <img data-show src="{{ $eye }}" alt="" class="h-5 w-5">
+              <img data-hide src="{{ $eyeOff }}" alt="" class="h-5 w-5 hidden">
+              <img data-show src="{{ $eye }}"    alt="" class="h-5 w-5">
             </button>
           </div>
           <p id="confirmErr" class="mt-1 text-xs text-red-600 hidden">Passwords do not match.</p>
-          {{-- Optional (if you validate it server-side) --}}
           @error('password_confirmation')
             <p class="mt-1 text-sm text-red-600 server-error" data-error-for="password_confirmation">{{ $message }}</p>
           @enderror
@@ -219,7 +241,7 @@
             </a>
           </div>
 
-          {{-- Right: primary action --}}
+          {{-- Right: primary action (enabled only when Agree is checked) --}}
           <button type="submit" id="registerBtn"
                   class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 font-medium text-white shadow-sm transition
                          hover:bg-indigo-700 active:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-50">
@@ -250,29 +272,21 @@
 })();
 
 document.addEventListener('DOMContentLoaded', () => {
-    const SERVER_FIELDS = [
-    'full_name',
-    'email',
-    'contact_number',
-    'course',
-    'year_level',
-    'password',
-    'password_confirmation'
+  // --- Hide server errors when user edits ---
+  const SERVER_FIELDS = [
+    'full_name', 'email', 'contact_number', 'course', 'year_level', 'password', 'password_confirmation'
   ];
-
   SERVER_FIELDS.forEach((name) => {
     const input = document.querySelector(`[name="${name}"]`);
     const errEl = document.querySelector(`[data-error-for="${name}"]`);
     if (!input || !errEl) return;
-
     const hide = () => errEl.classList.add('hidden');
-
-    // Hide as soon as they interact
     input.addEventListener('input', hide);
     input.addEventListener('change', hide);
     input.addEventListener('keydown', hide);
     input.addEventListener('blur', hide);
   });
+
   // --- SweetAlert helpers (same visual as login) ---
   function prettyError(htmlInner){
     const crossIcon = `
@@ -314,48 +328,63 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Show server-side validation errors (if any)
   @if ($errors->any())
-    (function(){
-      const errs = @json($errors->all());
-      const list = `<ul style="margin:.25rem auto 0;max-width:560px;color:#475569;line-height:1.7;font-size:.98rem">
-        ${errs.map(e => `<li style="display:flex;gap:.5rem"><span>•</span><span>${e}</span></li>`).join('')}
-      </ul>`;
-      Swal.fire(prettyError(list));
-    })();
+  (function(){
+    const errs = @json($errors->all());
+    const list = `<ul style="margin:.25rem auto 0;max-width:560px;color:#475569;line-height:1.7;font-size:.98rem">
+      ${errs.map(e => `<li style="display:flex;gap:.5rem"><span>•</span><span>${e}</span></li>`).join('')}
+    </ul>`;
+    Swal.fire(prettyError(list));
+  })();
   @endif
 
   // Elements & refs
-  const form      = document.getElementById('registerForm');
-  const agree     = document.getElementById('agree');
-  const btn       = document.getElementById('registerBtn');
-  const spinner   = document.querySelector('[data-spinner]');
-  const btnLabel  = document.querySelector('[data-btn-label]');
-  const pwd       = document.getElementById('password');
-  const confirm   = document.getElementById('password_confirmation');
-  const fullName  = document.getElementById('full_name');
-  const email     = document.getElementById('email');
-  const contact   = document.getElementById('contact_number');
-  const bars      = [...document.querySelectorAll('[data-meter]')];
-  const meterText = document.getElementById('meterText');
-  const lengthHint= document.getElementById('lengthHint');
-  const confirmErr= document.getElementById('confirmErr');
+  const form       = document.getElementById('registerForm');
+  const agree      = document.getElementById('agree');
+  const btn        = document.getElementById('registerBtn');
+  const spinner    = document.querySelector('[data-spinner]');
+  const btnLabel   = document.querySelector('[data-btn-label]');
+  const pwd        = document.getElementById('password');
+  const confirmPwd = document.getElementById('password_confirmation');
+  const fullName   = document.getElementById('full_name');
+  const email      = document.getElementById('email');
+  const contact    = document.getElementById('contact_number');
+  const bars       = [...document.querySelectorAll('[data-meter]')];
+  const meterText  = document.getElementById('meterText');
+  const lengthHint = document.getElementById('lengthHint');
+  const confirmErr = document.getElementById('confirmErr');
 
-  // Enable/disable submit based on Terms
-  const setBtn = () => { if (btn && agree) btn.disabled = !agree.checked; };
-  setBtn(); agree?.addEventListener('change', setBtn);
+  // OTP refs
+  const btnSend    = document.getElementById('btnSendCode');
+  const btnVerify  = document.getElementById('btnVerify');
+  const btnResend  = document.getElementById('btnResend');
+  const codeRow    = document.getElementById('codeRow');
+  const codeEl     = document.getElementById('code');
+  const otpStatus  = document.getElementById('otpStatus');
+  const tokenEl    = document.getElementById('verified_token');
+  const countdown  = document.getElementById('countdown');
+
+  // CSRF token (from meta)
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '{{ csrf_token() }}';
+
+  // === Enable submit based on “Agree” only (OTP is optional) ===
+  function updateSubmitState(){
+    btn.disabled = !(agree && agree.checked);
+  }
+  updateSubmitState();
+  agree?.addEventListener('change', updateSubmitState);
 
   // Submit: guard + sanitation + spinner
   form?.addEventListener('submit', (e) => {
-    if (agree && !agree.checked) {
+    if (!agree?.checked) {
       e.preventDefault();
       Swal.fire(prettyError(`<p style="color:#475569;font-size:.98rem;text-align:center">Please agree to the Privacy Policy to continue.</p>`));
       return;
     }
     // Sanitize inputs
     if (email && typeof email.value === 'string') {
-      email.value = email.value.normalize('NFKC').trim().replace(/\s+/g,'');
+      email.value = email.value.normalize('NFKC').trim().replace(/\s+/g,'').toLowerCase();
     }
     if (contact && typeof contact.value === 'string') {
-      // keep + and digits only; collapse spaces/dashes
       contact.value = contact.value.normalize('NFKC').replace(/[^\d+]/g,'').replace(/(?!^)\+/g,'');
     }
     if (fullName && typeof fullName.value === 'string') {
@@ -366,11 +395,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnLabel) btnLabel.textContent = 'Submitting...';
   });
 
-  // ===== Helpers for strength logic =====
+  // ===== Password strength helpers =====
   function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
-  function uniqTokens(str){
-    return (str || '').toLowerCase().split(/[^a-z0-9]+/i).filter(t => t.length >= 3);
-  }
+  function uniqTokens(str){ return (str || '').toLowerCase().split(/[^a-z0-9]+/i).filter(t => t.length >= 3); }
   function hasSequentialRun(s){
     const t = (s || '').toLowerCase(); if (t.length < 3) return false;
     for (let i=0;i<t.length-2;i++){
@@ -383,7 +410,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const t = (hay || '').toLowerCase(); return arr.some(x => t.includes(x));
   }
 
-  // ===== Scoring (0–100) =====
   function computeScore(pass, ctx){
     if (!pass) return { score:0, bucket:0, label:'—', color:'text-gray-600', bar:'bg-gray-200', fill:0, lengthTooShort:false };
     const len = pass.length;
@@ -443,7 +469,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function checkConfirm(){
-    const mismatch = !!confirm?.value && (confirm.value !== pwd?.value);
+    const mismatch = !!confirmPwd?.value && (confirmPwd.value !== pwd?.value);
     confirmErr?.classList.toggle('hidden', !mismatch);
     return !mismatch;
   }
@@ -454,8 +480,7 @@ document.addEventListener('DOMContentLoaded', () => {
     paintStrength(info); checkConfirm();
   }
 
-  // Recompute on common events
-  [pwd, confirm, email, fullName].forEach(el => {
+  [pwd, confirmPwd, email, fullName].forEach(el => {
     if (!el) return;
     ['input','change','keyup','blur'].forEach(evt => el.addEventListener(evt, recompute));
   });
@@ -483,6 +508,120 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   document.querySelectorAll('[data-toggle]').forEach(setupToggle);
 
+  // ===================== OTP LOGIC =====================
+  let timerRef = null;
+  function nowSec(){ return Math.floor(Date.now()/1000); }
+
+  function startCooldown(seconds){
+    const until = nowSec() + seconds;
+    localStorage.setItem('otpCooldownUntil', String(until));
+    paintCooldown();
+  }
+
+  function paintCooldown(){
+    clearInterval(timerRef);
+    const until = parseInt(localStorage.getItem('otpCooldownUntil') || '0', 10);
+    function tick(){
+      const left = Math.max(0, until - nowSec());
+      if (countdown) countdown.textContent = left > 0 ? `You can resend a code in ${left}s` : '';
+      if (btnResend) btnResend.classList.toggle('hidden', left > 0);
+      if (left <= 0) clearInterval(timerRef);
+    }
+    tick();
+    timerRef = setInterval(tick, 300);
+  }
+  // Continue cooldown across refresh
+  if (parseInt(localStorage.getItem('otpCooldownUntil') || '0', 10) > nowSec()) {
+    paintCooldown();
+  }
+
+  async function postJSON(url, data){
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'X-CSRF-TOKEN': csrf, 'Accept':'application/json' },
+      body: JSON.stringify(data)
+    });
+    let body = {};
+    try { body = await res.json(); } catch(e){}
+    if (!res.ok) throw new Error(body.message || 'Request failed.');
+    return body;
+  }
+
+  // Send code (client cooldown 60s; server has throttle too)
+  btnSend?.addEventListener('click', async () => {
+    const eVal = (email.value || '').trim().toLowerCase();
+    if (!otpStatus) return;
+
+    // 🔹 Show code row immediately so user knows where to type
+    codeRow?.classList.remove('hidden');
+    codeEl?.focus();
+
+    if (!eVal) {
+      otpStatus.textContent = 'Please enter an email first.';
+      otpStatus.classList.remove('text-gray-700','text-emerald-700');
+      otpStatus.classList.add('text-red-600');
+      return;
+    }
+
+    // Client cooldown guard
+    const until = parseInt(localStorage.getItem('otpCooldownUntil') || '0', 10);
+    if (until > nowSec()) { paintCooldown(); return; }
+
+    btnSend.disabled = true;
+    otpStatus.textContent = '';
+    tokenEl.value = ''; // reset any previously verified token
+
+    try {
+      const out = await postJSON('{{ route('auth.email.otp.send') }}', { email: eVal });
+      otpStatus.textContent = out.message || 'Code sent. Check your inbox.';
+      otpStatus.classList.remove('text-red-600','text-emerald-700');
+      otpStatus.classList.add('text-gray-700');
+      startCooldown(60);
+    } catch (e) {
+      otpStatus.textContent = e.message || 'Could not send code.';
+      otpStatus.classList.remove('text-gray-700','text-emerald-700');
+      otpStatus.classList.add('text-red-600');
+    } finally {
+      btnSend.disabled = false;
+    }
+  });
+
+  // Resend
+  btnResend?.addEventListener('click', () => btnSend?.click());
+
+  // Verify
+  btnVerify?.addEventListener('click', async () => {
+    const eVal = (email.value || '').trim().toLowerCase();
+    const code = (codeEl?.value || '').trim();
+    if (!otpStatus) return;
+
+    btnVerify.disabled = true;
+    otpStatus.textContent = '';
+
+    try {
+      const out = await postJSON('{{ route('auth.email.otp.verify') }}', { email: eVal, code });
+      tokenEl.value = out.token; // optional
+      otpStatus.textContent = 'Email verified! You can now complete registration.';
+      otpStatus.classList.remove('text-red-600');
+      otpStatus.classList.add('text-emerald-700');
+    } catch (e) {
+      otpStatus.textContent = e.message || 'Invalid or expired code.';
+      otpStatus.classList.remove('text-emerald-700');
+      otpStatus.classList.add('text-red-600');
+    } finally {
+      btnVerify.disabled = false;
+    }
+  });
+
+  // If user changes the email after verification, just inform (no submit blocking)
+  email.addEventListener('input', () => {
+    if (tokenEl.value && otpStatus){
+      tokenEl.value = '';
+      otpStatus.textContent = 'Email changed. You may verify again if you want.';
+      otpStatus.classList.remove('text-emerald-700');
+      otpStatus.classList.add('text-gray-700');
+    }
+  });
 });
 </script>
 @endsection

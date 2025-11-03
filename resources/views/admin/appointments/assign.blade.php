@@ -25,7 +25,11 @@
       <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">#{{ $appointment->id }}</span>
     </h1>
     <p class="mt-1 text-sm text-slate-600">
-      Choose an available counselor for this specific date and time. Only free counselors are shown.
+      Choose an available counselor for this specific date and time.
+      <span class="text-slate-500">Busy counselors are shown but disabled, so you can see why they’re unavailable.</span>
+    </p>
+    <p class="mt-1 text-xs text-slate-500">
+      After assignment, the appointment is auto-confirmed and emails are sent to the student and the assigned counselor.
     </p>
   </header>
 
@@ -75,7 +79,7 @@
     </div>
   </section>
 
-  {{-- Error summary (HCI: put errors near the top + link to fields) --}}
+  {{-- Error summary --}}
   @if ($errors->any())
     <div class="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" role="alert" aria-live="assertive">
       <p class="font-medium mb-1">Please fix the following:</p>
@@ -104,57 +108,44 @@
             Counselor <span class="text-rose-600">*</span>
           </label>
 
+          @php
+            $available = collect($counselors)->filter(fn($x) => (int)($x->available ?? 0) === 1);
+            $busy      = collect($counselors)->reject(fn($x) => (int)($x->available ?? 0) === 1);
+          @endphp
+
           <div class="relative mt-1">
-            @php
-  $available = collect($counselors)->filter(fn($x) => (int)$x->available === 1);
-  $busy      = collect($counselors)->reject(fn($x) => (int)$x->available === 1);
-  @endphp
+            <select
+              id="counselor_id"
+              name="counselor_id"
+              required
+              class="w-full h-11 appearance-none rounded-xl border border-slate-300 bg-white pr-10 pl-3 text-sm text-slate-900
+                     focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 aria-[invalid=true]:border-rose-400"
+              aria-describedby="counselorHelp"
+              @error('counselor_id') aria-invalid="true" @enderror
+            >
+              <option value="">Select an available counselor…</option>
 
-  <div class="relative mt-1">
-    <select
-      id="counselor_id"
-      name="counselor_id"
-      required
-      class="w-full h-11 appearance-none rounded-xl border border-slate-300 bg-white pr-10 pl-3 text-sm text-slate-900
-            focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 aria-[invalid=true]:border-rose-400"
-      aria-describedby="counselorHelp"
-      @error('counselor_id') aria-invalid="true" @enderror
-    >
-      <option value="">Select an available counselor…</option>
+              @if($available->isNotEmpty())
+                <optgroup label="Available ({{ $available->count() }})">
+                  @foreach($available as $c)
+                    <option value="{{ $c->id }}" @selected(old('counselor_id') == $c->id)>
+                      {{ $c->name }}@if($c->email) — {{ $c->email }} @endif
+                    </option>
+                  @endforeach
+                </optgroup>
+              @endif
 
-      @if($available->isNotEmpty())
-        <optgroup label="Available ({{ $available->count() }})">
-          @foreach($available as $c)
-            <option value="{{ $c->id }}" @selected(old('counselor_id') == $c->id)>
-              {{ $c->name }}@if($c->email) — {{ $c->email }} @endif
-            </option>
-          @endforeach
-        </optgroup>
-      @endif
-
-      @if($busy->isNotEmpty())
-        <optgroup label="Busy ({{ $busy->count() }})">
-          @foreach($busy as $c)
-            <option value="{{ $c->id }}" disabled>
-              {{ $c->name }}@if($c->email) — {{ $c->email }} @endif
-              @if($c->busy_reason) ({{ $c->busy_reason }}) @endif
-            </option>
-          @endforeach
-        </optgroup>
-      @endif
-    </select>
-
-    <svg class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
-        viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-    </svg>
-  </div>
-
-  <p id="counselorHelp" class="mt-2 text-[13px] text-slate-500">
-    <span class="font-medium">Legend:</span> Available = selectable • Busy = disabled
-    · Showing counselors for <span class="font-medium">{{ $dt->format('M d, Y · g:i A') }}</span>.
-  </p>
-
+              @if($busy->isNotEmpty())
+                <optgroup label="Busy ({{ $busy->count() }})">
+                  @foreach($busy as $c)
+                    <option value="{{ $c->id }}" disabled>
+                      {{ $c->name }}@if($c->email) — {{ $c->email }} @endif
+                      @if($c->busy_reason) ({{ $c->busy_reason }}) @endif
+                    </option>
+                  @endforeach
+                </optgroup>
+              @endif
+            </select>
 
             <svg class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
                  viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
@@ -163,7 +154,8 @@
           </div>
 
           <p id="counselorHelp" class="mt-2 text-[13px] text-slate-500">
-            Showing counselors who are free on <span class="font-medium">{{ $dt->format('M d, Y · g:i A') }}</span>.
+            <span class="font-medium">Legend:</span> Available = selectable • Busy = disabled ·
+            Showing counselors for <span class="font-medium">{{ $dt->format('M d, Y · g:i A') }}</span>.
           </p>
 
           @error('counselor_id')
@@ -197,12 +189,12 @@
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-  // Inline feedback from controller
   document.addEventListener('DOMContentLoaded', () => {
+    // Flash (from controller)
     const swal = @json(session('swal'));
-    if (swal) Swal.fire(swal);
+    if (swal && window.Swal) Swal.fire(swal);
 
-    // HCI: prevent accidental empty submit & double-submit; enable when valid
+    // Enable submit only when a counselor is selected; lock on submit
     const form = document.getElementById('assignCounselorForm');
     const select = document.getElementById('counselor_id');
     const btn = document.getElementById('assignBtn');
@@ -226,7 +218,6 @@
         });
         return;
       }
-      // lock UI for safety
       btn.disabled = true;
       btn.innerHTML = `
         <svg class="animate-spin w-4 h-4 mr-2" viewBox="0 0 24 24" fill="none" aria-hidden="true">

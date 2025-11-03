@@ -27,25 +27,54 @@ class StudentController extends Controller
     /**
      * List students (from tbl_users) with optional text and year filters.
      */
-    public function index(Request $request): View
-    {
-        $q    = trim((string) $request->input('q', ''));
-        $year = $request->input('year'); // string|int
 
-        $paginated = $this->students->paginateWithFilters([
-            'q'    => $q,
-            'year' => $year,
-        ], self::PER_PAGE);
 
-        $yearLevels = $this->students->distinctYearLevels();
+        public function index(Request $request): View
+        {
+            $q    = trim((string) $request->input('q', ''));
+            $year = $request->input('year');
 
-        return view(self::VIEW_INDEX, [
-            'students'   => $paginated,
-            'q'          => $q,
-            'year'       => $year,
-            'yearLevels' => $yearLevels,
-        ]);
-    }
+            $query = User::query()
+                ->select([
+                    'id',
+                    'name',
+                    'email',
+                    'course',
+                    'year_level',
+                    'contact_number',
+                    'email_verified_at',
+                    'created_at',
+                ])                      // ✅ no SELECT *, only needed columns
+                ->where('role', 'student');
+
+            if ($q !== '') {
+                $query->where(function ($w) use ($q) {
+                    $w->where('name', 'like', "%{$q}%")
+                    ->orWhere('email', 'like', "%{$q}%")
+                    ->orWhere('course', 'like', "%{$q}%");
+                });
+            }
+
+            if ($year !== null && $year !== '') {
+                $query->where('year_level', $year);
+            }
+
+            $students = $query
+                ->orderBy('created_at', 'desc')
+                ->paginate(self::PER_PAGE)      // e.g. 10 or 25, no deep paging
+                ->withQueryString();
+
+            // you can still reuse your repo just to get distinct year levels
+            $yearLevels = $this->students->distinctYearLevels();
+
+            return view(self::VIEW_INDEX, [
+                'students'   => $students,
+                'q'          => $q,
+                'year'       => $year,
+                'yearLevels' => $yearLevels,
+            ]);
+        }
+
 
     /**
      * Show a student's appointment stats and chart for a selected year.

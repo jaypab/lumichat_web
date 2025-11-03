@@ -35,5 +35,25 @@ class RouteServiceProvider extends ServiceProvider
             Route::middleware('web')
                 ->group(base_path('routes/admin.php'));
         });
+
+         // OTP send: 1 per 60s in prod; generous in local
+        RateLimiter::for('otp-send', function (Request $request) {
+            if (app()->environment('local')) {
+                return Limit::perMinute(60)->by($request->ip()); // dev friendly
+            }
+            // key by email+ip to avoid shared-ip lockouts
+            $key = strtolower((string)$request->input('email')).'|'.$request->ip();
+            return Limit::perMinutes(1, 1)->by($key); // 1 per 60s
+        });
+
+        // OTP verify: 6 per 10 minutes in prod; generous in local
+        RateLimiter::for('otp-verify', function (Request $request) {
+            if (app()->environment('local')) {
+                return Limit::perMinute(120)->by($request->ip()); // dev friendly
+            }
+            $key = strtolower((string)$request->input('email')).'|'.$request->ip();
+            return Limit::perMinutes(10, 6)->by($key);
+        });
+
     }
 }

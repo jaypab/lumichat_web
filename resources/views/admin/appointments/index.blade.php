@@ -17,7 +17,7 @@
     'confirmed' => 'Confirmed',
     'completed' => 'Completed',
     'canceled'  => 'Canceled',
-    'no_show'   => 'No Show',   // ⬅️ added
+    'no_show'   => 'No Show',
   ];
   $periodOptions = [
     'all'        => 'All Dates',
@@ -160,7 +160,7 @@
             @forelse ($appointments as $row)
               @php
                 $dt       = Carbon::parse($row->scheduled_at);
-                $bookedAt = $row->booked_at ?? $row->created_at ?? null;
+                $bookedAt = $row->created_at ?? null;
 
                 // display label + colors, including No Show
                 $statusNice = [
@@ -187,7 +187,9 @@
                 <td class="px-6 py-4 font-semibold text-slate-900">{{ $row->id }}</td>
 
                 {{-- Student --}}
-                <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $row->student_name }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-slate-700">
+                  {{ optional($row->student)->name ?? '—' }}
+                </td>
 
                 {{-- Counselor --}}
                 <td class="px-6 py-4 whitespace-nowrap">
@@ -197,7 +199,7 @@
                       Appointment Canceled
                     </span>
                   @else
-                    @php $cname = trim((string) ($row->counselor_name ?? '')); @endphp
+                    @php $cname = trim((string) (optional($row->counselor)->name ?? '')); @endphp
 
                     {{-- Pending + unassigned => Assign link --}}
                     @if (($cname === '' || $cname === '—') && $row->status === 'pending')

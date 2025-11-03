@@ -20,7 +20,6 @@ class RegisterRequest extends FormRequest
             'contact_number' => is_string($this->contact_number) ? trim($this->contact_number) : $this->contact_number,
             'course'         => is_string($this->course) ? trim($this->course) : $this->course,
             'year_level'     => is_string($this->year_level) ? trim($this->year_level) : $this->year_level,
-            // Do not mutate password here
         ]);
     }
 
@@ -28,44 +27,44 @@ class RegisterRequest extends FormRequest
     {
         return [
             'full_name' => [
-                'required',
-                'string',
-                'between:2,80',
+                'required','string','between:2,80',
                 // letters, marks, spaces, apostrophes, periods, hyphens
                 'regex:/^[\pL\pM\'\.\-\s]+$/u',
             ],
+
             'email' => [
-                'required',
-                'string',
-                'email:rfc,dns',
-                'max:255',
+                'required','string','lowercase',
+                'email:rfc,dns','max:255',
+                // ✅ unique across BOTH tables you write to (use your actual table names)
                 Rule::unique('tbl_registration', 'email'),
+                Rule::unique('tbl_users', 'email'),   // <-- changed from 'users' to 'tbl_users'
             ],
+
             'contact_number' => [
-                'required',
-                'string',
-                'between:7,20',
+                'required','string','between:7,20',
                 // allow + - spaces digits parentheses
                 'regex:/^[0-9\+\-\s\(\)]+$/',
             ],
-            'course' => [
-                'required',
-                'string',
-                'between:2,100',
-            ],
-            'year_level' => [
-                'required',
-                'string',
-                'between:1,50',
-            ],
+
+            'course'     => ['required','string','between:2,100'],
+            'year_level' => ['required','string','between:1,50'],
+
             'password' => [
-                'required',
-                'string',
-                'min:12',
-                'confirmed',
+                'required','string','min:12','confirmed',
                 // at least 1 lower, 1 upper, 1 digit, 1 symbol
                 'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).+$/',
             ],
+            // Explicitly require the confirmation field since you use "confirmed"
+            'password_confirmation' => ['required','string','min:12'],
+
+            // Require successful OTP verification
+            'verified_token' => ['required', function($attr, $value, $fail){
+                $ok = \App\Http\Controllers\Auth\EmailOtpController::validateToken(
+                    strtolower((string)$this->input('email')),
+                    $value
+                );
+                if (!$ok) $fail('Please verify your email first.');
+            }],
         ];
     }
 
@@ -74,12 +73,17 @@ class RegisterRequest extends FormRequest
         return [
             'full_name.required'    => 'Please enter your full name.',
             'full_name.regex'       => 'Use letters, spaces, apostrophes, periods, or hyphens only.',
+
             'email.email'           => 'Enter a valid email address.',
-            'email.unique'          => 'This email is not available.',
+            'email.unique'          => 'This email is already registered.',
+
             'contact_number.regex'  => 'Contact number may include digits, spaces, +, -, and parentheses.',
+
             'password.min'          => 'Password must be at least :min characters.',
             'password.regex'        => 'Password must include upper & lower case letters, a number, and a symbol.',
             'password.confirmed'    => 'Password confirmation does not match.',
+
+            'password_confirmation.required' => 'Please confirm your password.',
         ];
     }
 
@@ -94,5 +98,10 @@ class RegisterRequest extends FormRequest
             'password'              => 'password',
             'password_confirmation' => 'password confirmation',
         ];
+    }
+
+    protected function passedValidation(): void
+    {
+       
     }
 }

@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Auth; // ✅ needed for Auth::check()
 
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\ProfileController;
@@ -24,6 +25,7 @@ Route::post('/tour/complete', function () {
     }
     return response()->noContent();
 })->name('tour.complete')->middleware('auth');
+
 // Landing → Chat
 Route::get('/', fn () => redirect()->route('chat.index'))->name('home');
 
@@ -43,29 +45,19 @@ Route::get('/rasa-health', function () {
         $res = Http::timeout(5)->get($base . '/status', ['token' => $token]);
 
         return response()->json([
-            'ok' => $res->ok(),
+            'ok'     => $res->ok(),
             'status' => $res->status(),
-            'body' => $res->json(),
+            'body'   => $res->json(),
         ], $res->status());
     } catch (\Throwable $e) {
         return response()->json([
-            'ok' => false,
-            'error' => $e->getMessage(),
+            'ok'   => false,
+            'error'=> $e->getMessage(),
             'hint' => 'Check systemctl status rasa/rasa-actions and Nginx proxy on the VPS.',
         ], 503);
     }
 })->name('rasa.health');
 
-
-/*
-|--------------------------------------------------------------------------
-| Registration (guest only)
-|--------------------------------------------------------------------------
-*/
-Route::middleware('guest')->group(function () {
-    Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
-    Route::post('/register', [RegisteredUserController::class, 'store']);
-});
 
 /*
 |--------------------------------------------------------------------------
@@ -95,33 +87,28 @@ Route::middleware('auth')->group(function () {
     // Unified entrypoint (used by the sidebar)
     Route::get('/appointment', [AppointmentController::class, 'entrypoint'])->name('appointment.index');
 
-    // Appointment unseen count
-    Route::middleware(['auth'])->group(function () {
-        Route::get('/api/appointments/unseen', [\App\Http\Controllers\AppointmentController::class, 'unseenCount'])
-            ->name('appointments.unseen');
-    });
-    Route::get('/appointment/counselors', [AppointmentController::class,'counselors'])
-    ->name('appointment.counselors');
+    // Appointment unseen count (kept under auth)
+    Route::get('/api/appointments/unseen', [AppointmentController::class, 'unseenCount'])
+        ->name('appointments.unseen');
 
+    Route::get('/appointment/counselors', [AppointmentController::class,'counselors'])
+        ->name('appointment.counselors');
 
     // Explicit pages (buttons/links)
     Route::get('/appointment/book',     [AppointmentController::class, 'index'])->name('appointment.create');
     Route::get('/appointment/history',  [AppointmentController::class, 'history'])->name('appointment.history');
 
-    Route::middleware('auth')->group(function () {
-        Route::get('/appointment/history/export/pdf', [AppointmentController::class, 'exportHistoryPdf'])
-            ->name('appointment.history.export.pdf');
-        Route::get('/appointment/{id}/export/pdf', [\App\Http\Controllers\AppointmentController::class, 'exportShowPdf'])
-            ->whereNumber('id')
-            ->name('appointment.show.export.pdf');
-    });
+    Route::get('/appointment/history/export/pdf', [AppointmentController::class, 'exportHistoryPdf'])
+        ->name('appointment.history.export.pdf');
+
+    Route::get('/appointment/{id}/export/pdf', [AppointmentController::class, 'exportShowPdf'])
+        ->whereNumber('id')
+        ->name('appointment.show.export.pdf');
 
     // Actions / APIs
     Route::post('/appointment', [AppointmentController::class, 'store'])->name('appointment.store');
-    Route::get('/appointment/slots', [\App\Http\Controllers\AppointmentController::class, 'slots'])
-        ->name('appointment.slots');
-    Route::get('/appointment/slots-pooled', [\App\Http\Controllers\AppointmentController::class, 'slotsPooled'])
-        ->name('appointment.slots.pooled');
+    Route::get('/appointment/slots', [AppointmentController::class, 'slots'])->name('appointment.slots');
+    Route::get('/appointment/slots-pooled', [AppointmentController::class, 'slotsPooled'])->name('appointment.slots.pooled');
     Route::get('/appointment/view/{id}', [AppointmentController::class, 'show'])->name('appointment.view');
     Route::patch('/appointment/{id}/cancel', [AppointmentController::class, 'cancel'])->name('appointment.cancel');
 
@@ -146,14 +133,32 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/settings', [SettingsController::class, 'update'])->name('settings.update');
 });
 
-Route::view('/support/contact', 'support.contact')->name('support.contact');
-Route::view('/support/bug', 'support.bug')->name('support.bug');
 /*
 |--------------------------------------------------------------------------
-| About Page
+| Support & About
 |--------------------------------------------------------------------------
 */
+Route::view('/support/contact', 'support.contact')->name('support.contact');
+Route::view('/support/bug', 'support.bug')->name('support.bug');
+
 Route::get('/about', [AboutController::class, 'index'])->name('about.index');
+
+/*
+|--------------------------------------------------------------------------
+| EMAIL OTP VERIFICATION ROUTES (guest; with throttles)
+|--------------------------------------------------------------------------
+*/
+// web.php (keep as you have, just swap the throttle bits)
+Route::prefix('auth/email/otp')->middleware(['guest'])->group(function () {
+    Route::post('/send',  [\App\Http\Controllers\Auth\EmailOtpController::class, 'send'])
+        ->middleware('throttle:otp-send')
+        ->name('auth.email.otp.send');
+
+    Route::post('/verify',[\App\Http\Controllers\Auth\EmailOtpController::class, 'verify'])
+        ->middleware('throttle:otp-verify')
+        ->name('auth.email.otp.verify');
+});
+
 /*
 |--------------------------------------------------------------------------
 | Auth scaffolding (login, logout, password reset, etc.)
@@ -161,4 +166,4 @@ Route::get('/about', [AboutController::class, 'index'])->name('about.index');
 */
 require __DIR__ . '/auth.php';
 require __DIR__ . '/admin.php';
-require __DIR__.'/counselor.php';
+require __DIR__ . '/counselor.php';

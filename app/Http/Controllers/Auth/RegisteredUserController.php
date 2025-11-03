@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
+use App\Notifications\WelcomeToLumiChat;
+use Illuminate\Support\Facades\Log;
 
 class RegisteredUserController extends Controller
 {
@@ -44,7 +46,10 @@ class RegisteredUserController extends Controller
         // Force lowercase email
         $data['email'] = Str::lower($data['email']);
 
-        DB::transaction(function () use ($data) {
+        // Capture the created user so we can notify after commit
+        $user = null;
+
+        DB::transaction(function () use ($data, &$user) {
             // Persist to tbl_registration (keeps original hashing behavior)
             Registration::create([
                 'full_name'      => $data['full_name'],
@@ -55,8 +60,8 @@ class RegisteredUserController extends Controller
                 'password'       => Hash::make($data['password']),
             ]);
 
-            // Save to tbl_users
-            User::create([
+            // Save to tbl_users and keep the instance
+            $user = User::create([
                 'name'                 => $data['full_name'],
                 'email'                => $data['email'],
                 'course'               => $data['course'],
@@ -67,6 +72,22 @@ class RegisteredUserController extends Controller
                 'appointments_enabled' => false,               // default setting
             ]);
         });
+
+        // Send Welcome email AFTER the transaction succeeded
+        if ($user) {
+            try {
+                $user->notify(new WelcomeToLumiChat(
+                    name: $user->name,
+                    loginUrl: route('login')
+                ));
+            } catch (\Throwable $e) {
+                // Don't break registration flow if mail fails
+                Log::warning('Welcome email failed', [
+                    'user_id' => $user->id ?? null,
+                    'error'   => $e->getMessage(),
+                ]);
+            }
+        }
 
         return redirect()
             ->route('login')

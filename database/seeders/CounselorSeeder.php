@@ -31,6 +31,13 @@ class CounselorSeeder extends Seeder
                 'password'  => 'Sally123', // CHANGE in production
                 'phone'     => '09987654321',
             ],
+
+            [
+                'full_name' => 'Juan Dela Cruz',
+                'email'     => 'dummycounselor35@gmail.com',
+                'password'  => '@Password12345', // CHANGE in production
+                'phone'     => '09987654525',
+            ],
         ];
 
         foreach ($counselors as $c) {

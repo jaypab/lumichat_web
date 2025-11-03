@@ -15,6 +15,10 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use App\Models\Appointment;
+// 👇 imports for emailing
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 
 class AppointmentController extends Controller
 {
@@ -33,20 +37,86 @@ class AppointmentController extends Controller
     ) {}  
 
     /** List appointments with optional filters + search (counselor name). */
-    public function index(Request $r): View
-    {
-        $status = \in_array($r->query('status'), self::STATUSES, true) ? $r->query('status') : self::STATUS_ALL;
-        $period = \in_array($r->query('period'), self::PERIODS, true)   ? $r->query('period') : self::PERIOD_ALL;
-        $q      = \trim((string) $r->query('q', ''));
+public function index(Request $r): View
+{
+    $status = \in_array($r->query('status'), self::STATUSES, true) ? $r->query('status') : self::STATUS_ALL;
+    $period = \in_array($r->query('period'), self::PERIODS, true)   ? $r->query('period') : self::PERIOD_ALL;
+    $q      = \trim((string) $r->query('q', ''));
 
-        $appointments = $this->appointments->paginateWithNames([
-            'status' => $status,
-            'period' => $period,
-            'q'      => $q,
-        ], 10);
+    $now = now();
 
-        return view('admin.appointments.index', compact('appointments', 'status', 'period', 'q'));
+    // ✅ Eloquent + eager loading to avoid N+1
+    $query = Appointment::with(['student', 'counselor']);
+
+    // ---- status filter ----
+    if ($status !== self::STATUS_ALL) {
+        $query->where('status', $status);
     }
+
+    // ---- period filter (same logic as exportPdf) ----
+    switch ($period) {
+        case 'today':
+            $query->whereDate('scheduled_at', $now->toDateString());
+            break;
+
+        case 'upcoming':
+            $query->where('scheduled_at', '>=', $now);
+            break;
+
+        case 'this_week':
+            $query->whereBetween('scheduled_at', [
+                $now->copy()->startOfWeek(),
+                $now->copy()->endOfWeek(),
+            ]);
+            break;
+
+        case 'this_month':
+            $query->whereBetween('scheduled_at', [
+                $now->copy()->startOfMonth(),
+                $now->copy()->endOfMonth(),
+            ]);
+            break;
+
+        case 'past':
+            $query->where('scheduled_at', '<', $now);
+            break;
+
+        default:
+            // 'all' → no date filter
+            break;
+    }
+
+    // ---- search by student or counselor name ----
+    if ($q !== '') {
+        $query->where(function ($w) use ($q) {
+            $w->whereHas('student', function ($s) use ($q) {
+                $s->where('name', 'like', "%{$q}%");
+            })->orWhereHas('counselor', function ($c) use ($q) {
+                $c->where('name', 'like', "%{$q}%");
+            });
+        });
+    }
+
+    // ---- ordering: completed at bottom + date-aware ordering ----
+    $query->orderByRaw("CASE WHEN status = 'completed' THEN 1 ELSE 0 END ASC");
+
+    if ($period === 'past') {
+        $query->orderBy('scheduled_at', 'desc');
+    } elseif (\in_array($period, ['today','upcoming','this_week','this_month'], true)) {
+        $query->orderBy('scheduled_at', 'asc');
+    } else {
+        $query
+            ->orderByRaw("CASE WHEN scheduled_at >= ? THEN 0 ELSE 1 END", [$now])
+            ->orderByRaw("CASE WHEN scheduled_at >= ? THEN scheduled_at END ASC",  [$now])
+            ->orderByRaw("CASE WHEN scheduled_at <  ? THEN scheduled_at END DESC", [$now])
+            ->orderByRaw("CASE WHEN status = 'completed' THEN scheduled_at END DESC");
+    }
+
+    // paginate + keep filters in the query string
+    $appointments = $query->paginate(10)->withQueryString();
+
+    return view('admin.appointments.index', compact('appointments', 'status', 'period', 'q'));
+}
 
     /** Show appointment details + latest report for that pair. */
     public function show(int $id): View
@@ -193,7 +263,7 @@ class AppointmentController extends Controller
     }
 
     public function exportPdf(Request $request)
-{
+    {
         $status = (string) $request->query('status', 'all');
         $period = (string) $request->query('period', 'all');
         $q      = trim((string) $request->query('q', ''));
@@ -252,82 +322,81 @@ class AppointmentController extends Controller
             $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
         }
 
-    $pdf = app('dompdf.wrapper');
-    $pdf->setPaper('a4', 'portrait');
-    $pdf->setOptions([
-        'defaultFont'          => 'DejaVu Sans',
-        'isHtml5ParserEnabled' => true,
-        'isRemoteEnabled'      => true,
-        'chroot'               => public_path(),
-        'dpi'                  => 96,
-        'isPhpEnabled'         => true,   // ← REQUIRED for <script type="text/php">
-    ]);
+        $pdf = app('dompdf.wrapper');
+        $pdf->setPaper('a4', 'portrait');
+        $pdf->setOptions([
+            'defaultFont'          => 'DejaVu Sans',
+            'isHtml5ParserEnabled' => true,
+            'isRemoteEnabled'      => true,
+            'chroot'               => public_path(),
+            'dpi'                  => 96,
+            'isPhpEnabled'         => true,   // ← REQUIRED for <script type="text/php">
+        ]);
 
         $pdf->loadView('admin.appointments.pdf', [
-    'appointments' => $appointments,
-    'status'       => $status,
-    'period'       => $period,
-    'q'            => $q,
-    'generatedAt'  => now()->format('Y-m-d H:i'),
-    'logoData'     => $logoData,
-]);
+            'appointments' => $appointments,
+            'status'       => $status,
+            'period'       => $period,
+            'q'            => $q,
+            'generatedAt'  => now()->format('Y-m-d H:i'),
+            'logoData'     => $logoData,
+        ]);
 
-$filename = 'Appointments_'.now()->format('Ymd_His').'.pdf';
+        $filename = 'Appointments_'.now()->format('Ymd_His').'.pdf';
 
-if ($request->boolean('download')) {
-    // force download (when you add ?download=1 to the URL)
-    return $pdf->download($filename);
-}
+        if ($request->boolean('download')) {
+            // force download (when you add ?download=1 to the URL)
+            return $pdf->download($filename);
+        }
 
-// default: view in browser
-return $pdf->stream($filename);  // Content-Disposition: inline
-}
-
-public function exportShowPdf(Request $request, int $id)
-{
-    $appointment = $this->appointments->findDetailedById($id);
-    abort_unless($appointment, 404);
-
-    $latestReport = \DB::table('tbl_diagnosis_reports')
-        ->where('student_id', $appointment->student_id)
-        ->where('counselor_id', $appointment->counselor_id)
-        ->orderByDesc('id')
-        ->first();
-
-    $logoPath = public_path('images/chatbot.png');
-    $logoData = null;
-    if (is_file($logoPath)) {
-        $mime = \Illuminate\Support\Str::endsWith(strtolower($logoPath), '.svg')
-            ? 'image/svg+xml' : 'image/png';
-        $logoData = 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($logoPath));
+        // default: view in browser
+        return $pdf->stream($filename);  // Content-Disposition: inline
     }
 
-    $pdf = app('dompdf.wrapper');
-    $pdf->setPaper('a4', 'portrait');
-    $pdf->setOptions([
-        'defaultFont'          => 'DejaVu Sans',
-        'isHtml5ParserEnabled' => true,
-        'isRemoteEnabled'      => true,
-        'chroot'               => public_path(),
-        'dpi'                  => 96,
-        'isPhpEnabled'         => true,   // ← REQUIRED for <script type="text/php">
-    ]);
+    public function exportShowPdf(Request $request, int $id)
+    {
+        $appointment = $this->appointments->findDetailedById($id);
+        abort_unless($appointment, 404);
 
-    $pdf->loadView('admin.appointments.pdf-show', [
-        'appointment'  => $appointment,
-        'latestReport' => $latestReport,
-        'logoData'     => $logoData,
-    ]);
+        $latestReport = \DB::table('tbl_diagnosis_reports')
+            ->where('student_id', $appointment->student_id)
+            ->where('counselor_id', $appointment->counselor_id)
+            ->orderByDesc('id')
+            ->first();
 
-    $filename = 'Appointment_' . $appointment->id . '.pdf';
+        $logoPath = public_path('images/chatbot.png');
+        $logoData = null;
+        if (is_file($logoPath)) {
+            $mime = \Illuminate\Support\Str::endsWith(strtolower($logoPath), '.svg')
+                ? 'image/svg+xml' : 'image/png';
+            $logoData = 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($logoPath));
+        }
 
-    if ($request->boolean('download')) {
-        return $pdf->download($filename); // force download
+        $pdf = app('dompdf.wrapper');
+        $pdf->setPaper('a4', 'portrait');
+        $pdf->setOptions([
+            'defaultFont'          => 'DejaVu Sans',
+            'isHtml5ParserEnabled' => true,
+            'isRemoteEnabled'      => true,
+            'chroot'               => public_path(),
+            'dpi'                  => 96,
+            'isPhpEnabled'         => true,   // ← REQUIRED for <script type="text/php">
+        ]);
+
+        $pdf->loadView('admin.appointments.pdf-show', [
+            'appointment'  => $appointment,
+            'latestReport' => $latestReport,
+            'logoData'     => $logoData,
+        ]);
+
+        $filename = 'Appointment_' . $appointment->id . '.pdf';
+
+        if ($request->boolean('download')) {
+            return $pdf->download($filename); // force download
+        }
+
+        return $pdf->stream($filename); // inline view (opens in new tab from the Blade link)
     }
-
-    return $pdf->stream($filename); // inline view (opens in new tab from the Blade link)
-}
-
 
     public function assignForm(int $id)
     {
@@ -413,6 +482,102 @@ public function exportShowPdf(Request $request, int $id)
 
         // Auto-confirm after successful assign (optional business rule)
         $this->appointments->updateStatusByAction($id, 'confirm');
+
+                /* ─────────────────────────────────────────────────────────────
+        EMAIL NOTICES (robust: try Mailables; fallback to plaintext)
+        ───────────────────────────────────────────────────────────── */
+        try {
+            // Re-fetch with joined names/emails (no model changes)
+            $row = \DB::table('tbl_appointments as a')
+                ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
+                ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
+                ->where('a.id', $id)
+                ->select([
+                    'a.id',
+                    'a.scheduled_at',
+                    's.id as student_id',
+                    's.name as student_name',
+                    's.email as student_email',
+                    'c.id as counselor_id',
+                    'c.name as counselor_name',
+                    'c.email as counselor_email',
+                ])->first();
+
+            if ($row && $row->student_email && $row->counselor_email) {
+                $whenNice = \Carbon\Carbon::parse($row->scheduled_at)->format('M d, Y g:i A');
+
+                $sentViaMailable = false;
+
+                // Try Mailables if both classes exist AND their constructors accept our payload.
+                if (class_exists(\App\Mail\AppointmentAssignedStudent::class)
+                    && class_exists(\App\Mail\AppointmentAssignedCounselor::class)) {
+
+                    try {
+                        // Try named-args first
+                        Mail::to($row->student_email)->send(new \App\Mail\AppointmentAssignedStudent(
+                            appointmentId: $row->id,
+                            studentName:   (string) $row->student_name,
+                            counselorName: (string) $row->counselor_name,
+                            scheduledAt:   $row->scheduled_at,
+                            whenNice:      $whenNice
+                        ));
+
+                        Mail::to($row->counselor_email)->send(new \App\Mail\AppointmentAssignedCounselor(
+                            appointmentId: $row->id,
+                            studentName:   (string) $row->student_name,
+                            counselorName: (string) $row->counselor_name,
+                            scheduledAt:   $row->scheduled_at,
+                            whenNice:      $whenNice
+                        ));
+
+                        $sentViaMailable = true;
+                    } catch (\Throwable $mErr) {
+                        // Constructors likely have different signatures — log and fall back.
+                        \Log::warning('Mailable signature mismatch; falling back to plaintext', [
+                            'appointment_id' => $id,
+                            'error' => $mErr->getMessage(),
+                        ]);
+                    }
+                }
+
+                if (!$sentViaMailable) {
+                    // Plaintext fallback — guaranteed to work
+                    Mail::raw(
+                        "Hi {$row->student_name},\n\n".
+                        "Your appointment has been approved.\n\n".
+                        "Counselor: {$row->counselor_name}\n".
+                        "When: {$whenNice}\n\n".
+                        "If you didn’t request this, reply to this email.\n",
+                        function ($m) use ($row) {
+                            $m->to($row->student_email)->subject('LumiCHAT — Appointment Approved');
+                        }
+                    );
+
+                    Mail::raw(
+                        "New appointment assigned to you.\n\n".
+                        "Student: {$row->student_name}\n".
+                        "When: ".\Carbon\Carbon::parse($row->scheduled_at)->format('M d, Y g:i A')."\n\n".
+                        "Please prepare accordingly.\n",
+                        function ($m) use ($row) {
+                            $m->to($row->counselor_email)->subject('LumiCHAT — New Appointment Assigned');
+                        }
+                    );
+                }
+            } else {
+                \Log::warning('Email skipped: missing student/counselor email', [
+                    'appointment_id' => $id,
+                    'student_email' => $row->student_email ?? null,
+                    'counselor_email' => $row->counselor_email ?? null,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            // Don’t break the flow if email fails; just log it.
+            \Log::warning('Appointment assign email failed', [
+                'appointment_id' => $id,
+                'error'          => $e->getMessage(),
+            ]);
+        }
+        /* ───────────── end email notices ───────────── */
 
         return redirect()->route('admin.appointments.index')->with(self::FLASH_SWAL, [
             'icon'  => 'success',
