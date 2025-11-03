@@ -762,7 +762,11 @@ class CounselorAvailabilityController extends Controller
                         $lis .= "<li><span class=\"px-2 py-1 text-xs rounded bg-slate-100 mr-2\">{$time}</span>{$name}</li>";
                     }
                 }
-                $chunks[] = "<div class=\"text-left mt-2\"><div class=\"font-medium mb-1\">{$date}</div><ul class=\"list-disc pl-5 text-sm\">{$lis}</ul></div>";
+
+                // 👇 pretty date: "November 4, 2025"
+                $label = \Carbon\Carbon::parse($date)->format('F j, Y');
+
+                $chunks[] = "<div class=\"text-left mt-2\"><div class=\"font-medium mb-1\">{$label}</div><ul class=\"list-disc pl-5 text-sm\">{$lis}</ul></div>";
             }
 
             $html = "<p>Some selected dates have appointment(s). You can’t delete those window(s).</p>"
@@ -897,7 +901,7 @@ class CounselorAvailabilityController extends Controller
     private function renderConflictsHtml(string $date, array $items): string
     {
         if (empty($items)) return '';
-        $d = Carbon::parse($date)->format('Y-m-d');
+        $d = Carbon::parse($date)->format('F j, Y'); 
 
         $lis = '';
         foreach ($items as $it) {

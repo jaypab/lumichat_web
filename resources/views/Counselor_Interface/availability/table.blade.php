@@ -253,6 +253,13 @@
 
 {{-- ===== SweetAlert helpers ===== --}}
 <script>
+
+function fmtLongDate(iso) {
+  const dt = new Date(String(iso));
+  if (Number.isNaN(dt.getTime())) return String(iso);
+  return new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric', year: 'numeric' }).format(dt);
+}
+
 document.addEventListener('click', (e)=>{
   const a = e.target.closest('a.swal-link');
   if(!a) return;

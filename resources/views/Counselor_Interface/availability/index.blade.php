@@ -196,6 +196,13 @@
      SWEETALERT HELPERS
      ============================ --}}
 <script>
+
+function fmtLongDate(iso) {
+  const dt = new Date(String(iso));
+  if (Number.isNaN(dt.getTime())) return String(iso); // fallback
+  return new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric', year: 'numeric' }).format(dt);
+}
+
 const SwalTheme = { confirm:'#4f46e5', cancel:'#94a3b8', danger:'#e11d48' };
 const Toast = Swal.mixin({ toast:true, position:'top-end', showConfirmButton:false, timer:1700, timerProgressBar:true });
 function toastSuccess(t='Saved successfully'){ Toast.fire({ icon:'success', title:t }); }
@@ -580,8 +587,8 @@ const isWeekend = (d) => [0, 6].includes(d.getDay());
                   <a href="${url}" class="swal-link underline decoration-indigo-400 hover:decoration-2" title="Open appointment">${name}</a>
                 </span>`;
             }).join('<br>');
-            await Swal.fire({ icon: 'error', title: "Can't disable – booked slot(s)", html: `
-              <p class="text-slate-700 mb-2">There are appointment(s) on <b>${esc(activeDate)}</b> inside the time(s) you tried to disable.</p>
+            await Swal.fire({ icon: 'error', title: "Can't disable booked slot(s)", html: `
+              <p class="text-slate-700 mb-2">There are appointment(s) on <b>${esc(fmtLongDate(activeDate))}</b> inside the time(s) you tried to disable.</p>
               <div class="text-left">${rows || '—'}</div>
               <p class="mt-3 text-[12px] text-slate-500">Tip: click a student name to open the appointment.</p>
             `, confirmButtonColor: '#e11d48' });
@@ -623,67 +630,78 @@ document.addEventListener('click', async (e) => {
   }
 
   // "Disable" — run PRECHECK first, then confirm, then apply
-  if (btn.dataset.action === 'disable-weekday') {
-    // 1) Precheck for existing appointments on this weekday
-    try {
-      const url = `${WEEKDAY_DISABLE_PRECHECK}?weekday=${encodeURIComponent(wd)}`;
-      const resp = await fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
-      const data = await safeJson(resp);
+if (btn.dataset.action === 'disable-weekday') {
+  try {
+    const url  = `${WEEKDAY_DISABLE_PRECHECK}?weekday=${encodeURIComponent(wd)}`;
+    const resp = await fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+    const data = await safeJson(resp);
 
-      const conflicts = Array.isArray(data?.conflicts) ? data.conflicts : [];
-      if (conflicts.length) {
-        // Build the conflict list (same look as your date-conflict dialog)
-        const esc = (s='') => String(s)
-          .replaceAll('&','&amp;').replaceAll('<','&lt;')
-          .replaceAll('>','&gt;').replaceAll('"','&quot;')
-          .replaceAll("'",'&#39;');
+    const conflicts = Array.isArray(data?.conflicts) ? data.conflicts : [];
 
-        const rows = conflicts
-          .sort((a,b)=>String(a.time).localeCompare(String(b.time)))
-          .map(c => {
-            const time = esc(c.time12 || c.time || '');
-            const name = esc(c.student_name || 'Student');
-            const url  = c.appt_url || '#';
-            return `
-              <span class="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white ring-1 ring-slate-200 text-slate-700">
-                <span class="px-1.5 py-0.5 text-xs font-semibold rounded-md bg-slate-100 ring-1 ring-slate-200">${time}</span>
-                <a href="${url}" class="swal-link underline decoration-indigo-400 hover:decoration-2" title="Open appointment">${name}</a>
-              </span>`;
-          }).join('<br>');
+    // Only show the dialog if there are conflicts
+    if (conflicts.length) {
+      const esc = (s='') => String(s)
+        .replaceAll('&','&amp;').replaceAll('<','&lt;')
+        .replaceAll('>','&gt;').replaceAll('"','&quot;')
+        .replaceAll("'",'&#39;');
 
-        await Swal.fire({
-          icon: 'error',
-          title: "Can't disable — time already booked",
-          html: `
-            <p class="text-slate-700 mb-2">
-              You already have an appointment on <b>${esc(data.weekday_label || 'this day')}</b>
-              during the time you tried to turn off.
-            </p>
-            <div class="text-left">${rows || '—'}</div>
-            <p class="mt-3 text-[12px] text-slate-500">Tip: click a name to open the appointment.</p>
-          `,
-          confirmButtonText: 'OK',
-          confirmButtonColor: '#e11d48'
-        });
-        return; // 🔒 stop here; do NOT disable
-      }
-    } catch (_) {
-      // If precheck fails unexpectedly, be safe and do NOT proceed.
-      toastError('Precheck failed. Please retry.');
-      return;
+      // Heading: exact date if just one, else "these date(s)"
+      const uniqueDates = [...new Set(conflicts.map(c => c.date_label || c.date))].filter(Boolean);
+      const dateHeading = uniqueDates.length === 1
+        ? esc(fmtLongDate(uniqueDates[0]))
+        : 'these date(s)';
+
+      // Rows: DATE • TIME • NAME
+      const rows = conflicts
+        .sort((a,b) =>
+          String(a.date || a.date_label).localeCompare(String(b.date || b.date_label)) ||
+          String(a.time).localeCompare(String(b.time))
+        )
+        .map(c => {
+          const date = esc(fmtLongDate(c.date_label || c.date || ''));
+          const time = esc(c.time12 || c.time || '');
+          const name = esc(c.student_name || 'Student');
+          const url  = c.appt_url || '#';
+          return `
+            <span class="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white ring-1 ring-slate-200 text-slate-700">
+              <span class="px-1.5 py-0.5 text-xs font-semibold rounded-md bg-slate-100 ring-1 ring-slate-200">${date}</span>
+              <span class="px-1.5 py-0.5 text-xs font-semibold rounded-md bg-slate-100 ring-1 ring-slate-200">${time}</span>
+              <a href="${url}" class="swal-link underline decoration-indigo-400 hover:decoration-2" title="Open appointment">${name}</a>
+            </span>`;
+        }).join('<br>');
+
+      await Swal.fire({
+        icon: 'error',
+        title: "Can't disable time already booked",
+        html: `
+          <p class="text-slate-700 mb-2">
+            You already have an appointment on <b>${dateHeading}</b>
+            during the time you tried to turn off.
+          </p>
+          <div class="text-left">${rows || '—'}</div>
+          <p class="mt-3 text-[12px] text-slate-500">Tip: click a name to open the appointment.</p>
+        `,
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#e11d48'
+      });
+      return; // 🔒 stop here; do NOT disable
     }
-
-    // 2) No conflicts → ask for confirmation, then apply disable
-    const ok = await confirmDialog({
-      title: 'Disable this weekday?',
-      text: 'This will block 9–12 AM and 1–5 PM for students.',
-      confirmText: 'Disable',
-      danger: true
-    });
-    if (!ok) return;
-
-    await fullBlock(wd);
+  } catch (_) {
+    toastError('Precheck failed. Please retry.');
+    return;
   }
+
+  // No conflicts → confirm then apply
+  const ok = await confirmDialog({
+    title: 'Disable this weekday?',
+    text: 'This will block 9–12 AM and 1–5 PM for students.',
+    confirmText: 'Disable',
+    danger: true
+  });
+  if (!ok) return;
+
+  await fullBlock(wd);
+}
 });
 
 // Sends a full-day block to the server and updates RECUR_BLOCKS cache
@@ -719,7 +737,7 @@ async function fullBlock(wd) {
 
       await Swal.fire({
         icon: 'error',
-        title: "Can't disable – booked slot(s)",
+        title: "Can't disable booked slot(s)",
         html: `
           <p class="text-slate-700 mb-2">There are appointment(s) on <b>${esc(preData.weekday_label || 'this weekday')}</b> inside the time(s) you tried to disable.</p>
           <div class="text-left">${rows || '—'}</div>
