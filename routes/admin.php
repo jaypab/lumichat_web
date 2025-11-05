@@ -12,9 +12,10 @@ use App\Http\Controllers\Admin\StudentController;
 use App\Http\Controllers\Admin\ChatbotSessionController;
 use App\Http\Controllers\Admin\AppointmentController as AdminAppointmentController;
 use App\Http\Controllers\Admin\SelfAssessmentController;
-use App\Http\Controllers\Admin\DiagnosisReportController;
+// use App\Http\Controllers\Admin\DiagnosisReportController;  // ⟵ removed
 use App\Http\Controllers\Admin\CounselorLogController;
 use App\Http\Controllers\Admin\CourseAnalyticsController;
+use App\Http\Controllers\Admin\CaseNoteController;           // ⟵ added
 
 /*
 |--------------------------------------------------------------------------
@@ -55,21 +56,17 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
         ->name('students.show.export.pdf');
 
     /* ===================== RE-AUTH / SENSITIVE ===================== */
-    // RE-AUTH (AJAX)
     Route::post('reauth/confirm', [ChatbotSessionController::class, 'confirmPasswordAjax'])
         ->name('reauth.confirm');
 
     Route::post('reauth/confirm-sensitive', [ChatbotSessionController::class, 'confirmSensitiveAjax'])
         ->name('reauth.confirm_sensitive');
 
-    // SENSITIVE DETAILS (AJAX after confirm)
     Route::get('chatbot-sessions/{session}/sensitive', [ChatbotSessionController::class, 'sensitiveDetails'])
         ->whereNumber('session')
         ->name('chatbot-sessions.sensitive');
 
     /* ===================== CHATBOT SESSIONS ===================== */
-    // Custom endpoints first (to avoid conflicts with {session})
-
     Route::get('chatbot-sessions/export/pdf', [ChatbotSessionController::class, 'exportPdf'])
         ->name('chatbot-sessions.export.pdf');
 
@@ -93,42 +90,34 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
         ->whereNumber('session')
         ->name('chatbot-sessions.pdf');
 
-    // “All high-risk / critical lines” (must be BEFORE the resource)
     Route::get('chatbot-sessions/{session}/high-risk-all', [ChatbotSessionController::class, 'highRiskAll'])
         ->whereNumber('session')
         ->name('chatbot-sessions.highrisk_all');
 
-    // Risk override (PATCH)
     Route::patch('chatbot-sessions/{session}/risk', [ChatbotSessionController::class, 'setRisk'])
         ->whereNumber('session')
         ->name('chatbot-sessions.setRisk');
 
-    // Resource (index/show) AFTER the custom ones
     Route::resource('chatbot-sessions', ChatbotSessionController::class)
         ->only(['index', 'show'])
         ->parameters(['chatbot-sessions' => 'session'])
         ->where(['session' => '[0-9]+']);
 
     /* ===================== APPOINTMENTS (Admin) ===================== */
-    // List
     Route::get('/appointments', [AdminAppointmentController::class, 'index'])
         ->name('appointments.index');
 
-    // Show
     Route::get('/appointments/{id}', [AdminAppointmentController::class, 'show'])
         ->whereNumber('id')
         ->name('appointments.show');
 
-    // PDF (list)
     Route::get('/appointments/export/pdf', [AdminAppointmentController::class, 'exportPdf'])
         ->name('appointments.export.pdf');
 
-    // PDF (single)
     Route::get('/appointments/{id}/export/pdf', [AdminAppointmentController::class, 'exportShowPdf'])
         ->whereNumber('id')
         ->name('appointments.export.show.pdf');
 
-    // Assign counselor (form + action)
     Route::get('/appointments/{id}/assign', [AdminAppointmentController::class, 'assignForm'])
         ->whereNumber('id')
         ->name('appointments.assign.form');
@@ -145,27 +134,24 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
         ->whereNumber('counselor')
         ->name('counselor-logs.show');
 
-    // List PDF export
     Route::get('/counselor-logs/export/pdf', [CounselorLogController::class, 'exportPdf'])
         ->name('counselor-logs.export.pdf');
 
-    // Single counselor/month PDF export
     Route::get('counselor-logs/{counselor}/export', [CounselorLogController::class, 'exportShowPdf'])
         ->whereNumber('counselor')
         ->name('counselor-logs.show.export');
 
-    /* ===================== DIAGNOSIS REPORTS ===================== */
-    Route::resource('diagnosis-reports', DiagnosisReportController::class)
+    /* ===================== CASE FORM SUMMARY (replaces Diagnosis Reports) ===================== */
+    Route::resource('case-notes', CaseNoteController::class)
         ->only(['index', 'show'])
-        ->parameters(['diagnosis-reports' => 'report']);
+        ->parameters(['case-notes' => 'note']);
 
-    Route::get('/diagnosis-reports/export/pdf', [DiagnosisReportController::class, 'exportPdf'])
-        ->name('diagnosis-reports.export.pdf');
+    Route::get('/case-notes/export/pdf', [CaseNoteController::class, 'exportPdf'])
+        ->name('case-notes.export.pdf');
 
-    // Single report direct download for the show page
-    Route::get('/diagnosis-reports/{report}/export/pdf', [DiagnosisReportController::class, 'exportOne'])
-        ->whereNumber('report')
-        ->name('diagnosis-reports.show.export.pdf');
+    Route::get('/case-notes/{note}/export/pdf', [CaseNoteController::class, 'exportOne'])
+        ->whereNumber('note')
+        ->name('case-notes.show.export.pdf');
 
     /* ===================== COURSE ANALYTICS ===================== */
     Route::get('course-analytics', [CourseAnalyticsController::class, 'index'])

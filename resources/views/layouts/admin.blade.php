@@ -227,17 +227,17 @@
         <span class="rail-tip">Chatbot Sessions</span>
       </a>
 
-      {{-- Diagnosis Reports --}}
-      <a href="{{ route('admin.diagnosis-reports.index') }}"
-         aria-current="{{ request()->routeIs('admin.diagnosis-reports.*') ? 'page' : 'false' }}"
-         class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
+      {{-- Case Form Summary (NEW) --}}
+      <a href="{{ route('admin.case-notes.index') }}"
+        aria-current="{{ request()->routeIs('admin.case-notes.*') ? 'page' : 'false' }}"
+        class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
                 hover:bg-white/10 hover:ring-white/10
-                {{ request()->routeIs('admin.diagnosis-reports.*') ? 'is-active bg-white/15 ring-white/10' : '' }}">
+                {{ request()->routeIs('admin.case-notes.*') ? 'is-active bg-white/15 ring-white/10' : '' }}">
         <span class="inline-flex w-10 h-10 items-center justify-center">
-          <img src="{{ asset('images/icons/diagnosis.png') }}" class="sidebar-icon" alt="">
+          <img src="{{ asset('images/icons/case-notes.png') }}" class="sidebar-icon" alt="">
         </span>
-        <span class="nav-label font-medium">Diagnosis Reports</span>
-        <span class="rail-tip">Diagnosis Reports</span>
+        <span class="nav-label font-medium">Case Form Summary</span>
+        <span class="rail-tip">Case Form Summary</span>
       </a>
 
       <p class="mt-4 px-3 text-[11px] uppercase tracking-wider/relaxed opacity-90 nav-label">Analytics</p>
