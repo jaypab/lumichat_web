@@ -49,9 +49,10 @@ class AppointmentController extends Controller
     {
         $cid = $this->myCounselorId();
         if (!$cid) {
-            // show empty list but with a gentle hint
+            $empty = new LengthAwarePaginator([], 0, 10, 1, ['path' => url()->current()]);
+
             return view('Counselor_Interface.appointments.index', [
-                'appointments' => collect([])->paginate(10),
+                'appointments' => $empty,
                 'status'       => $r->query('status', 'all'),
                 'period'       => $r->query('period', 'all'),
                 'q'            => $r->query('q', ''),
@@ -131,118 +132,165 @@ class AppointmentController extends Controller
     }
 
     public function caseNotePdf(int $id)
-{
-    $cid = $this->myCounselorId(); abort_unless($cid, 404);
-
-    $appointment = DB::table('tbl_appointments as a')
-        ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-        ->select('a.*',
-            DB::raw("COALESCE(s.name,'—') as student_name"),
-            DB::raw("COALESCE(s.email,'') as student_email"))
-        ->where('a.id', $id)->where('a.counselor_id', $cid)->first();
-    abort_unless($appointment, 404);
-
-    $caseNote = \App\Models\CaseNote::where('appointment_id', $appointment->id)->first();
-    abort_unless($caseNote, 404);
-
-    // Optional logo embed (set to your actual path or null)
-    $logoPath = public_path('images/chatbot.png');
-    $logoData = file_exists($logoPath)
-        ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath))
-        : null;
-
-    $pdf = app('dompdf.wrapper');
-    $pdf->setPaper('a4', 'portrait')->setOptions([
-        // Either omit defaultFont or use a built-in one like Helvetica
-        'defaultFont' => 'Helvetica',
-        'isHtml5ParserEnabled' => true,
-        'isRemoteEnabled' => true,
-    ]);
-
-    $pdf->loadView('Counselor_Interface.appointments.pdf-case-note', [
-        'appointment' => $appointment,
-        'note'        => $caseNote,
-        'generatedAt' => now()->format('F d, Y · g:i A'),
-        'logoData'    => $logoData,
-    ]);
-
-    $filename = 'Case_Note_Appointment_'.$appointment->id.'.pdf';
-    return request()->boolean('download') ? $pdf->download($filename) : $pdf->stream($filename);
-}
-
-    /** PATCH /counselor/appointments/{id}/status — actions: done (we keep confirm on Admin) */
-    public function updateStatus(Request $r, int $id)
     {
-        return $this->status($r, $id);
         $cid = $this->myCounselorId(); abort_unless($cid, 404);
-        $action = $r->string('action')->toString(); // 'done'
 
-        $row = DB::table('tbl_appointments')->where('id', $id)->where('counselor_id', $cid)->first();
-        abort_unless($row, 404);
+        $appointment = DB::table('tbl_appointments as a')
+            ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
+            ->select('a.*',
+                DB::raw("COALESCE(s.name,'—') as student_name"),
+                DB::raw("COALESCE(s.email,'') as student_email"))
+            ->where('a.id', $id)->where('a.counselor_id', $cid)->first();
+        abort_unless($appointment, 404);
 
-        $now   = now();
-        $start = Carbon::parse($row->scheduled_at);
+        $caseNote = \App\Models\CaseNote::where('appointment_id', $appointment->id)->first();
+        abort_unless($caseNote, 404);
 
-        if ($action === 'done') {
-            if ($row->status !== 'confirmed') {
-                return back()->with('swal', ['icon'=>'warning','title'=>'Not allowed','text'=>'Only confirmed appointments can be marked as completed.']);
-            }
-            if ($start->isFuture()) {
-                return back()->with('swal', ['icon'=>'warning','title'=>'Too early','text'=>'You can mark it done once it has started.']);
-            }
-            DB::table('tbl_appointments')->where('id', $id)->update([
-                'status'       => 'completed',
-                'finalized_at' => $now,
-                'updated_at'   => $now,
-            ]);
-            return back()->with('swal', ['icon'=>'success','title'=>'Marked as completed']);
-        }
+        // Optional logo embed (set to your actual path or null)
+        $logoPath = public_path('images/chatbot.png');
+        $logoData = file_exists($logoPath)
+            ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath))
+            : null;
 
-        return back()->with('swal', ['icon'=>'info','title'=>'No change','text'=>'Unsupported action.']);
-    }
-
-    public function storeCaseNote(int $id, Request $request)
-    {
-        $appointment = Appointment::findOrFail($id);
-
-        // (Optional) Gate: only allow when completed
-        if (!in_array(strtolower((string)$appointment->status), ['completed'])) {
-            return back()->with('swal', [
-                'icon'  => 'error',
-                'title' => 'Not allowed yet',
-                'text'  => 'You can only save the Case Note after the appointment is Completed.'
-            ]);
-        }
-
-        $v = $request->validate([
-            'case_note.student_name'           => ['nullable','string','max:255'],
-            'case_note.date'                   => ['nullable','date'],
-            'case_note.program_year'           => ['nullable','string','max:255'],
-            'case_note.address'                => ['nullable','string','max:255'],
-
-            'case_note.presenting_problem'     => ['nullable','string','max:4000'],
-            'case_note.observations'           => ['nullable','string','max:4000'],
-            'case_note.interventions'          => ['nullable','string','max:4000'],
-            'case_note.response'               => ['nullable','string','max:4000'],
-            'case_note.plan_followup'          => ['nullable','string','max:4000'],
-
-            'case_note.emergency_contact_person' => ['nullable','string','max:255'],
-            'case_note.emergency_relationship'   => ['nullable','string','max:255'],
-            'case_note.emergency_contact_no'     => ['nullable','string','max:255'],
-            'case_note.emergency_address'        => ['nullable','string','max:255'],
+        $pdf = app('dompdf.wrapper');
+        $pdf->setPaper('a4', 'portrait')->setOptions([
+            // Either omit defaultFont or use a built-in one like Helvetica
+            'defaultFont' => 'Helvetica',
+            'isHtml5ParserEnabled' => true,
+            'isRemoteEnabled' => true,
         ]);
 
-        $cn = $v['case_note'] ?? [];
+        $pdf->loadView('Counselor_Interface.appointments.pdf-case-note', [
+            'appointment' => $appointment,
+            'note'        => $caseNote,
+            'generatedAt' => now()->format('F d, Y · g:i A'),
+            'logoData'    => $logoData,
+        ]);
 
-        // Upsert by appointment_id (1:1)
-        $note = CaseNote::updateOrCreate(
+        $filename = 'Case_Note_Appointment_'.$appointment->id.'.pdf';
+        return request()->boolean('download') ? $pdf->download($filename) : $pdf->stream($filename);
+    }
+
+    /** Collapse whitespace and trim (registration-style) */
+    private function trimCollapse(?string $v): ?string
+    {
+        if ($v === null) return null;
+        $v = \Normalizer::normalize($v, \Normalizer::FORM_KC) ?: $v; // NFKC
+        return trim(preg_replace('/\s+/u', ' ', $v));
+    }
+
+    /** Digits only with optional single leading + */
+    private function tidyPhone(?string $v): ?string
+    {
+        if ($v === null) return null;
+        $v = \Normalizer::normalize($v, \Normalizer::FORM_KC) ?: $v;
+        // keep digits, keep + only if it is the first char
+        $v = preg_replace('/(?!^)\+/', '', $v);           // remove extra +'s
+        $v = preg_replace('/[^\d+]/', '', $v);            // strip non-digits
+        return $v;
+    }
+
+    /** Sanitize a whole case_note payload */
+    private function sanitizeCaseNote(array $in): array
+    {
+        $out = [];
+        foreach ($in as $k => $v) {
+            if ($k === 'emergency_contact_no') {
+                $out[$k] = $this->tidyPhone($v);
+            } elseif ($k === 'date') {
+                $vv = $this->trimCollapse($v);
+                $out[$k] = $vv ?: null;
+            } else {
+                $out[$k] = $this->trimCollapse($v);
+            }
+        }
+        return $out;
+    }
+    public function storeCaseNote(int $id, Request $request)
+    {
+        $cid = $this->myCounselorId(); abort_unless($cid, 404);
+
+        $appointment = DB::table('tbl_appointments')
+            ->where('id', $id)
+            ->where('counselor_id', $cid)
+            ->first();
+        abort_unless($appointment, 404);
+
+        if (!in_array(strtolower((string)$appointment->status), ['completed'], true)) {
+            return back()->with('swal', [
+                'icon'=>'error','title'=>'Not allowed yet',
+                'text'=>'You can only save the Case Note after the appointment is Completed.',
+            ]);
+        }
+
+        $rules = [
+            // Header
+            'case_note.student_name'             => ['required','string','max:255'],
+            'case_note.date'                     => ['required','date','before_or_equal:today'], // ✅ not future
+            'case_note.program_year'             => ['nullable','string','max:255'],
+            'case_note.address'                  => ['nullable','string','max:255'],
+
+            // I–V
+            'case_note.presenting_problem'       => ['required','string','max:4000'],
+            'case_note.observations'             => ['required','string','max:4000'],
+            'case_note.interventions'            => ['required','string','max:4000'],
+            'case_note.response'                 => ['required','string','max:4000'],
+            'case_note.plan_followup'            => ['required','string','max:4000'],
+
+            // VI
+            'case_note.emergency_contact_person' => ['required','string','max:255'],
+            'case_note.emergency_relationship'   => ['required','string','max:255'],
+            'case_note.emergency_contact_no'     => ['required','regex:/^\+?\d{10,15}$/'], // ✅ phone format
+            'case_note.emergency_address'        => ['required','string','max:255'],
+        ];
+
+       $messages = [
+            'case_note.presenting_problem.required'       => 'Presenting Problem is required.',
+            'case_note.observations.required'             => 'Observations is required.',
+            'case_note.interventions.required'            => 'Interventions is required.',
+            'case_note.response.required'                 => 'Student’s Response / Insight is required.',
+            'case_note.plan_followup.required'            => 'Plan / Follow-Up is required.',
+            'case_note.emergency_contact_person.required' => 'Emergency contact person is required.',
+            'case_note.emergency_relationship.required'   => 'Emergency relationship is required.',
+            'case_note.emergency_contact_no.required'     => 'Emergency contact number is required.',
+            'case_note.emergency_address.required'        => 'Emergency address is required.',
+            'case_note.student_name.required'             => 'Student name is required.',
+            'case_note.date.required'                     => 'Date is required.',
+
+            // ✅ missing but needed
+            'case_note.emergency_contact_no.regex'        => 'Enter a valid contact number (10–15 digits, optional + at the start).',
+            'case_note.date.date'                         => 'Date must be a valid calendar date.',
+            'case_note.date.before_or_equal'              => 'Date cannot be in the future.',
+
+            // (optional but nice to have if you keep max rules)
+            'case_note.student_name.max'                  => 'Student name is too long.',
+            'case_note.program_year.max'                  => 'Program & Year is too long.',
+            'case_note.address.max'                       => 'Address is too long.',
+            'case_note.emergency_contact_person.max'      => 'Contact person is too long.',
+            'case_note.emergency_relationship.max'        => 'Relationship is too long.',
+            'case_note.emergency_address.max'             => 'Emergency address is too long.',
+            'case_note.*.max'                             => 'This field exceeds the allowed length.', // catch-all fallback
+        ];
+
+        // 👉 Single validator, explicitly disable stop-on-first-failure
+        $validator = \Validator::make($request->all(), $rules, $messages);
+        $validator->stopOnFirstFailure(false);
+        $validated = $validator->validate();
+
+        // Sanitize like registration page
+        $cn = $this->sanitizeCaseNote($validated['case_note'] ?? []);
+
+        $existing    = CaseNote::where('appointment_id', $appointment->id)->first();
+        $counselorId = $this->myCounselorId();
+        $noteDate    = !empty($cn['date']) ? Carbon::parse($cn['date'])->toDateString() : now()->toDateString();
+
+        CaseNote::updateOrCreate(
             ['appointment_id' => $appointment->id],
             [
-                'counselor_id' => Auth::id(),
-                'student_id'   => $appointment->student_id ?? null, // adjust field name if different
-
+                'counselor_id' => $counselorId,
+                'student_id'   => $appointment->student_id ?? null,
                 'student_name' => $cn['student_name'] ?? $appointment->student_name ?? null,
-                'note_date'    => $cn['date'] ?? now()->toDateString(),
+                'note_date'    => $noteDate,
                 'program_year' => $cn['program_year'] ?? null,
                 'address'      => $cn['address'] ?? null,
 
@@ -257,7 +305,7 @@ class AppointmentController extends Controller
                 'emergency_contact_no'     => $cn['emergency_contact_no'] ?? null,
                 'emergency_address'        => $cn['emergency_address'] ?? null,
 
-                'created_by' => $note?->created_by ?? Auth::id(),
+                'created_by' => $existing?->created_by ?? Auth::id(),
                 'updated_by' => Auth::id(),
             ]
         );
@@ -265,10 +313,9 @@ class AppointmentController extends Controller
         return back()->with('swal', [
             'icon'  => 'success',
             'title' => 'Case Note saved',
-            'text'  => 'Your counselor case note has been saved successfully.'
+            'text'  => 'Your counselor case note has been saved successfully.',
         ]);
     }
-
 
     /** POST /counselor/appointments/{id}/no-show — after grace */
     public function markNoShow(int $id)
@@ -375,9 +422,10 @@ class AppointmentController extends Controller
 
         $scheduledAt = Carbon::parse("{$data['date']} {$data['time']}:00");
         if ($scheduledAt->lte(now())) {
-            return back()->withErrors(['time'=>'Pick a future time.'])->withInput();
+            return back()->withErrors([
+                'date' => 'Pick a future date/time for the follow-up.',
+            ])->withInput();
         }
-
         // Ensure counselor is free at that slot
         $busy = DB::table('tbl_appointments')
             ->where('counselor_id', $cid)
@@ -438,8 +486,12 @@ class AppointmentController extends Controller
 
     public function status(Request $request, int $id)
     {
-        $action = (string) $request->input('action'); // 'confirm' | 'start' | 'done' | ...
-        $appt   = DB::table('tbl_appointments')->where('id', $id)->first();
+        $cid = $this->myCounselorId(); abort_unless($cid, 404);
+
+        $appt = DB::table('tbl_appointments')
+            ->where('id', $id)
+            ->where('counselor_id', $cid)
+            ->first();
         abort_unless($appt, 404);
 
         $now      = now();
