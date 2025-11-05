@@ -29,7 +29,7 @@
   {{-- ========= Page Header ========= --}}
   <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between animate-fadeup screen-only">
     <div>
-      <h2 class="text-2xl font-bold tracking-tight text-slate-900">Case Form Summary</h2>
+      <h2 class="text-2xl font-bold tracking-tight text-slate-900">Case Form Summary (Not Finalize)</h2>
       <p class="text-sm text-slate-600">
         Review counselor case notes recorded per student session.
         <span class="ml-2 text-slate-400">•</span>
