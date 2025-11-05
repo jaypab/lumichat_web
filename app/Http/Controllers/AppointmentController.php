@@ -272,6 +272,8 @@ class AppointmentController extends Controller
 
         $candidate = [];
         foreach ($cids as $cid) {
+            // get both available and blocked rows, but we’ll still step only through the
+            // ranges marked available to keep things cheap
             $ranges = $this->rangesForCounselorOnDate($cid, $date)
                 ->filter(fn($r) => !isset($r->slot_type) || $r->slot_type === 'available');
 
@@ -279,6 +281,7 @@ class AppointmentController extends Controller
                 if (!\is_string($r->start_time) || !\is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') {
                     continue;
                 }
+
                 $cursor = Carbon::parse($date->toDateString().' '.$r->start_time)->second(0);
                 $end    = Carbon::parse($date->toDateString().' '.$r->end_time)->second(0);
 
@@ -287,29 +290,41 @@ class AppointmentController extends Controller
                     $next = $slot->copy()->addMinutes(self::SLOT_MINUTES);
                     if ($next->gt($end)) break;
 
+                    // skip past times for today
                     if ($date->isSameDay($today) && $slot->lte($today)) {
                         $cursor = $cursor->addMinutes(self::SLOT_MINUTES);
                         continue;
                     }
 
+                    // ✅ NEW: respect blocks/disabled day for this counselor
+                    if (!$this->slotAllowedForCounselor((int)$cid, $slot, $next, $date)) {
+                        $cursor = $cursor->addMinutes(self::SLOT_MINUTES);
+                        continue;
+                    }
+
+                    // merge by HH:MM (pooled view)
                     $candidate[$slot->format('H:i')] = $slot->copy();
                     $cursor = $cursor->addMinutes(self::SLOT_MINUTES);
                 }
             }
         }
 
+        // If nothing survived (e.g., everyone disabled the weekday), return an explicit reason
+        if (empty($candidate)) {
+            // you already return 'disabled_weekday' earlier when it’s a full-day disable for all;
+            // this covers partial/custom blocks that eliminate all slots for this date.
+            return response()->json(['slots' => [], 'reason' => 'no_slots', 'message' => 'No working-hour slots on this day.']);
+        }
+
         $slots = [];
         foreach ($candidate as $hhmm => $slotStart) {
             $remaining = $this->remainingCapacityAt($slotStart);
-
-            // ✅ NEW: always include the slot; UI will disable/red it when available === 0
             $slots[] = [
                 'value'     => $hhmm,
                 'label'     => $slotStart->format('g:i A'),
                 'available' => max(0, (int)$remaining),
             ];
         }
-
         usort($slots, fn($a,$b)=>strcmp($a['value'],$b['value']));
         return response()->json(['slots'=>$slots]);
     }

@@ -27,6 +27,40 @@
     [x-cloak]{ display:none !important; }
   </style>
 
+  <style id="lumi-header-glass">
+  /* Frosted, sticky app header */
+  .header-shell{
+    position: sticky;           /* stays at the top while content scrolls */
+    top: 0;
+    z-index: 2147483000;        /* below your modal z-fixes, above content */
+    background: rgba(255,255,255,.66);
+    border-bottom: 1px solid rgba(148,163,184,.28);
+    backdrop-filter: blur(10px) saturate(140%);
+    -webkit-backdrop-filter: blur(10px) saturate(140%);
+  }
+  html.dark .header-shell{
+    background: rgba(17,24,39,.58);
+    border-bottom-color: rgba(148,163,184,.18);
+  }
+
+  /* Consistent height + horizontal padding */
+  .header-inner{
+    height: 64px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  /* If the browser can't do backdrop-filter, fall back to a stronger bg */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))){
+    .header-shell{
+      background: rgba(255,255,255,.94);
+    }
+    html.dark .header-shell{
+      background: rgba(17,24,39,.92);
+    }
+  }
+</style>
+
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&display=optional" rel="stylesheet">
 
   {{-- =========================================================

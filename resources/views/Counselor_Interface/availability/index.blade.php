@@ -68,7 +68,7 @@
         <div>
           <h3 class="text-slate-900 font-semibold tracking-tight">Weekday Quick Editor</h3>
           <p class="text-sm text-slate-500">
-            Use <span class="font-semibold">Disable</span> for a full-day block, or <span class="font-semibold">Add recurring</span> to fine-tune hourly blocks.
+            Use <span class="font-semibold">Disable</span> for a full-day block, or <span class="font-semibold">Edit hours</span> to fine-tune hourly blocks.
           </p>
         </div>
         <a id="openTableBtn"
@@ -100,7 +100,7 @@
             {{-- Balanced buttons (no "Update") --}}
             <div class="flex items-center gap-2 w-[260px] max-w-full justify-end">
               <button
-                class="ui-danger ui-peel ui-sm btn-eq text-sm"
+                class="ui-peel ui-sm btn-eq text-sm btn-toggle"
                 type="button"
                 data-action="disable-weekday"
                 data-weekday="{{ $wd }}"
@@ -272,6 +272,40 @@ const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const fmtMonth = (d) => new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(d);
 const isWeekend = (d) => [0, 6].includes(d.getDay());
+
+  // --- state helpers for the Disable/Enable toggle (recurring weekdays) ---
+  function isWeekdayDisabled(wd) {
+    const m = window.RECUR_BLOCKS || {};
+    const arr = m[String(wd)] || [];
+    return Array.isArray(arr) && arr.length > 0; // has any recurring blocked tiles
+  }
+
+  function styleToggleButton(btn, wd) {
+    const disabled = isWeekdayDisabled(wd);
+    btn.dataset.state = disabled ? 'disabled' : 'enabled';
+    btn.textContent   = disabled ? 'Enable' : 'Disable';
+
+    // swap visual styles
+    btn.classList.remove('ui-danger','ui-success');
+    if (disabled) btn.classList.add('ui-success'); else btn.classList.add('ui-danger');
+    // keep the rest: ui-peel ui-sm btn-eq text-sm
+  }
+
+  // Initialize all weekday toggle buttons based on RECUR_BLOCKS
+ function initWeekdayToggleButtons() {
+  document.querySelectorAll('button[data-action="disable-weekday"]').forEach((btn) => {
+    const wd = Number(btn.dataset.weekday || 0);
+      // reset any residual classes from SSR / previous states
+      btn.classList.remove('ui-danger','ui-success');
+        styleToggleButton(btn, wd);
+      // reveal after styling to avoid red flash
+      btn.classList.remove('prehide');
+      btn.style.opacity = '1';
+      });
+  }
+
+  // Call on first paint (after DOM is ready); safe to call again after saves
+  document.addEventListener('DOMContentLoaded', initWeekdayToggleButtons);
 
 /* ========== Calendar ========== */
 (function () {
@@ -577,6 +611,9 @@ const isWeekend = (d) => [0, 6].includes(d.getDay());
           btnSave.disabled = false; return;
         }
         window.RECUR_BLOCKS[String(activeWeekday)] = blocks.map(o => [o.start, o.end]);
+        // NEW: restyle the corresponding toggle button immediately
+        const tBtn = document.querySelector(`button[data-action="disable-weekday"][data-weekday="${activeWeekday}"]`);
+        if (tBtn) styleToggleButton(tBtn, activeWeekday);
         ok = true;
       } else {
         const resp = await fetch(DATE_WINDOWS_SAVE, {
@@ -635,6 +672,7 @@ const isWeekend = (d) => [0, 6].includes(d.getDay());
   window.HourTiles = { open };
 })();
 // ---------- Quick Editor buttons (Edit hours / Disable) ----------
+// ---------- Quick Editor buttons (Edit hours / Disable<->Enable toggle) ----------
 document.addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-action], .js-open-recurring');
   if (!btn) return;
@@ -647,129 +685,104 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
-  // "Disable" — run PRECHECK first, then confirm, then apply
-if (btn.dataset.action === 'disable-weekday') {
-  try {
-    const url  = `${WEEKDAY_DISABLE_PRECHECK}?weekday=${encodeURIComponent(wd)}`;
-    const resp = await fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
-    const data = await safeJson(resp);
+  // Toggle click for Disable/Enable
+  if (btn.dataset.action === 'disable-weekday') {
+    const currentlyDisabled = isWeekdayDisabled(wd);
 
-    const conflicts = Array.isArray(data?.conflicts) ? data.conflicts : [];
-
-    // Only show the dialog if there are conflicts
-    if (conflicts.length) {
-      const esc = (s='') => String(s)
-        .replaceAll('&','&amp;').replaceAll('<','&lt;')
-        .replaceAll('>','&gt;').replaceAll('"','&quot;')
-        .replaceAll("'",'&#39;');
-
-      // Heading: exact date if just one, else "these date(s)"
-      const uniqueDates = [...new Set(conflicts.map(c => c.date_label || c.date))].filter(Boolean);
-      const dateHeading = uniqueDates.length === 1
-        ? esc(fmtLongDate(uniqueDates[0]))
-        : 'these date(s)';
-
-      // Rows: DATE • TIME • NAME
-      const rows = conflicts
-        .sort((a,b) =>
-          String(a.date || a.date_label).localeCompare(String(b.date || b.date_label)) ||
-          String(a.time).localeCompare(String(b.time))
-        )
-        .map(c => {
-          const date = esc(fmtLongDate(c.date_label || c.date || ''));
-          const time = esc(c.time12 || c.time || '');
-          const name = esc(c.student_name || 'Student');
-          const url  = c.appt_url || '#';
-          return `
-            <span class="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white ring-1 ring-slate-200 text-slate-700">
-              <span class="px-1.5 py-0.5 text-xs font-semibold rounded-md bg-slate-100 ring-1 ring-slate-200">${date}</span>
-              <span class="px-1.5 py-0.5 text-xs font-semibold rounded-md bg-slate-100 ring-1 ring-slate-200">${time}</span>
-              <a href="${url}" class="swal-link underline decoration-indigo-400 hover:decoration-2" title="Open appointment">${name}</a>
-            </span>`;
-        }).join('<br>');
-
-      await Swal.fire({
-        icon: 'error',
-        title: "Can't disable time already booked",
-        html: `
-          <p class="text-slate-700 mb-2">
-            You already have an appointment on <b>${dateHeading}</b>
-            during the time you tried to turn off.
-          </p>
-          <div class="text-left">${rows || '—'}</div>
-          <p class="mt-3 text-[12px] text-slate-500">Tip: click a name to open the appointment.</p>
-        `,
-        confirmButtonText: 'OK',
-        confirmButtonColor: '#e11d48'
+    // === ENABLE flow (was disabled -> make it enabled by clearing blocks) ===
+    if (currentlyDisabled) {
+      const ok = await confirmDialog({
+        title: 'Enable this weekday?',
+        text: 'Students will see your default recurring slots again (09–12 • 1–4) unless you’ve customized them.',
+        confirmText: 'Enable',
       });
-      return; // 🔒 stop here; do NOT disable
+      if (!ok) return;
+
+      try {
+        Swal.fire({ title:'Applying…', didOpen:()=>Swal.showLoading(), allowOutsideClick:false, showConfirmButton:false });
+        const resp = await fetch(WEEKDAY_BLOCKS_ENDPOINT, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': @json(csrf_token()),
+          },
+          body: JSON.stringify({ weekday: wd, blocks: [] }) // 👈 empty = clear blocks
+        });
+        const data = await safeJson(resp);
+        Swal.close();
+
+        if (!resp.ok) {
+          toastError(data?.message || `HTTP ${resp.status}`);
+          return;
+        }
+
+        // update local cache: no blocks for this weekday
+        window.RECUR_BLOCKS[String(wd)] = [];
+        styleToggleButton(btn, wd);
+        toastSuccess('Weekday enabled');
+      } catch {
+        Swal.close();
+        toastError('Network error');
+      }
+      return;
     }
-  } catch (_) {
-    toastError('Precheck failed. Please retry.');
-    return;
+
+    // === DISABLE flow (was enabled -> apply full block) ===
+    // keep your precheck & fullBlock flow
+    try {
+      const url  = `${WEEKDAY_DISABLE_PRECHECK}?weekday=${encodeURIComponent(wd)}`;
+      const resp = await fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+      const data = await safeJson(resp);
+      const conflicts = Array.isArray(data?.conflicts) ? data.conflicts : [];
+
+      if (conflicts.length) {
+        const esc = (s='') => String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
+        const rows = conflicts
+          .sort((a,b)=>String(a.time).localeCompare(String(b.time)))
+          .map(c => `
+            <span class="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white ring-1 ring-slate-200 text-slate-700">
+              <span class="px-1.5 py-0.5 text-xs font-semibold rounded-md bg-slate-100 ring-1 ring-slate-200">${esc(c.time12 || c.time || '')}</span>
+              <a href="${c.appt_url || '#'}" class="swal-link underline decoration-indigo-400 hover:decoration-2" title="Open appointment">${esc(c.student_name || 'Student')}</a>
+            </span>`).join('<br>');
+
+        await Swal.fire({
+          icon:'error',
+          title:"Can't disable booked slot(s)",
+          html:`<div class="text-left">${rows || '—'}</div>`,
+          confirmButtonColor:'#e11d48'
+        });
+        return;
+      }
+    } catch (_) {
+      toastError('Precheck failed. Please retry.');
+      return;
+    }
+
+    const ok = await confirmDialog({
+      title: 'Disable this weekday?',
+      text: 'This will block 9–12 AM and 1–4 PM for students.',
+      confirmText: 'Disable',
+      danger: true
+    });
+    if (!ok) return;
+
+    // Reuse your existing function
+    await fullBlock(wd);
+
+    // update button state immediately
+    window.RECUR_BLOCKS[String(wd)] = [['09:00','12:00'],['13:00','17:00']]; // mirror what you sent
+    styleToggleButton(btn, wd);
   }
-
-  // No conflicts → confirm then apply
-  const ok = await confirmDialog({
-    title: 'Disable this weekday?',
-    text: 'This will block 9–12 AM and 1–5 PM for students.',
-    confirmText: 'Disable',
-    danger: true
-  });
-  if (!ok) return;
-
-  await fullBlock(wd);
-}
 });
 
 // Sends a full-day block to the server and updates RECUR_BLOCKS cache
 async function fullBlock(wd) {
   const blocks = [{ start: '09:00', end: '12:00' }, { start: '13:00', end: '17:00' }];
 
-  // --- PRECHECK for conflicts on this weekday ---
-  try {
-    const pre = await fetch(`${WEEKDAY_DISABLE_PRECHECK}?weekday=${encodeURIComponent(wd)}`, {
-      credentials: 'same-origin',
-      headers: { 'Accept': 'application/json' }
-    });
-    const preData = await safeJson(pre);
-
-    if (pre.ok && Array.isArray(preData.conflicts) && preData.conflicts.length) {
-      // Build conflict rows (same look & feel as your date conflict alert)
-      const esc = (s='') => String(s)
-        .replaceAll('&','&amp;').replaceAll('<','&lt;')
-        .replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
-
-      const rows = preData.conflicts
-        .sort((a,b)=>String(a.time).localeCompare(String(b.time)))
-        .map(c => {
-          const time = esc(c.time12 || c.time || '');
-          const name = esc(c.student_name || 'Student');
-          const url  = c.appt_url || '#';
-          return `
-            <span class="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white ring-1 ring-slate-200 text-slate-700">
-              <span class="px-1.5 py-0.5 text-xs font-semibold rounded-md bg-slate-100 ring-1 ring-slate-200">${time}</span>
-              <a href="${url}" class="swal-link underline decoration-indigo-400 hover:decoration-2" title="Open appointment">${name}</a>
-            </span>`;
-        }).join('<br>');
-
-      await Swal.fire({
-        icon: 'error',
-        title: "Can't disable booked slot(s)",
-        html: `
-          <p class="text-slate-700 mb-2">There are appointment(s) on <b>${esc(preData.weekday_label || 'this weekday')}</b> inside the time(s) you tried to disable.</p>
-          <div class="text-left">${rows || '—'}</div>
-          <p class="mt-3 text-[12px] text-slate-500">Tip: click a student name to open the appointment.</p>
-        `,
-        confirmButtonColor: '#e11d48'
-      });
-      return; // stop here; don't disable
-    }
-  } catch (_) {
-    // If precheck fails, fall through to normal flow (safer to not block admin action)
-  }
-
-  // --- PROCEED with disable if no conflicts ---
+  // No precheck here — it's already done in the click handler
   Swal.fire({
     title: 'Applying disable…',
     didOpen: () => Swal.showLoading(),
@@ -799,7 +812,7 @@ async function fullBlock(wd) {
       return;
     }
 
-    // Update local cache so next open reflects latest
+    // Update cache so the next open reflects latest
     window.RECUR_BLOCKS = window.RECUR_BLOCKS || {};
     window.RECUR_BLOCKS[String(wd)] = blocks.map(o => [o.start, o.end]);
 
@@ -820,7 +833,14 @@ async function fullBlock(wd) {
 .tabular-nums{ font-variant-numeric: tabular-nums; }
 
 /* Buttons */
-.ui-primary,.ui-ghost,.ui-danger{ height:var(--ui-h); padding:0 14px; border-radius:12px; font-weight:700; transition:all .15s ease; }
+.ui-primary,.ui-ghost,.ui-danger,.ui-success{
+   height:var(--ui-h);
+   padding:0 14px;
+   border-radius:12px;
+   font-weight:700;
+   transition:all .15s ease;
+ }
+ 
 .ui-primary{ background:linear-gradient(180deg,#6366f1,#4f46e5); color:#fff; border:1px solid #4f46e5; box-shadow:0 2px 10px rgba(99,102,241,.18);}
 .ui-primary:hover{ filter:brightness(1.05); }
 .ui-danger{ background:linear-gradient(180deg,#f43f5e,#e11d48); color:#fff; border:1px solid #e11d48; box-shadow:0 2px 10px rgba(225,29,72,.18);}
@@ -951,5 +971,32 @@ async function fullBlock(wd) {
   border-color:#16a34a !important;
   box-shadow: 0 2px 10px rgba(16,185,129,.25) !important;
 }
+/* Green success button used for "Enable" */
+.ui-success{
+  background: linear-gradient(180deg,#22c55e,#16a34a);
+  color:#fff;
+  border:1px solid #16a34a;
+  box-shadow:0 2px 10px rgba(16,185,129,.18);
+}
+.ui-success:hover{ filter:brightness(1.05); }
+
+/* Prevent first-paint color flash until JS styles the toggle */
+[data-action="disable-weekday"].btn-toggle{
+  opacity: 0;                 /* hidden until JS sets opacity to 1 */
+  transition: opacity .12s ease;
+}
+
+/* Clearer focus states on keyboard nav */
+.ui-danger:focus-visible,
+.ui-success:focus-visible,
+.ui-primary:focus-visible,
+.ui-ghost:focus-visible{
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+
+/* Subtle hover lift for success/danger to match primary feel */
+.ui-success:hover { filter: brightness(1.05); }
+.ui-danger:hover  { filter: brightness(1.05); }
 </style>
 @endsection
