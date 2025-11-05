@@ -105,20 +105,6 @@
 
       {{-- Actions --}}
       <div class="mt-4 flex flex-wrap items-center gap-2">
-        {{-- Confirm --}}
-        <form method="POST"
-              action="{{ route('counselor.appointments.status', $appointment->id) }}"
-              onsubmit="return askAction(event, this, 'confirm')">
-          @csrf
-          @method('PATCH')
-          <input type="hidden" name="action" value="confirm">
-          <button type="submit"
-                  class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  {{ $canConfirm ? '' : 'disabled' }}>
-            Confirm
-          </button>
-        </form>
-
         {{-- Start Session (to Ongoing) --}}
         <form method="POST"
               action="{{ route('counselor.appointments.status', $appointment->id) }}"
