@@ -19,6 +19,8 @@ use App\Models\Appointment;
 // 👇 imports for emailing
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use App\Models\User;
+use App\Notifications\SimpleDatabaseNotification;
 
 class AppointmentController extends Controller
 {
@@ -771,16 +773,27 @@ public function index(Request $r): View
                     $counselorId = null; // assign later
                 }
 
-                DB::table('tbl_appointments')->insert([
-                    'student_id'   => $appointment->student_id,
-                    'counselor_id' => $counselorId,
-                    'scheduled_at' => $scheduledAt,
-                    'status'       => 'confirmed', // auto-confirm so student can’t cancel
-                    'note'         => $data['note'] ?? null,
-                    'parent_id'    => $appointment->id,
-                    'created_at'   => now(),
-                    'updated_at'   => now(),
-                ]);
+            // Create the appointment and capture its ID (all your fields stay the same)
+            $newId = DB::table('tbl_appointments')->insertGetId([
+                'student_id'   => (int) $appointment->student_id,
+                'counselor_id' => $counselorId,        // leave as you already compute (can be null or an id)
+                'scheduled_at' => $scheduledAt,        // your existing variable
+                'status'       => 'confirmed',         // ✅ unchanged (auto-confirm per your flow)
+                'parent_id'    => $appointment->id,
+                'created_at'   => now(),
+                'updated_at'   => now(),
+            ]);
+
+            // 🔔 Notify the student with a deep link to their appointment view
+            if ($student = User::find((int) $appointment->student_id)) {
+                $dtLabel = Carbon::parse($scheduledAt)->format('M d, Y g:i A');
+
+                $student->notify(new SimpleDatabaseNotification(
+                    'Appointment approved',
+                    'Your appointment for ' . $dtLabel . ' has been approved.',
+                    route('appointment.view', $newId) // student-side page
+                ));
+            }
             });
         } catch (\RuntimeException $e) {
             if ($e->getMessage() === 'FULL') {

@@ -274,43 +274,52 @@
 
   {{-- ===== MAIN ===== --}}
   <div id="adminMain" class="min-h-screen">
-    {{-- Top bar --}}
-    <header class="sticky top-0 z-20 h-[var(--header-h)] bg-white/80 backdrop-blur border-b border-slate-200">
-      <div class="h-full max-w-7xl mx-auto px-4 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          {{-- Hamburger: expand (desktop) / open (mobile) --}}
-          <button id="railOpen" class="p-2 rounded-md hover:bg-slate-100"
-                  aria-label="Open sidebar" title="Open sidebar">
-            <svg class="w-6 h-6 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M4 6h16M4 12h16M4 18h16"/>
-            </svg>
-          </button>
-          <h1 class="text-lg font-semibold">@yield('page_title','Dashboard')</h1>
+{{-- Top bar --}}
+<header class="sticky top-0 z-20 h-[var(--header-h)] bg-white/80 backdrop-blur border-b border-slate-200">
+  <div class="h-full max-w-7xl mx-auto px-4 flex items-center justify-between">
+    {{-- LEFT cluster --}}
+    <div class="flex items-center gap-3">
+      {{-- Hamburger --}}
+      <button id="railOpen" class="p-2 rounded-md hover:bg-slate-100" aria-label="Open sidebar" title="Open sidebar">
+        <svg class="w-6 h-6 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+      <h1 class="text-lg font-semibold">@yield('page_title','Dashboard')</h1>
+    </div>
+
+    @php
+      $adminInitials = '';
+      if (Auth::check()) {
+        $parts = preg_split('/\s+/', trim(Auth::user()->name ?? ''));
+        $adminInitials = strtoupper(collect($parts)->take(2)->map(fn($s)=>mb_substr($s,0,1))->implode(''));
+      }
+    @endphp
+
+    {{-- RIGHT cluster (bell + profile) --}}
+    <div class="flex items-center gap-3">
+      {{-- 🔔 Notification bell --}}
+      @auth
+        <x-notification-bell />
+      @endauth
+
+      {{-- Profile chip --}}
+      <div class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-2 py-1.5 shadow-sm">
+        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-xs font-bold">
+          {{ $adminInitials ?: 'A' }}
         </div>
-
-        @php
-          $adminInitials = '';
-          if (Auth::check()) {
-            $parts = preg_split('/\s+/', trim(Auth::user()->name ?? ''));
-            $adminInitials = strtoupper(collect($parts)->take(2)->map(fn($s)=>mb_substr($s,0,1))->implode(''));
-          }
-        @endphp
-
-        {{-- Profile chip (no dark-mode toggle, no "..." menu) --}}
-        <div class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-2 py-1.5 shadow-sm">
-          <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-xs font-bold">
-            {{ $adminInitials ?: 'A' }}
+        <div class="leading-tight pr-1">
+          <div class="text-sm font-semibold text-slate-800">
+            {{ auth()->user()->name ?? 'Master Admin' }}
           </div>
-          <div class="leading-tight pr-1">
-            <div class="text-sm font-semibold text-slate-800">
-              {{ auth()->user()->name ?? 'Master Admin' }}
-            </div>
-            <div class="text-[11px] text-slate-500">Admin</div>
-          </div>
+          <div class="text-[11px] text-slate-500">Admin</div>
         </div>
       </div>
-    </header>
+    </div>
+  </div>
+</header>
+
 
     <main class="max-w-7xl mx-auto px-4 py-6">
       @yield('content')

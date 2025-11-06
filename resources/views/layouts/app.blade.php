@@ -325,101 +325,107 @@
       </div>
     </aside>
 
-    {{-- ============================ MAIN CONTENT ============================ --}}
-    @php
-      use Illuminate\Support\Str;
-      $yieldHeading = trim($__env->yieldContent('page_title'));
-      $routeName    = Route::currentRouteName();
-      $autoTitle    = '';
-      if (!$yieldHeading && $routeName) {
-        $autoTitle = Str::of($routeName)->replace(['.', '_'], ' ')->title();
-        $autoTitle = Str::of($autoTitle)->replace(['Index', 'Show'], '')->trim();
-      }
-      $pageTitle = $yieldHeading ?: ($autoTitle ?: 'LumiCHAT');
+{{-- ============================ MAIN CONTENT ============================ --}}
+@php
+  use Illuminate\Support\Str;
+  $yieldHeading = trim($__env->yieldContent('page_title'));
+  $routeName    = Route::currentRouteName();
+  $autoTitle    = '';
+  if (!$yieldHeading && $routeName) {
+    $autoTitle = Str::of($routeName)->replace(['.', '_'], ' ')->title();
+    $autoTitle = Str::of($autoTitle)->replace(['Index', 'Show'], '')->trim();
+  }
+  $pageTitle = $yieldHeading ?: ($autoTitle ?: 'LumiCHAT');
 
-      $initials = '';
-      if (Auth::check()) {
-        $parts = preg_split('/\s+/', trim(Auth::user()->name ?? ''));
-        $initials = strtoupper(collect($parts)->take(2)->map(fn($s)=>mb_substr($s,0,1))->implode(''));
-      }
-    @endphp
+  $initials = '';
+  if (Auth::check()) {
+    $parts = preg_split('/\s+/', trim(Auth::user()->name ?? ''));
+    $initials = strtoupper(collect($parts)->take(2)->map(fn($s)=>mb_substr($s,0,1))->implode(''));
+  }
+@endphp
 
-    <div class="main-content">
-      <header class="header-shell">
-        <div class="header-inner flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <button id="sidebar-open" class="hamburger-btn header-only" aria-label="Open sidebar">
-              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>
-              </svg>
-            </button>
+<div class="main-content">
+  <header class="header-shell">
+    <div class="header-inner flex items-center justify-between overflow-visible">
+      {{-- LEFT --}}
+      <div class="flex items-center gap-3">
+        <button id="sidebar-open" class="hamburger-btn header-only" aria-label="Open sidebar">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="4" y1="6"  x2="20" y2="6"/>
+            <line x1="4" y1="12" x2="20" y2="12"/>
+            <line x1="4" y1="18" x2="20" y2="18"/>
+          </svg>
+        </button>
 
-            <h1 class="text-lg sm:text-xl font-semibold tracking-tight text-gray-900 dark:text-white">
-              {{ $pageTitle }}
-            </h1>
-            @if(request()->routeIs('chat.index'))
-              <span class="hidden sm:inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">
-                Live
-              </span>
-            @endif
-          </div>
+        <h1 class="text-lg sm:text-xl font-semibold tracking-tight text-gray-900 dark:text-white">
+          {{ $pageTitle }}
+        </h1>
+        @if(request()->routeIs('chat.index'))
+          <span class="hidden sm:inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">
+            Live
+          </span>
+        @endif
+      </div>
 
-          <div class="flex items-center gap-2 sm:gap-3">
-            <a href="{{ route('chat.new') }}"
-               id="header-newchat"
-               class="header-newchat inline-flex items-center gap-2 h-10 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
-               aria-label="Start a new chat"
-               data-new-chat="1">
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-              <span class="hidden sm:inline text-sm font-medium">New Chat</span>
-            </a>
+      {{-- RIGHT --}}
+      <div class="flex items-center gap-3">
+        {{-- Dark / light toggle --}}
+        <button id="theme-toggle" type="button" aria-label="Toggle theme"
+                class="inline-flex items-center justify-center h-10 w-10 rounded-xl border border-gray-200
+                       dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50
+                       dark:hover:bg-gray-800 transition">
+          <svg class="inline dark:hidden w-5 h-5 text-gray-600" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+          </svg>
+          <svg class="hidden dark:inline w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6.76 4.84l-1.8-1.79L3.18 4.84l1.79 1.79 1.79-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zm9-10v-2h-3v2h3zm-3.76 6.16l1.79 1.79 1.78-1.79-1.78-1.79-1.79 1.79zM12 7a5 5 0 100 10 5 5 0 000-10zm6.24-2.16l1.79-1.79-1.79-1.79-1.79 1.79 1.79 1.79zM4.24 17.16L2.45 18.95l1.79 1.79 1.79-1.79-1.79-1.79z"/>
+          </svg>
+        </button>
 
-            <button id="theme-toggle" type="button" aria-label="Toggle theme"
-                    class="inline-flex items-center justify-center h-10 w-10 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-              <svg class="inline dark:hidden w-5 h-5 text-gray-600" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
-              </svg>
-              <svg class="hidden dark:inline w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M6.76 4.84l-1.8-1.79L3.18 4.84l1.79 1.79 1.79-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zm9-10v-2h-3v2h3zm-3.76 6.16l1.79 1.79 1.78-1.79-1.78-1.79-1.79 1.79zM12 7a5 5 0 100 10 5 5 0 000-10zm6.24-2.16l1.79-1.79-1.79-1.79-1.79 1.79 1.79 1.79zM4.24 17.16L2.45 18.95l1.79 1.79 1.79-1.79-1.79-1.79z"/>
-              </svg>
-            </button>
+        {{-- Notification bell --}}
+        @auth
+          <x-notification-bell class="ml-2" />
+        @endauth
 
-            <div class="relative">
-              <button id="user-btn" type="button"
-                class="inline-flex items-center gap-2 h-10 px-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-                <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-xs font-bold">
-                  {{ $initials ?: 'U' }}
-                </div>
-                <div class="hidden sm:flex flex-col text-left leading-tight mr-1">
-                  <span class="text-[13px] font-semibold text-gray-800 dark:text-gray-100 truncate max-w-[8rem]">
-                    @auth {{ Auth::user()->name }} @endauth
-                  </span>
-                  <span class="text-[11px] text-gray-500 dark:text-gray-400">Student</span>
-                </div>
-              </button>
-              <div id="user-menu" class="dropdown">
-                <a href="{{ route('profile.edit') }}" class="dropdown-item">Profile</a>
-                @if(Route::has('settings.index'))
-                  <a href="{{ route('settings.index') }}" class="dropdown-item">Settings</a>
-                @endif
-                <div class="dropdown-sep"></div>
-                <form method="POST" action="{{ route('logout') }}">
-                  @csrf
-                  <button type="submit" class="dropdown-item text-rose-600">Logout</button>
-                </form>
-              </div>
+        {{-- User chip + menu --}}
+        <div class="relative">
+          <button id="user-btn" type="button"
+            class="inline-flex items-center gap-2 h-10 px-2 rounded-xl border border-gray-200
+                   dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50
+                   dark:hover:bg-gray-800 transition">
+            <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br
+                        from-indigo-500 to-violet-600 text-white text-xs font-bold">
+              {{ $initials ?: 'U' }}
             </div>
+            <div class="hidden sm:flex flex-col text-left leading-tight mr-1">
+              <span class="text-[13px] font-semibold text-gray-800 dark:text-gray-100 truncate max-w-[8rem]">
+                @auth {{ Auth::user()->name }} @endauth
+              </span>
+              <span class="text-[11px] text-gray-500 dark:text-gray-400">Student</span>
+            </div>
+          </button>
+
+          <div id="user-menu" class="dropdown">
+            <a href="{{ route('profile.edit') }}" class="dropdown-item">Profile</a>
+            @if(Route::has('settings.index'))
+              <a href="{{ route('settings.index') }}" class="dropdown-item">Settings</a>
+            @endif
+            <div class="dropdown-sep"></div>
+            <form method="POST" action="{{ route('logout') }}">
+              @csrf
+              <button type="submit" class="dropdown-item text-rose-600">Logout</button>
+            </form>
           </div>
         </div>
-      </header>
-
-      <div class="panel-scroll">
-        @yield('content')
       </div>
     </div>
-  </div>
+  </header>
+
+  {{-- The actual page content goes here --}}
+  <main class="panel-scroll">
+    @yield('content')
+  </main>
+</div>
 
   {{-- ============================ Minimal JS ============================ --}}
   <script>
@@ -449,7 +455,7 @@
       });
     })();
 
-    // Theme toggle
+    // Theme toggle (if using the built-in button)
     (function(){
       const btn = document.getElementById('theme-toggle');
       btn?.addEventListener('click', () => {

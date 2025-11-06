@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Collection;
 use Carbon\Carbon;
+use App\Notifications\SimpleDatabaseNotification;
+use App\Models\User; // ⬅️ add this
 
 class AppointmentController extends Controller
 {
@@ -378,13 +380,16 @@ class AppointmentController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($studentId, $slot) {
+            $newId = null;
+
+            DB::transaction(function () use ($studentId, $slot, &$newId) {
                 $remaining = $this->remainingCapacityAt($slot);
                 if ($remaining <= 0) {
                     throw new \RuntimeException('FULL');
                 }
 
-                DB::table('tbl_appointments')->insert([
+                // get ID for deep link
+                $newId = DB::table('tbl_appointments')->insertGetId([
                     'student_id'   => $studentId,
                     'counselor_id' => null,
                     'scheduled_at' => $slot,
@@ -393,6 +398,15 @@ class AppointmentController extends Controller
                     'updated_at'   => now(),
                 ]);
             }, 3);
+
+            // 🔔 notify student (requested)
+            $this->notifyUser(
+                $studentId,
+                'Appointment requested',
+                'We received your booking for ' . $slot->format('M d, Y g:i A') . '. You’ll be notified when it’s approved.',
+                route('appointment.view', $newId)
+            );
+
         } catch (\RuntimeException $e) {
             if ($e->getMessage() === 'FULL') {
                 return back()->withInput()->with('swal', [
@@ -751,6 +765,14 @@ class AppointmentController extends Controller
                 'updated_at' => now(),
             ]);
 
+        // 🔔 notify student (canceled)
+        $this->notifyUser(
+            $userId,
+            'Appointment canceled',
+            'Your appointment for ' . $start->format('M d, Y g:i A') . ' was canceled.',
+            route('appointment.history')
+        );
+
         return redirect()
             ->route('appointment.history')
             ->with('swal', [
@@ -759,5 +781,14 @@ class AppointmentController extends Controller
                 'text'              => 'Your appointment has been canceled successfully.',
                 'confirmButtonText' => 'OK',
             ]);
+    }
+
+
+        private function notifyUser(int $userId, string $title, string $body = '', ?string $url = null): void
+    {
+        $u = User::find($userId);
+        if (!$u) return;
+
+        $u->notify(new SimpleDatabaseNotification($title, $body, $url));
     }
 }

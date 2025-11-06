@@ -205,6 +205,7 @@
 <div id="cslMain" class="min-h-screen">
   <header class="sticky top-0 z-20 h-[var(--header-h)] bg-white/80 backdrop-blur border-b border-slate-200">
     <div class="h-full max-w-7xl mx-auto px-4 flex items-center justify-between">
+      {{-- LEFT cluster: hamburger + title --}}
       <div class="flex items-center gap-3">
         <button id="railOpen" class="p-2 rounded-md hover:bg-slate-100" title="Open sidebar" aria-label="Open sidebar">
           <svg class="w-6 h-6 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -213,23 +214,35 @@
         </button>
         <h1 class="text-lg font-semibold">@yield('page_title','Dashboard')</h1>
       </div>
+
+      {{-- define display name + initials BEFORE using them --}}
       @php
         $u = auth()->user();
-        $name = $u->name ?? 'Counselor';
-        $initials = collect(preg_split('/\s+/', trim($name)))
-                      ->take(2)->map(fn($p)=>mb_substr($p,0,1))->implode('');
+        $displayName = trim((string)($u->name ?? 'Counselor'));
+        $initials = collect(preg_split('/\s+/', $displayName))
+                      ->filter()
+                      ->take(2)
+                      ->map(fn($p) => mb_substr($p, 0, 1))
+                      ->implode('');
       @endphp
 
-      <div class="flex items-center">
+      {{-- RIGHT cluster: bell + user chip --}}
+      <div class="flex items-center gap-3">
+        {{-- 🔔 Notification bell --}}
+        @auth
+          <x-notification-bell />
+        @endauth
+
+        {{-- User chip + menu --}}
         <div class="relative">
           <button id="cslUserBtn"
-        class="inline-flex items-center gap-2 h-10 px-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
+            class="inline-flex items-center gap-2 h-10 px-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
             <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-xs font-bold">
               {{ $initials ?: 'U' }}
             </div>
             <div class="hidden sm:flex flex-col text-left leading-tight mr-1">
               <span class="text-[13px] font-semibold text-gray-800 dark:text-gray-100 truncate max-w-[8rem]">
-                @auth {{ Auth::user()->name }} @endauth
+                {{ $displayName }}
               </span>
               <span class="text-[11px] text-gray-500 dark:text-gray-400">Counselor</span>
             </div>
@@ -237,9 +250,9 @@
 
           {{-- Dropdown --}}
           <div id="cslUserMenu"
-              class="hidden absolute right-0 mt-2 w-44 rounded-xl bg-white shadow-lg ring-1 ring-black/5 overflow-hidden z-20">
+               class="hidden absolute right-0 mt-2 w-44 rounded-xl bg-white shadow-lg ring-1 ring-black/5 overflow-hidden z-20">
             <a href="{{ route('profile.edit') }}" class="block px-3 py-2.5 text-sm hover:bg-slate-50">Profile</a>
-            @if(Route::has('settings.index'))
+            @if (Route::has('settings.index'))
               <a href="{{ route('settings.index') }}" class="block px-3 py-2.5 text-sm hover:bg-slate-50">Settings</a>
             @endif
             <div class="h-px bg-slate-200 my-1"></div>
@@ -252,6 +265,8 @@
       </div>
     </div>
   </header>
+
+
 
   <main class="max-w-7xl mx-auto px-4 py-6">
     @yield('content')

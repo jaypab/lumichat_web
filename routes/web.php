@@ -12,6 +12,7 @@ use App\Http\Controllers\AppointmentController;
 use App\Http\Controllers\FeaturesController;
 use App\Http\Controllers\SelfAssessmentController;
 use App\Http\Controllers\AboutController;
+use App\Http\Controllers\NotificationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -121,6 +122,17 @@ Route::middleware('auth')->group(function () {
     Route::get('/features/enable-appointment', [FeaturesController::class, 'enableAppointment'])
         ->name('features.enable_appointment')
         ->middleware('signed');
+
+
+ // Notifications (student side)
+    Route::get('/notifications/feed', [NotificationController::class, 'feed'])->name('notifications.feed');
+    Route::post('/notifications/{id}/mark', [NotificationController::class, 'mark'])->name('notifications.mark');
+    Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
+
+    Route::post('/notifications/mark-all', [NotificationController::class, 'markAll'])
+  ->name('notifications.mark_all')
+  ->middleware('auth');
+
 });
 
 /*
