@@ -7,15 +7,34 @@
   <div class="max-w-7xl mx-auto space-y-8">
 
     {{-- Page intro --}}
-    <header class="flex flex-col gap-2 animate-fadeup">
-      <h2 class="text-3xl/tight font-extrabold tracking-tight text-slate-900">
-        Welcome back, Admin
-      </h2>
-      <p class="text-slate-600">Here’s what’s happening with your students today.</p>
-    </header>
+    {{-- START: DASHBOARD HEADER (replace the whole Page intro header) --}}
+<section class="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm screen-only animate-fadeup">
+  <div class="p-5 sm:p-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h2 class="text-xl sm:text-2xl font-bold tracking-tight">Welcome back, Admin</h2>
+        <p class="text-white/85 text-sm mt-0.5">Here’s what’s happening with your students today.</p>
+      </div>
+
+      <div class="flex items-center gap-2">
+        {{-- Optional quick actions --}}
+        <a href="{{ route('admin.appointments.index') }}"
+           class="inline-flex items-center gap-2 rounded-xl bg-white/95 text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-white active:scale-[.99] transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 9V4h12v5M6 18h12a2 2 0 002-2v-5H4v5a2 2 0 002 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Appointments
+        </a>
+        <a href="{{ route('admin.chatbot-sessions.index') }}"
+           class="inline-flex items-center gap-2 rounded-xl bg-white/95 text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-white active:scale-[.99] transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Chat Sessions
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
 
     {{-- KPI / Stat cards --}}
-    <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5 stagger-60">
+    <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5 animate-fadeup [--stagger:40ms]">
 
       {{-- Total Appointments --}}
        <div class="relative min-h-[120px] pr-10 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg focus-within:ring-2 focus-within:ring-sky-200/70 animate-fadeup">
@@ -339,6 +358,20 @@
 @endsection
 
 @push('styles')
+@push('styles')
+<style>
+/* page/section entrance */
+@media (prefers-reduced-motion:no-preference){
+  .animate-fadeup{opacity:0;transform:translateY(12px) scale(.98);
+    animation:fadeUp .6s cubic-bezier(.22,1,.36,1) forwards;animation-delay:var(--stagger,0ms)}
+  @keyframes fadeUp{to{opacity:1;transform:none}}
+}
+/* kpi tooltips minor reset */
+details > summary::-webkit-details-marker{display:none}
+:where([data-kpi]) summary:focus-visible{outline:none}
+</style>
+@endpush
+
 <style>
 details > summary::-webkit-details-marker { display: none; }
 :where([data-kpi]) summary:focus-visible { outline: none; }

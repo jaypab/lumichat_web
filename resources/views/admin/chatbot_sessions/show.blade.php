@@ -81,47 +81,68 @@
 
 <div class="max-w-7xl mx-auto p-5 md:p-6 space-y-4">
 
-  {{-- ===== Header ===== --}}
-  <section aria-labelledby="hdr-title" class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-    <div class="min-w-0">
-      <div class="flex items-center gap-2">
-        <h2 id="hdr-title" class="text-2xl font-bold tracking-tight text-slate-900">Chatbot Session</h2>
-        @if($isHighRisk)
-          <span class="inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[11px] font-medium ring-1 bg-rose-100 text-rose-700 ring-rose-200">
-            <img src="{{ asset('images/icons/alert.png') }}" alt="High risk" class="w-3.5 h-3.5 object-contain" />
-            HIGH RISK
+{{-- ======= Page Header (gradient band + pills + actions) ======= --}}
+@php
+  $__start = !empty($nextAppt?->scheduled_at) ? \Carbon\Carbon::parse($nextAppt->scheduled_at) : null;
+  $__upLabel = $__start ? 'Upcoming appt: '.$__start->format('M d, Y • h:i A') : null;
+@endphp
+<section class="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm screen-only">
+  <div class="p-5 sm:p-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h2 class="text-xl sm:text-2xl font-bold tracking-tight">Chatbot Session</h2>
+        <p class="text-white/80 text-sm mt-0.5">Manage and export a single session record.</p>
+
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          {{-- Session code pill --}}
+          <span class="inline-flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm ring-1 ring-white/20">
+            <svg class="h-4 w-4 opacity-90" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <rect x="8" y="8" width="10" height="12" rx="2"></rect><rect x="6" y="4" width="10" height="12" rx="2" opacity=".8"></rect>
+            </svg>
+            <strong class="font-semibold">{{ $code }}</strong>
           </span>
-        @endif
-          @php
-            $__start   = !empty($nextAppt?->scheduled_at) ? \Carbon\Carbon::parse($nextAppt->scheduled_at) : null;
-            $__pillCls = $__start
-                ? (now()->diffInMinutes($__start, false) <= 60*24 ? 'bg-amber-100 text-amber-800 ring-amber-200'
-                                                                : 'bg-emerald-100 text-emerald-800 ring-emerald-200')
-                : 'bg-emerald-100 text-emerald-800 ring-emerald-200';
-          @endphp
-          <span id="hdrUpcomingPill"
-                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 {{ $__pillCls }} {{ empty($nextAppt) ? 'hidden' : '' }}">
-            @if(!empty($nextAppt) && $__start)
-              Upcoming appt: {{ $__start->format('M d, Y • h:i A') }}
-            @endif
-          </span>
+
+          {{-- High risk pill (if any) --}}
+          @if($isHighRisk)
+            <span class="inline-flex items-center gap-2 rounded-xl bg-rose-100/95 text-rose-800 px-3 py-1.5 text-sm ring-1 ring-rose-200">
+              <img src="{{ asset('images/icons/alert.png') }}" class="h-4 w-4" alt="">
+              <strong class="font-semibold">HIGH RISK</strong>
+            </span>
+          @endif
+
+          {{-- Upcoming appointment pill (yellow dot, not dark) --}}
+          @if($__upLabel)
+            <span class="inline-flex items-center gap-2 rounded-xl bg-amber-100 text-amber-900 px-3 py-1.5 text-sm ring-1 ring-amber-300">
+              <span class="inline-block h-2.5 w-2.5 rounded-full bg-amber-400 ring-1 ring-amber-300"></span>
+              {{ $__upLabel }}
+            </span>
+          @endif
+        </div>
       </div>
-      <p class="mt-0.5 text-sm text-slate-600 leading-snug">Manage and export a single session record.</p>
-    </div>
 
-    <div class="flex items-center gap-2">
-      <a href="{{ route('admin.chatbot-sessions.index') }}"
-         class="inline-flex items-center gap-2 h-9 px-3 rounded-xl bg-white text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
-        Back to list
-      </a>
+      <div class="flex items-center gap-2">
+        {{-- Back to list = WHITE with BLACK text --}}
+        <a href="{{ route('admin.chatbot-sessions.index') }}"
+           class="inline-flex items-center gap-2 rounded-xl bg-white text-slate-900 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/10 hover:bg-slate-50 active:scale-[.99]">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+          </svg>
+          Back to list
+        </a>
 
-      <a href="{{ url('admin/chatbot-sessions/'.$session->id.'/pdf') }}" target="_blank"
-         class="inline-flex items-center gap-2 h-9 px-3 rounded-xl bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
-        Download PDF
-      </a>
+        {{-- Download PDF (kept white with indigo text) --}}
+        <a href="{{ url('admin/chatbot-sessions/'.$session->id.'/pdf') }}" target="_blank" rel="noopener"
+           class="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99]">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+          </svg>
+          Download PDF
+        </a>
+      </div>
     </div>
-  </section>
+  </div>
+</section>
+
 
   {{-- ===== GRID: KPIs etc. ===== --}}
   <div class="kpi-grid grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">

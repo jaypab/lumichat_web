@@ -1,52 +1,54 @@
+{{-- resources/views/admin/students/show.blade.php --}}
 @extends('layouts.admin')
 @section('title', 'Admin - Student Details')
-@section('page_title', 'Student Details') 
+@section('page_title', 'Student Details')
 
 @section('content')
 <div class="max-w-7xl mx-auto p-6 space-y-6">
 
-  {{-- Header --}}
-  <div class="flex items-start justify-between screen-only">
-    <div>
-      <h2 class="text-2xl font-semibold text-slate-900">Student Details</h2>
-      <p class="text-sm text-slate-500">
-        {{ $student->course }} • {{ $student->year_level }}
-        <span class="text-slate-400">—</span>
-        <span class="text-slate-600">{{ $student->email }}</span>
-      </p>
+  {{-- ========= Header band (gradient) ========= --}}
+ <section class="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm screen-only">
+    <div class="p-5 sm:p-6">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 class="text-xl sm:text-2xl font-bold tracking-tight">Student Details</h2>
+          <p class="text-white/85 text-sm mt-0.5">
+            <span class="font-semibold">{{ $student->name }}</span>
+            <span class="opacity-80">• {{ $student->course }} • {{ $student->year_level }}</span>
+            <span class="mx-2 opacity-50">—</span>
+            <span class="opacity-90">{{ $student->email }}</span>
+          </p>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <a href="{{ route('admin.students.index') }}"
+             class="inline-flex items-center gap-2 rounded-xl bg-white/95 text-slate-800 px-4 py-2 text-sm font-medium shadow-sm hover:bg-white active:scale-[.99] transition">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+            </svg>
+            Back to list
+          </a>
+
+          <a href="{{ route('admin.students.show.export.pdf', ['student'=>$student->id, 'year'=>$year]) }}"
+             target="_blank" rel="noopener"
+             class="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+            </svg>
+            Download PDF
+          </a>
+        </div>
+      </div>
     </div>
-
-    <div class="flex items-center gap-2">
-      <a href="{{ route('admin.students.index') }}"
-         class="h-11 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200
-                shadow-sm hover:bg-slate-50 hover:ring-slate-300 active:scale-[.99] transition">
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-        </svg>
-        Back to list
-      </a>
-
-     <a href="{{ route('admin.students.show.export.pdf', ['student'=>$student->id, 'year'=>$year]) }}"
-   target="_blank" rel="noopener"
-   class="h-11 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-white shadow-sm
-          hover:bg-emerald-700 active:scale-[.99] transition">
-  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
-  </svg>
-  Download PDF
-</a>
-
-    </div>
-  </div>
+  </section>
 
   {{-- ===== PRINT SCOPE START ===== --}}
   <div id="print-details-root" class="space-y-6">
 
     {{-- Chart Card --}}
     <div class="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-     <span class="pointer-events-none absolute left-0 right-0 top-0 h-1
-               bg-gradient-to-r from-indigo-500 via-purple-500 to-fuchsia-500"></span>
+      <span class="pointer-events-none absolute left-0 right-0 top-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-fuchsia-500"></span>
 
       <div class="p-5">
         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
@@ -114,8 +116,7 @@
     </div>
 
     {{-- Info Card --}}
-     <div class="relative overflow-hidden bg-white rounded-2xl shadow-sm p-8 space-y-6 border">
-
+    <div class="relative overflow-hidden bg-white rounded-2xl shadow-sm p-8 space-y-6 border">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <p class="text-sm text-gray-500">FULL NAME</p>
@@ -125,7 +126,6 @@
           <p class="text-sm text-gray-500">EMAIL</p>
           <p class="text-lg font-medium text-slate-900">{{ $student->email }}</p>
         </div>
-
         <div>
           <p class="text-sm text-gray-500">CONTACT NUMBER</p>
           <p class="text-lg font-medium text-slate-900">{{ $student->contact_number }}</p>
@@ -134,7 +134,6 @@
           <p class="text-sm text-gray-500">COURSE</p>
           <p class="text-lg font-medium text-slate-900">{{ $student->course }}</p>
         </div>
-
         <div>
           <p class="text-sm text-gray-500">YEAR LEVEL</p>
           <p class="text-lg font-medium text-slate-900">{{ $student->year_level }}</p>

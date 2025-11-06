@@ -234,7 +234,7 @@
                 hover:bg-white/10 hover:ring-white/10
                 {{ request()->routeIs('admin.case-notes.*') ? 'is-active bg-white/15 ring-white/10' : '' }}">
         <span class="inline-flex w-10 h-10 items-center justify-center">
-          <img src="{{ asset('images/icons/case-notes.png') }}" class="sidebar-icon" alt="">
+          <img src="{{ asset('images/icons/casenote.png') }}" class="sidebar-icon" alt="">
         </span>
         <span class="nav-label font-medium">Case Form Summary</span>
         <span class="rail-tip">Case Form Summary</span>

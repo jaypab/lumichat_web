@@ -12,30 +12,38 @@
 
 <div class="max-w-7xl mx-auto p-6 space-y-6">
 
-  {{-- Header --}}
-  <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between animate-fadeup screen-only">
-    <div>
-      <h2 class="text-2xl font-bold tracking-tight text-slate-900">Counselor Logs</h2>
-      <p class="text-sm text-slate-600">
-        Per counselor, grouped by Month/Year with students handled and most common diagnosis.
-        <span class="ml-2 text-slate-400">•</span>
-        <span class="ml-2 text-slate-500">{{ $totalLogs }} {{ Str::plural('record', $totalLogs) }}</span>
-      </p>
-    </div>
-  <a href="{{ route('admin.counselor-logs.export.pdf', request()->only('counselor_id','month','year')) }}"
-   target="_blank" rel="noopener"
-   class="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 h-10 rounded-xl shadow-sm hover:bg-emerald-700 active:scale-[.99] transition">
-  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
-  </svg>
-  Download PDF
-</a>
+{{-- Header band (gradient) --}}
+<section class="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm screen-only">
+  <div class="p-5 sm:p-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h2 class="text-xl sm:text-2xl font-bold tracking-tight">Counselor Logs</h2>
+        <p class="text-white/80 text-sm mt-0.5">Per counselor, grouped by Month/Year with students handled and most common diagnosis.</p>
+      </div>
 
+      <div class="flex items-center gap-2">
+        <span class="inline-flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm ring-1 ring-white/20">
+          <svg class="h-4 w-4 opacity-90" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1a7 7 0 0 0-7 7v3.126a4 4 0 0 1-.832 2.4L2.6 16.6A1 1 0 0 0 3.4 18h17.2a1 1 0 0 0 .8-1.6l-1.568-3.074A4 4 0 0 1 19 11.126V8a7 7 0 0 0-7-7Zm0 22a3 3 0 0 0 3-3H9a3 3 0 0 0 3 3Z"/></svg>
+          <strong class="font-semibold">{{ $totalLogs }}</strong><span class="opacity-90">records</span>
+        </span>
+
+        <a href="{{ route('admin.counselor-logs.export.pdf', request()->only('counselor_id','month','year')) }}"
+           target="_blank" rel="noopener"
+           class="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+          </svg>
+          Download PDF
+        </a>
+      </div>
+    </div>
   </div>
+</section>
 
   {{-- Filters --}}
-  <form method="GET" class="mb-6 screen-only">
-    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end animate-fadeup">
+<form method="GET" class="screen-only">
+  <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3 mt-2">
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
       <div class="md:col-span-3 min-w-0">
         <label class="block text-xs font-medium text-slate-600 mb-1">Counselor</label>
         <select name="counselor_id" class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
@@ -66,22 +74,18 @@
         </select>
       </div>
 
-      <div class="sm:ml-auto"></div>
-
-      <div class="flex items-center gap-2">
+      <div class="md:col-span-3 flex items-end justify-end gap-2">
         <a href="{{ route('admin.counselor-logs.index') }}"
-           class="h-11 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 hover:ring-slate-300 active:scale-[.99] transition">
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h7M4 10h16M4 16h10"/>
-          </svg>
+           class="h-10 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
           Reset
         </a>
-        <button class="inline-flex items-center justify-center h-10 px-5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm text-sm">
+        <button class="h-10 inline-flex items-center justify-center px-5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm text-sm">
           Apply
         </button>
       </div>
     </div>
-  </form>
+  </div>
+</form>
 
   {{-- Results --}}
   <div id="print-counselor-index" class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -95,7 +99,7 @@
           <col class="col-action" style="width:8%">
         </colgroup>
 
-        <thead class="bg-slate-100 border-b border-slate-200 text-slate-700">
+        <thead class="bg-slate-100 border-b border-slate-200 text-slate-700 sticky top-0 z-10">
           <tr class="align-middle">
             <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Counselor</th>
             <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Month / Year</th>

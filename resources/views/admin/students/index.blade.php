@@ -1,6 +1,12 @@
+{{-- resources/views/admin/students/index.blade.php --}}
 @extends('layouts.admin')
+
 @section('title','Admin - Student Records')
-@section('page_title', 'Manage Students') 
+@section('page_title', 'Manage Students')
+
+@php
+  use Illuminate\Support\Str;
+@endphp
 
 @section('content')
 <div class="max-w-7xl mx-auto p-6 space-y-6">
@@ -9,93 +15,95 @@
     $totalStudents = method_exists($students, 'total') ? $students->total() : $students->count();
   @endphp
 
-  {{-- ========= Page header / Toolbar (like Counselor Logs) ========= --}}
-<div class="screen-only space-y-4">
+  {{-- ========= Header band (gradient) ========= --}}
+  <section class="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm screen-only">
+    <div class="p-5 sm:p-6">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 class="text-xl sm:text-2xl font-bold tracking-tight">Student Records</h2>
+          <p class="text-white/85 text-sm mt-0.5">View and manage student accounts and their academic details.</p>
+        </div>
 
-  {{-- Row 1: title on the left, Download PDF on the right --}}
-  <div class="flex items-center justify-between">
-    <div>
-      <h2 class="text-2xl font-bold tracking-tight text-slate-900">Student Records</h2>
-      <p class="text-sm text-slate-600">
-        View and manage student accounts and their academic details.
-        <span class="ml-2 text-slate-400">•</span>
-        <span class="ml-2 text-slate-600">
-          {{ $totalStudents }} {{ Str::plural('student', $totalStudents) }}
-        </span>
-      </p>
+        <div class="flex items-center gap-2">
+          <span class="inline-flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm ring-1 ring-white/20">
+            <span class="inline-block size-2 rounded-full bg-emerald-300"></span>
+            <strong class="font-semibold">{{ $totalStudents }}</strong>
+            <span class="opacity-90">{{ Str::plural('student', $totalStudents) }}</span>
+          </span>
+
+          <a href="{{ route('admin.students.export.pdf', request()->only('q','year')) }}"
+             target="_blank" rel="noopener"
+             class="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+            </svg>
+            Download PDF
+          </a>
+        </div>
+      </div>
     </div>
+  </section>
 
-  <a href="{{ route('admin.students.export.pdf', request()->only('q','year')) }}"
-   target="_blank" rel="noopener"
-   class="h-11 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-white shadow-sm
-          hover:bg-emerald-700 active:scale-[.99] transition">
-  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
-  </svg>
-  Download PDF
-</a>
-
-  </div>
-
-  {{-- Row 2: filters row (search on the left; Reset/Apply on the right) --}}
-  <form id="filterForm" method="GET" action="{{ route('admin.students.index') }}"
-        class="flex flex-col gap-3 sm:flex-row sm:items-center">
-    {{-- left side: search --}}
-    <div class="relative w-full sm:max-w-sm">
-      <input
-        id="q-input"
-        type="text"
-        name="q"
-        value="{{ old('q', request('q')) }}"
-        placeholder="Search student"
-        autocomplete="off"
-        class="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-10 text-sm
-               focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
-      />
-      <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400"
-           viewBox="0 0 24 24" fill="none" stroke="currentColor">
-        <circle cx="11" cy="11" r="7" stroke-width="2"></circle>
-        <path d="M21 21l-4.3-4.3" stroke-width="2" stroke-linecap="round"></path>
-      </svg>
-
-      @if(request('q'))
-        <button type="button"
-                onclick="document.getElementById('q-input').value=''; document.getElementById('filterForm').submit();"
-                class="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400
-                       hover:bg-slate-100 hover:text-slate-600"
-                aria-label="Clear search">
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M6 18L18 6M6 6l12 12"/>
+  {{-- ========= Filters (carded) ========= --}}
+  <form id="filterForm" method="GET" action="{{ route('admin.students.index') }}" class="screen-only">
+    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm mt-2">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+        {{-- left side: search --}}
+        <div class="relative w-full sm:max-w-sm">
+          <input
+            id="q-input"
+            type="text"
+            name="q"
+            value="{{ old('q', request('q')) }}"
+            placeholder="Search student"
+            autocomplete="off"
+            class="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-10 text-sm
+                   focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
+          />
+          <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400"
+               viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <circle cx="11" cy="11" r="7" stroke-width="2"></circle>
+            <path d="M21 21l-4.3-4.3" stroke-width="2" stroke-linecap="round"></path>
           </svg>
-        </button>
-      @endif
-    </div>
 
-    {{-- spacer pushes buttons to the right --}}
-    <div class="sm:ml-auto"></div>
+          @if(request('q'))
+            <button type="button"
+                    onclick="document.getElementById('q-input').value=''; document.getElementById('filterForm').submit();"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400
+                           hover:bg-slate-100 hover:text-slate-600"
+                    aria-label="Clear search">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          @endif
+        </div>
 
-    {{-- right side: Reset / Apply --}}
-    <div class="flex items-center gap-2">
-      <a href="{{ route('admin.students.index') }}"
-         class="h-11 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200
-                shadow-sm hover:bg-slate-50 hover:ring-slate-300 active:scale-[.99] transition">
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h7M4 10h16M4 16h10"/>
-        </svg>
-        Reset
-      </a>
+        {{-- spacer pushes buttons to the right --}}
+        <div class="sm:ml-auto"></div>
 
-      <button type="submit"
-              class="h-11 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 text-white shadow-sm
-                     hover:bg-indigo-700 active:scale-[.99] transition">
-        Apply
-      </button>
-    </div>
+        {{-- right side: Reset / Apply --}}
+        <div class="flex items-center gap-2">
+          <a href="{{ route('admin.students.index') }}"
+             class="h-11 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200
+                    shadow-sm hover:bg-slate-50 hover:ring-slate-300 active:scale-[.99] transition">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h7M4 10h16M4 16h10"/>
+            </svg>
+            Reset
+          </a>
+
+          <button type="submit"
+                  class="h-11 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 text-white shadow-sm
+                         hover:bg-indigo-700 active:scale-[.99] transition">
+            Apply
+          </button>
+        </div>
+      </div> {{-- end: inner flex row --}}
+    </div>   {{-- end: card wrapper --}}
   </form>
-</div>
-
 
   {{-- ========= TABLE ========= --}}
   <div id="print-root" class="space-y-2">
@@ -111,7 +119,7 @@
             <col class="col-action" style="width:0">
           </colgroup>
 
-          <thead class="bg-slate-100 border-b border-slate-200 text-slate-700">
+          <thead class="bg-slate-100 border-b border-slate-200 text-slate-700 sticky top-0 z-10">
             <tr class="align-middle">
               <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Student Name</th>
               <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Email</th>

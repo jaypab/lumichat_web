@@ -53,31 +53,48 @@
 
 <div class="max-w-6xl mx-auto space-y-6">
 
-  {{-- Header --}}
-  <div class="flex items-start justify-between gap-3 screen-only">
-    <div>
-      <h2 class="text-2xl font-semibold tracking-tight text-slate-900">{{ $counselor->full_name }}</h2>
-      <p class="text-sm text-slate-500">Logs for <span class="font-medium text-slate-700">{{ $label }}</span></p>
-    </div>
+{{-- ========= Header band (gradient) ========= --}}
+<section class="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm screen-only">
+  <div class="p-5 sm:p-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      {{-- Left: Title --}}
+      <div class="min-w-0">
+        <h2 class="text-xl sm:text-2xl font-bold tracking-tight truncate">
+          {{ $counselor->full_name }}
+        </h2>
+        <p class="text-white/85 text-sm mt-0.5">
+          Logs for <span class="font-semibold">{{ $label }}</span>
+        </p>
+      </div>
 
-    <div class="flex items-center gap-2">
-<a href="{{ route('admin.counselor-logs.show.export', ['counselor'=>$counselor->id, 'month'=>$month, 'year'=>$year]) }}"
-   target="_blank" rel="noopener"
-   class="inline-flex items-center h-10 px-4 rounded-xl text-sm font-medium bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 active:scale-[.99] transition">
-  <svg class="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
-  </svg>
-  Download PDF
-</a>
+      {{-- Right: Stats + Actions --}}
+      <div class="flex items-center gap-2">
+        <span class="inline-flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm ring-1 ring-white/20">
+          <span class="inline-block size-2 rounded-full bg-emerald-300"></span>
+          {{ $uniqueStudents }} unique • {{ $totalAppts }} appts
+        </span>
 
+        <a href="{{ route('admin.counselor-logs.show.export', ['counselor'=>$counselor->id, 'month'=>$month, 'year'=>$year]) }}"
+           target="_blank" rel="noopener"
+           class="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+          </svg>
+          Download PDF
+        </a>
 
-      <a href="{{ route('admin.counselor-logs.index', request()->only('month','year','counselor_id')) }}"
-         class="inline-flex items-center h-10 px-4 rounded-xl text-sm font-medium bg-white border border-slate-200 text-slate-700 shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
-        ← Back
-      </a>
+        <a href="{{ route('admin.counselor-logs.index', request()->only('month','year','counselor_id')) }}"
+           class="inline-flex items-center gap-2 rounded-xl bg-white/95 text-slate-800 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/25 hover:bg-white active:scale-[.99] transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+          </svg>
+          Back
+        </a>
+      </div>
     </div>
   </div>
+</section>
 
   {{-- KPI bar --}}
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
