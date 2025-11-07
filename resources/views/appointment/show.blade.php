@@ -132,9 +132,11 @@
     };
   @endphp
 
- <div class="mt-6 flex items-center gap-3">
-  <a href="{{ route('appointment.history') }}"
-     class="inline-flex items-center rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600">
+  <div class="mt-6 flex items-center gap-3">
+    <a id="btn-appt-close"
+    href="{{ route('appointment.history') }}"
+    aria-label="Back to appointment history"
+    class="inline-flex items-center rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600">
     Close
   </a>
 

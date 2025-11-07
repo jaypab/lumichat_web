@@ -94,6 +94,7 @@
     // --- Student routes (unchanged) ---
     if (route === 'chat.history')        return 'chat.history';
     if (route === 'appointment.history') return 'appointment.history';
+    if (route === 'appointment.view' || route === 'appointment.show') return 'appointment.view';
     if (route === 'profile.edit')        return 'profile.edit';
     if (route === 'about.index')         return 'about.index';
     if (route === 'settings.index')      return 'settings.index';
@@ -405,12 +406,560 @@
     }
 
     /* student page helpers kept for reuse */
-    function chatSteps(){ const steps=[]; const newChatBtn=$('.nav-pill[data-new-chat="1"]'); const navHistory=$('#nav-chat-history'); const navSettings=$('#nav-settings'); const chatArea=$('#chat-messages')||$('#lb-scope')||$('.msg-area')||$('[data-chat-area]'); const chatInput=document.querySelector('#chat-form textarea, #chat-form input[type="text"], textarea[name="message"], input[name="message"]'); if (newChatBtn) steps.push({element:newChatBtn,popover:{title:'New Chat',description:'Start a fresh conversation here.',side:'top',align:'start'}}); if (navHistory) steps.push({element:navHistory,popover:{title:'Chat History',description:'Review previous conversations.',side:'right',align:'center'}}); if (navSettings) steps.push({element:navSettings,popover:{title:'Settings',description:'Theme and preferences.',side:'right',align:'center'}}); if (chatArea) steps.push({element:chatArea,popover:{title:'Messages',description:'Your conversation appears here.',side:'left',align:'start'}}); if (chatInput) steps.push({element:chatInput,popover:{title:'Type & Send',description:'Press Enter to send.',side:'top',align:'start'}}); return steps; }
+    function chatSteps(){
+      const $  = (s)=>document.querySelector(s);
+      const $$ = (s)=>Array.from(document.querySelectorAll(s));
+      const steps = [];
+
+      /* ---------------- First-time policy ---------------- */
+      const FT_KEY = `lumi_first_chat_seen_${USER_ID}`;
+      const isFirstTimeUser = !localStorage.getItem(FT_KEY);
+      try { localStorage.setItem(FT_KEY,'1'); } catch(_) {}
+
+      /* ---------------- Welcome modal (styled by app.blade SweetAlert theme) ---------------- */
+      (function showWelcomeOnce(){
+        const MODAL_KEY = `lumi_chat_tour_modal_v3_${USER_ID}`;
+        if (localStorage.getItem(MODAL_KEY)==='1' || !window.Swal) return;
+        Swal.fire({
+          title: 'Welcome to LumiCHAT ✨',
+          html: `
+            <div style="text-align:left;line-height:1.55">
+              <div style="display:inline-block;padding:.35rem .6rem;border-radius:.75rem;
+                  background:linear-gradient(90deg,#7c3aed,#6366f1);color:#fff;
+                  font-weight:800;font-size:.78rem;letter-spacing:.3px;">Quick Tour</div>
+              <p style="margin:.65rem 0 0">Short guide to the <b>Chat</b> and your <b>Sidebar</b>.</p>
+              <ul style="margin:.6rem 0 0 1.1rem;padding:0;list-style:disc;color:#64748b">
+                <li><b>Profile</b>: info & password</li>
+                <li><b>Appointment History</b>: view / reschedule / cancel</li>
+                <li><b>Chat History</b>: revisit conversations</li>
+                <li><b>Settings</b>: theme, text size, prefs</li>
+                <li><b>About</b>: how Lumi works & privacy</li>
+              </ul>
+              <p style="margin:.7rem 0 0;color:#64748b">Tip: <b>Enter</b> to send, <b>Shift+Enter</b> for a new line.</p>
+            </div>`,
+          showCancelButton:true,
+          confirmButtonText:'Start tour',
+          cancelButtonText:'Later',
+          width:580,
+          background:'var(--lumi-bg)',
+          customClass:{
+            popup:'lumi-tour-modal', title:'lumi-tour-title',
+            htmlContainer:'lumi-tour-body', confirmButton:'btn-grad', cancelButton:'btn-neutral'
+          }
+        }).then(()=>{ try{ localStorage.setItem(MODAL_KEY,'1'); }catch(_){ }});
+      })();
+
+      /* ---------------- Core chat targets ---------------- */
+      const newChatBtn = document.querySelector('.nav-pill[data-new-chat="1"]'); // from TOOLS > New Chat
+      const chatArea   = $('#chat-messages') || $('#lb-scope') || $('.msg-area') || $('[data-chat-area]');
+      const inputBox   = $('#chat-message');
+      const composer   = $('#chat-form');
+
+      if (newChatBtn) steps.push({
+        element:newChatBtn,
+        popover:{ title:'New Chat', description:'Start a fresh conversation here.', side:'right', align:'center' }
+      });
+
+      if (chatArea) steps.push({
+        element:chatArea,
+        popover:{ title:'Messages', description:'Your conversation appears here.', side:'left', align:'start' }
+      });
+
+      if (inputBox) steps.push({
+        element:inputBox,
+        popover:{ title:'Type & Send', description:'Press Enter to send. Shift+Enter for a new line.', side:'top', align:'start' }
+      });
+
+      /* ---------------- Appointment trigger explainer ---------------- */
+      const triggerHtml = isFirstTimeUser
+        ? `<div style="text-align:left;line-height:1.45">
+            <p><b>First chat:</b> appointment suggestions are <b>disabled</b>. Send your first message normally.</p>
+            <p style="margin:.45rem 0 0">After that you can:</p>
+            <ol style="margin:.25rem 0 0 1.1rem;padding:0;">
+              <li><b>Tap “Book counselor”</b> when offered.</li>
+              <li><b>Type</b> “book appointment”, “schedule with counselor”.</li>
+              <li><b>Safety auto-offer</b> appears on critical keywords (e.g., self-harm). Confirm with “Yes/Okay/Sige”.</li>
+            </ol>
+          </div>`
+        : `<div style="text-align:left;line-height:1.45">
+            <p>Open booking via:</p>
+            <ol style="margin:.25rem 0 0 1.1rem;padding:0;">
+              <li><b>“Book counselor”</b> pill when offered.</li>
+              <li><b>Typing</b> “book appointment”, “schedule with counselor”.</li>
+              <li><b>Safety auto-offer</b> on critical keywords, then confirm.</li>
+            </ol>
+          </div>`;
+
+      steps.push({
+        element: composer || inputBox || chatArea || document.body,
+        popover:{ title:'Appointments from Chat', description: triggerHtml, side:'top', align:'center' }
+      });
+
+      /* ---------------- Sidebar tour (IDs & labels from app.blade.php) ---------------- */
+      const sidebar = $('#sidebar');
+      const findByText = (txt) => {
+        if (!sidebar) return null;
+        const links = Array.from(sidebar.querySelectorAll('a.nav-item, a.nav-pill, a[href]'));
+        return links.find(a => new RegExp(`\\b${txt}\\b`, 'i').test(a.textContent||'')) || null;
+      };
+
+      // Exact IDs present in your layout:
+      const linkChatHist = $('#nav-chat-history') || findByText('Chat History');
+      const linkSettings = $('#nav-settings') || findByText('Settings');
+      const linkAppt     = $('#nav-appointment-link'); // changes label to Appointment History when user has bookings
+      const linkProfile  = findByText('Profile');
+      const linkAbout    = findByText('About');
+
+      if (linkProfile) steps.push({
+        element:linkProfile,
+        popover:{ title:'Profile', description:'View/update your details and password.', side:'right', align:'center' }
+      });
+
+      if (linkAppt) steps.push({
+        element:linkAppt,
+        popover:{ title:'Appointment / History', description:'Book new or manage past appointments.', side:'right', align:'center' }
+      });
+
+      if (linkChatHist) steps.push({
+        element:linkChatHist,
+        popover:{ title:'Chat History', description:'Revisit previous conversations anytime.', side:'right', align:'center' }
+      });
+
+      if (linkSettings) steps.push({
+        element:linkSettings,
+        popover:{ title:'Settings', description:'Theme, text size, and other preferences.', side:'right', align:'center' }
+      });
+
+      if (linkAbout) steps.push({
+        element:linkAbout,
+        popover:{ title:'About', description:'How Lumi works and our privacy commitments.', side:'right', align:'center' }
+      });
+
+      // Fallback anchor to the sidebar block if any link is missing
+      if (!(linkProfile && linkAppt && linkChatHist && linkSettings && linkAbout) && sidebar){
+        steps.push({
+          element:sidebar,
+          popover:{ title:'Sidebar', description:'Navigate to Profile, Appointment, Chat History, Settings, and About.', side:'right', align:'center' }
+        });
+      }
+
+      /* ---------------- Optional: live “Book counselor” pill (not on first chat) ---------------- */
+      const apptPill = !isFirstTimeUser && ($$('.lumi-qr, a, button').find(el => {
+        const t = (el.textContent || '').toLowerCase();
+        const href = (el.getAttribute?.('href') || '').toLowerCase();
+        return /book\s+counselor|book\s+appointment|schedule/.test(t) || /\/appointment/.test(href);
+      }) || null);
+
+      return steps;
+    }
+
     function profileSteps(){ const steps=[]; const editBtn=document.querySelector('[data-edit-profile-btn]'); const readView=document.querySelector('[data-edit-profile-view]'); const editForm=document.querySelector('[data-edit-profile-form]:not(.hidden)'); const nameFld=document.getElementById('edit-name'); const emailFld=document.getElementById('edit-email'); const pwdSection=document.getElementById('update-password-section'); const delBtn=document.getElementById('btn-delete-account'); if (editBtn) steps.push({element:editBtn,popover:{title:'Edit Profile',description:'Update your info.',side:'bottom',align:'start'}}); if (editForm&&nameFld) steps.push({element:nameFld,popover:{title:'Your Name',description:'Update then save.',side:'top',align:'start'}}); if (editForm&&emailFld) steps.push({element:emailFld,popover:{title:'Email',description:'Keep this correct.',side:'top',align:'start'}}); if (pwdSection) steps.push({element:pwdSection,popover:{title:'Update Password',description:'Use a strong password.',side:'left',align:'start'}}); if (delBtn) steps.push({element:delBtn,popover:{title:'Delete Account',description:'Danger zone.',side:'top',align:'start'}}); if (!steps.length&&readView) steps.push({element:readView,popover:{title:'Profile',description:'View account details.',side:'left',align:'start'}}); return steps; }
-    function historySteps(){ const steps=[]; const searchBox=document.getElementById('historySearch'); const manageBtn=document.getElementById('manageToggle'); const bulkBar=document.getElementById('bulkBar'); const firstCard=document.querySelector('[data-session-card]'); const firstLink=firstCard?.querySelector('form[action*="chat/activate"] button'); const firstDelete=firstCard?.querySelector('.single-delete-form button[type="submit"]'); if (searchBox) steps.push({element:searchBox,popover:{title:'Search conversations',description:'Filter by keywords.',side:'bottom',align:'start'}}); if (manageBtn) steps.push({element:manageBtn,popover:{title:'Manage mode',description:'Bulk-select to delete.',side:'left',align:'center'},onNextClick:()=>{ if (manageBtn&&bulkBar?.classList.contains('hidden')) manageBtn.click(); }}); if (bulkBar) steps.push({element:bulkBar,popover:{title:'Bulk actions',description:'Select all / clear / delete.',side:'bottom',align:'start'}}); if (firstCard) steps.push({element:firstCard,popover:{title:'Session card',description:'Title, risk, last message.',side:'top',align:'start'}}); if (firstLink) steps.push({element:firstLink,popover:{title:'Continue in Chat',description:'Resume this conversation.',side:'top',align:'start'}}); if (firstDelete) steps.push({element:firstDelete,popover:{title:'Delete (single)',description:'Permanent removal.',side:'left',align:'center'}}); if (!steps.length&&document.body) steps.push({element:document.body,popover:{title:'Chat History',description:'Review and manage past chats.',side:'top',align:'start'}}); return steps; }
+    
+    function historySteps() {
+      const $  = (s, r = document) => r.querySelector(s);
+      const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+      const steps = [];
+
+      // Prefer stable hooks; fall back to legacy ids/classes
+      const searchBox  = $('#historySearch') || $('#chat-history-search') || $('input[type="search"][name="q"]');
+      const manageBtn  = $('#manageToggle')  || $('[data-manage-toggle]');
+      const bulkBar    = $('#bulkBar')       || $('[data-bulk-bar]');
+      const grid       = $('[data-history-grid]') || $('section[aria-label="Chat history"]') || document;
+      const firstCard  = $('[data-session-card]') || $('.session-card');
+      const firstLink  = firstCard?.querySelector('form[action*="chat/activate"] button, a[href*="/chat/"]');
+      const firstDelete= firstCard?.querySelector('.single-delete-form button[type="submit"], [data-action="delete-session"]');
+
+      // tiny focus pulse helper
+      const pulse = (el) => {
+        try {
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el?.focus?.({ preventScroll: true });
+          el.style.transition = 'transform .12s ease';
+          el.style.transform  = 'scale(1.03)';
+          setTimeout(() => (el.style.transform = ''), 140);
+        } catch (_) {}
+      };
+
+      if (searchBox) {
+        steps.push({
+          element: searchBox,
+          popover: {
+            title: 'Search conversations',
+            description: 'Filter by keywords or titles. Typing will auto-filter after a short pause.',
+            side: 'bottom',
+            align: 'start'
+          },
+          onNextClick: () => pulse(searchBox)
+        });
+      }
+
+      if (manageBtn) {
+        steps.push({
+          element: manageBtn,
+          popover: {
+            title: 'Manage mode',
+            description: 'Enable bulk select to remove multiple conversations at once.',
+            side: 'left',
+            align: 'center'
+          },
+          onNextClick: () => {
+            if (manageBtn && (bulkBar?.classList.contains('hidden') || bulkBar?.hidden)) {
+              manageBtn.click();
+            }
+            pulse(bulkBar || manageBtn);
+          }
+        });
+      }
+
+      if (firstCard) {
+        steps.push({
+          element: firstCard,
+          popover: {
+            title: 'Session card',
+            description: 'See the title, last message, and risk tag. Click to open details.',
+            side: 'top',
+            align: 'start'
+          }
+        });
+      }
+
+      if (firstLink) {
+        steps.push({
+          element: firstLink,
+          popover: {
+            title: 'Continue in Chat',
+            description: 'Resume this conversation in the chat screen.',
+            side: 'top',
+            align: 'start'
+          },
+          onNextClick: () => pulse(firstLink)
+        });
+      }
+
+      if (firstDelete) {
+        steps.push({
+          element: firstDelete,
+          popover: {
+            title: 'Delete (single)',
+            description: 'Remove just this conversation. This action cannot be undone.',
+            side: 'left',
+            align: 'center'
+          }
+        });
+      }
+
+      // Fallbacks
+      const emptyState = $('[data-empty-state]') || $('.empty-state');
+      if (!steps.length && emptyState) {
+        steps.push({
+          element: emptyState,
+          popover: {
+            title: 'No conversations yet',
+            description: 'Start a new chat from the main screen to see it listed here.',
+            side: 'top',
+            align: 'center'
+          }
+        });
+      } else if (!steps.length && document.body) {
+        steps.push({
+          element: grid || document.body,
+          popover: {
+            title: 'Chat History',
+            description: 'Review and manage your past conversations here.',
+            side: 'top',
+            align: 'start'
+          }
+        });
+      }
+
+      return steps;
+    }
     function settingsSteps(){ const steps=[]; const darkToggle=document.getElementById('darkModeToggle'); const fontSelect=document.getElementById('fontSizeSelect'); const reduceTgl=document.getElementById('reduceMotionToggle'); const compactTgl=document.getElementById('compactToggle'); const supportBtn=document.querySelector('a[href="{{ route('support.contact') }}"]') || document.querySelector('a[href*="/support"]'); if (darkToggle) steps.push({element:darkToggle,popover:{title:'Theme',description:'Toggle light/dark.',side:'left',align:'center'}}); if (fontSelect) steps.push({element:fontSelect,popover:{title:'Text Size',description:'Adjust reading size.',side:'top',align:'start'}}); if (reduceTgl) steps.push({element:reduceTgl,popover:{title:'Reduce Motion',description:'Turn off animations.',side:'left',align:'center'}}); if (compactTgl) steps.push({element:compactTgl,popover:{title:'Compact Layout',description:'Tighter paddings.',side:'left',align:'center'}}); if (supportBtn) steps.push({element:supportBtn,popover:{title:'Support',description:'Contact or report an issue.',side:'top',align:'start'}}); return steps; }
-    function appointmentSteps(){ const steps=[]; const historyBtn=document.querySelector('a[href*="/appointment/history"]'); const dateInput=document.getElementById('dateInput'); const openDate=document.getElementById('openDateBtn'); const timeGrid=document.getElementById('timeGrid'); const consent=document.getElementById('consent-cbx'); const submitBtn=document.querySelector('form[action*="appointment/store"] button[type="submit"]') || document.querySelector('form[action*="appointment"] button[type="submit"]'); if (historyBtn) steps.push({element:historyBtn,popover:{title:'Appointment History',description:'Review, reschedule, or cancel.',side:'left',align:'center'}}); if (dateInput) steps.push({element:dateInput,popover:{title:'Pick a date',description:'Weekends closed (Mon–Fri).',side:'bottom',align:'start'}}); if (openDate) steps.push({element:openDate,popover:{title:'Open calendar',description:'Open the date picker.',side:'left',align:'center'},onNextClick:()=>openDate.click?.()}); if (timeGrid) steps.push({element:timeGrid,popover:{title:'Select a time',description:'Available slots appear here.',side:'top',align:'start'}}); if (consent) steps.push({element:consent,popover:{title:'Privacy consent',description:'Please confirm.',side:'left',align:'center'}}); if (submitBtn) steps.push({element:submitBtn,popover:{title:'Confirm appointment',description:'Submit your booking.',side:'top',align:'start'}}); if (!steps.length&&document.body) steps.push({element:document.body,popover:{title:'Appointments',description:'Book a date and time, then confirm.',side:'top',align:'start'}}); return steps; }
-    function appointmentHistorySteps(){ const list=document.querySelector('[data-appt-list], .appt-list, main'); return [{element:list||document.body,popover:{title:'Your appointments',description:'Manage upcoming and past bookings.',side:'top',align:'start'}}]; }
+   
+    function appointmentSteps(){
+      const $  = (s)=>document.querySelector(s);
+      const $$ = (s)=>Array.from(document.querySelectorAll(s));
+      const steps = [];
+
+      // === Elements from your index.blade.php ===
+      const historyBtn = $$('a').find(a => /appointment\/history/i.test(a.getAttribute('href')||'') || /View Appointment/i.test(a.textContent||'')) || null;
+      const dateChip   = $('#dateChip');
+      const dateInput  = $('#dateInput');
+      const calModal   = $('#calModal');
+      const calDialog  = $('#calDialog');
+      const calGrid    = $('#calGrid');
+      const timeGrid   = $('#timeGrid');
+      const timeEmpty  = $('#timeEmpty');
+      const consent    = $('#consent-cbx');
+      const submitBtn  = $('#submitBtn');
+
+      // 1) Entry point: “View Appointment / History”
+      if (historyBtn){
+        steps.push({
+          element: historyBtn,
+          popover:{
+            title: 'Appointment History',
+            description: 'Review, reschedule, or cancel your bookings.',
+            side: 'left', align: 'center'
+          }
+        });
+      }
+
+      // 2) Date chip (opens your modal)
+      if (dateChip){
+        steps.push({
+          element: dateChip,
+          popover:{
+            title: 'Pick a date',
+            description: 'Weekends are closed. Click to open the calendar.',
+            side: 'bottom', align: 'start'
+          },
+          onNextClick: () => dateChip.click?.()
+        });
+      }
+
+      // 4) Time slot grid (pills built from select)
+      if (timeGrid){
+        steps.push({
+          element: timeGrid,
+          popover:{
+            title: 'Select a time',
+            description: 'Available pooled slots appear here after choosing a date. “(Full)” pills are disabled.',
+            side: 'top', align: 'start'
+          }
+        });
+      }
+
+      // 5) Consent checkbox
+      if (consent){
+        steps.push({
+          element: consent,
+          popover:{
+            title: 'Privacy consent',
+            description: 'Confirm you agree with LumiCHAT’s privacy policy to proceed.',
+            side: 'left', align: 'center'
+          }
+        });
+      }
+
+      // 6) Confirm button (disabled until date + time + consent)
+      if (submitBtn){
+        steps.push({
+          element: submitBtn,
+          popover:{
+            title: 'Confirm appointment',
+            description: 'Enabled after you choose a date, a time, and tick consent.',
+            side: 'top', align: 'start'
+          }
+        });
+      }
+
+      // Fallback (page scaffold)
+      if (!steps.length && document.body){
+        steps.push({
+          element: document.body,
+          popover:{
+            title: 'Appointments',
+            description: 'Pick a weekday, choose an available time, tick consent, then confirm.',
+            side: 'top', align: 'center'
+          }
+        });
+      }
+
+      return steps;
+    }
+    
+    function appointmentHistorySteps(){
+    const $  = (s)=>document.querySelector(s);
+    const $$ = (s)=>Array.from(document.querySelectorAll(s));
+    const steps = [];
+
+    // Header band + actions
+    const headerBand  = $('section.rounded-2xl.bg-gradient-to-r');
+    const bookNewBtn  = $$('a').find(a => /appointment\/create/i.test(a.getAttribute('href')||''));
+    const pdfBtn      = $$('a').find(a => /appointment\/history\/export\/pdf/i.test(a.getAttribute('href')||''));
+
+    // Filters
+    const filtersForm = $$('form').find(f => /appointment\/history/i.test((f.getAttribute('action')||'')));
+    const periodWrap  = filtersForm ? filtersForm.querySelector('.flex.flex-wrap') : null; // the chips row
+    const statusSel   = filtersForm ? filtersForm.querySelector('select[name="status"]') : null;
+    const searchInput = $('#qInput');
+    const resetBtn    = filtersForm ? Array.from(filtersForm.querySelectorAll('a')).find(a => /appointment\/history$/.test(a.getAttribute('href')||'')) : null;
+    const applyBtn    = filtersForm ? filtersForm.querySelector('button[type="submit"]') : null;
+
+    // Table + row actions
+    const tableEl     = $('table');
+    const anyViewBtn  = $$('a').find(a => /appointment\/view\/\d+/i.test(a.getAttribute('href')||'') || a.textContent.trim()==='View');
+
+    // 1) Header band
+    if (headerBand){
+      steps.push({
+        element: headerBand,
+        popover:{
+          title: 'Appointment History',
+          description: 'Overview of all your bookings with quick stats and actions.',
+          side: 'top', align: 'start'
+        }
+      });
+    }
+
+    // 2) Book New
+    if (bookNewBtn){
+      steps.push({
+        element: bookNewBtn,
+        popover:{
+          title: 'Book New',
+          description: 'Create a new counseling appointment.',
+          side: 'left', align: 'center'
+        }
+      });
+    }
+
+    // 3) Download PDF
+    if (pdfBtn){
+      steps.push({
+        element: pdfBtn,
+        popover:{
+          title: 'Download PDF',
+          description: 'Export your current view (filters respected) to PDF.',
+          side: 'left', align: 'center'
+        }
+      });
+    }
+
+    // 4) Period chips (Today / This Week / etc.)
+    if (periodWrap){
+      steps.push({
+        element: periodWrap,
+        popover:{
+          title: 'Date filters',
+          description: 'Quickly switch between All, Upcoming, Today, This Week, This Month, or Past.',
+          side: 'bottom', align: 'start'
+        }
+      });
+    }
+
+    // 5) Status dropdown
+    if (statusSel){
+      steps.push({
+        element: statusSel,
+        popover:{
+          title: 'Status filter',
+          description: 'Narrow results to Pending, Confirmed, Completed, Canceled, or show all.',
+          side: 'top', align: 'start'
+        }
+      });
+    }
+
+    // 6) Search box
+    if (searchInput){
+      steps.push({
+        element: searchInput,
+        popover:{
+          title: 'Search counselor',
+          description: 'Type a counselor name to filter the list.',
+          side: 'top', align: 'start'
+        }
+      });
+    }
+
+    // 7) Apply / Reset
+    if (applyBtn){
+      steps.push({
+        element: applyBtn,
+        popover:{
+          title: 'Apply filters',
+          description: 'Click to run your selected filters. Use Reset to clear.',
+          side: 'top', align: 'end'
+        }
+      });
+    } else if (resetBtn){
+      steps.push({
+        element: resetBtn,
+        popover:{
+          title: 'Reset filters',
+          description: 'Return to the full list.',
+          side: 'top', align: 'end'
+        }
+      });
+    }
+
+    // 8) Results table
+    if (tableEl){
+      steps.push({
+        element: tableEl,
+        popover:{
+          title: 'Results',
+          description: 'Each row shows counselor, schedule, live countdown, and status.',
+          side: 'top', align: 'start'
+        }
+      });
+    }
+
+    // 9) Row action: View
+    if (anyViewBtn){
+      steps.push({
+        element: anyViewBtn,
+        popover:{
+          title: 'View details',
+          description: 'Open the appointment for full information and actions.',
+          side: 'left', align: 'center'
+        }
+      });
+    }
+
+    // Fallback
+    if (!steps.length){
+      steps.push({
+        element: document.body,
+        popover:{
+          title: 'Manage History',
+          description: 'Filter by date or status, search, and open a record to view details.',
+          side: 'top', align: 'center'
+        }
+      });
+    }
+
+    return steps;
+  }
+
+  function appointmentViewSteps(){
+  const $  = (s, r=document) => r.querySelector(s);
+  const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+  const steps = [];
+
+  const card = $('#appointmentCard');
+
+  // NEW: stable hooks
+  const closeBtn  = $('#btn-appt-close')                               // ✅ prefer ID
+                 || $$('a').find(a => /\/appointment\/history$/.test(a.getAttribute('href')||'') || /close/i.test(a.textContent||''));
+  const pdfBtn    = $$('a').find(a => /show\.export\.pdf/i.test(a.getAttribute('href')||'') || /download\s*pdf/i.test(a.textContent||''));
+  const cancelBtn = $$('button').find(b => /cancel/i.test(b.textContent||''));
+
+  // existing pieces…
+  const statusChip = card ? $('h2 + span.inline-flex', card) : null;
+  const countdown  = card ? $$('.inline-flex.rounded-full, .rounded-full.inline-flex', card)
+                          .find(el => /starts in|ago|starting now/i.test(el.textContent||'')) : null;
+  const counselorHdr = card ? $$('.text-xs', card).find(h => /counselor/i.test(h.textContent||'')) : null;
+  const counselorBox = counselorHdr ? counselorHdr.nextElementSibling : null;
+  const scheduleHdr  = card ? $$('.text-xs', card).find(h => /scheduled/i.test(h.textContent||'')) : null;
+  const scheduleBox  = scheduleHdr ? scheduleHdr.nextElementSibling : null;
+
+  if (card) steps.push({ element: card, popover:{ title:'Appointment details', description:'Booking number, countdown, counselor, and schedule.', side:'top', align:'start' }});
+  if (statusChip) steps.push({ element: statusChip, popover:{ title:'Status', description:'Pending, Confirmed, Completed, Canceled, or No-show.', side:'left', align:'center' }});
+  if (countdown) steps.push({ element: countdown, popover:{ title:'Countdown', description:'Time until session (or how long since it passed).', side:'bottom', align:'start' }});
+  if (counselorBox) steps.push({ element: counselorBox, popover:{ title:'Counselor', description:'Assigned counselor & contacts.', side:'top', align:'start' }});
+  if (scheduleBox) steps.push({ element: scheduleBox, popover:{ title:'Schedule', description:'Exact day and start time.', side:'top', align:'end' }});
+
+  if (cancelBtn) steps.push({ element: cancelBtn, popover:{ title:'Cancel booking', description:'Enabled only if the appointment is Pending and in the future.', side:'top', align:'start' }});
+  if (pdfBtn)    steps.push({ element: pdfBtn,   popover:{ title:'Download PDF', description:'Export this appointment.', side:'top', align:'end' }});
+
+  // ✅ Now explicitly teach “Back to history” on Close
+  if (closeBtn)  steps.push({ element: closeBtn, popover:{ title:'Back to History', description:'Return to your appointment list.', side:'top', align:'end' }});
+
+  if (!steps.length) steps.push({ element: document.body, popover:{ title:'Appointment View', description:'See details, export, cancel if allowed, or go back to history.', side:'top', align:'center' }});
+  return steps;
+}
     /* ✅ MISSING BEFORE: define this to avoid ReferenceError */
     function aboutSteps(){ const steps=[]; const hero=document.querySelector('.about-hero'); const toc=document.getElementById('about-toc'); const flow=document.getElementById('flow'); const faq=document.getElementById('faq'); const topFab=document.getElementById('about-top'); if (hero) steps.push({element:hero,popover:{title:'About LumiCHAT',description:'Quick overview and purpose.',side:'bottom',align:'start'}}); if (toc) steps.push({element:toc,popover:{title:'On this page',description:'Jump between sections; active item updates as you scroll.',side:'right',align:'start'}}); if (flow) steps.push({element:flow,popover:{title:'How it works',description:'From message to response timeline.',side:'top',align:'start'}}); if (faq) steps.push({element:faq,popover:{title:'FAQ',description:'Common questions and answers.',side:'top',align:'start'}}); if (topFab) steps.push({element:topFab,popover:{title:'Back to top',description:'Appears after you scroll.',side:'left',align:'center'}}); return steps; }
 
@@ -418,8 +967,16 @@
       chat: chatSteps, 'chat.index': chatSteps,
       'profile.edit': profileSteps, 'chat.history': historySteps,
       'settings.index': settingsSteps, 'about.index': aboutSteps,
-      appointment: appointmentSteps, 'appointment.index': appointmentSteps,
-      'appointment.create': appointmentSteps, 'appointment.history': appointmentHistorySteps,
+
+      appointment: appointmentSteps,
+      'appointment.index': appointmentSteps,
+      'appointment.create': appointmentSteps,
+      'appointment.history': appointmentHistorySteps,
+
+      // 👇 add these two lines
+      'appointment.view': appointmentViewSteps,
+      'appointment.show': appointmentViewSteps,
+
       'counselor.dashboard': counselorDashboardSteps,
       'counselor.availability': counselorAvailabilitySteps,
       'counselor.appointments': counselorAppointmentsSteps,
