@@ -392,6 +392,18 @@ public function store(Request $request)
     $rawDisplay = (string) $request->input('display_text', '');
     $display = trim(preg_replace('/\s+/u', ' ', preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawDisplay) ?? ''));
 
+    // Map UI quick-reply labels to slash payloads (works even if frontend still sends plain text)
+$mapped = $this->mapQuickRepliesToPayload($display) ?: $this->mapQuickRepliesToPayload($text);
+if ($mapped) {
+    $text = $mapped; // send payload to Rasa
+}
+
+// Is this a slash-intent payload? (e.g., /show_coping_tips)
+$isPayload = str_starts_with($text, '/');
+
+// What to show in history: prefer display label if present; otherwise the raw text/payload
+$toStoreUserText = $display !== '' ? $display : $text;
+
     // prefer “human” text for heuristics
     $analysisText = $display !== '' ? $display : $text;
 
@@ -468,7 +480,7 @@ if ($msgRisk === 'high') {
                 'user_id'         => $userId,        // can be null; that’s OK
                 'chat_session_id' => $sessionId,
                 'sender'          => 'user',
-                'message'         => Crypt::encryptString($text),
+                'message'         => Crypt::encryptString($toStoreUserText),
                 'sent_at'         => now(),
             ]
         );
@@ -538,10 +550,16 @@ $userTurnCount = Chat::where('chat_session_id', $sessionId)->where('sender','use
 
 // Check if we should bypass any venting
 $askedForAppt = $this->wantsAppointment($analysisText) || $this->confirmedAfterOffer($analysisText, $sessionId);
-$bypass       = $this->shouldBypassVenting($analysisText, $selfThreat, $msgRisk, $askedForAppt);
+$bypass       = $this->shouldBypassVenting($analysisText, $selfThreat, $msgRisk, $askedForAppt) || $isPayload;
 
 // Post-Rasa vent cycle remaining?
 $postRemaining = $this->getPostRasaVentRemaining($sessionId);
+
+// If a payload is clicked, we always kill any vent loop to act immediately
+if ($isPayload) {
+    $this->clearPostRasaVent($sessionId);
+}
+
 
 /* =========================
  * FAST-LANE: direct booking
@@ -599,10 +617,7 @@ if ($askedForAppt && $msgRisk !== 'high') {
 
 // Initial vent applies only before we ever called Rasa AND no post-cycle in progress
 $initialVentActive = ($userTurnCount <= $this->ventTurns()) && ($postRemaining === 0);
-
-// If we’re not bypassing, we’re “in vent window” when either initial vent is active
-// or a post-Rasa vent cycle is currently running.
-$inVentWindow = (!$bypass) && ( $initialVentActive || $postRemaining > 0 );
+$inVentWindow = (!$bypass) && !$isPayload && ( $initialVentActive || $postRemaining > 0 );
 
 if ($inVentWindow) {
     // Determine stage number 1..N for prompt sequencing
@@ -995,6 +1010,28 @@ private function decPostRasaVent(int $sessionId): void {
 }
 private function clearPostRasaVent(int $sessionId): void {
     session()->forget('post_rasa_vent_remaining_'.$sessionId);
+}
+/** Map common quick-reply display texts to Rasa payloads. */
+private function mapQuickRepliesToPayload(string $s): ?string
+{
+    $k = mb_strtolower(trim($s));
+    if ($k === '') return null;
+
+    // Normalize punctuation/extra spaces
+    $k = preg_replace('/[^\p{L}\p{N}\s]/u', '', $k);
+    $k = preg_replace('/\s+/', ' ', $k);
+
+    $map = [
+        'yes show tips'   => '/show_coping_tips',
+        'yes show me tips'=> '/show_coping_tips',
+        'show tips'       => '/show_coping_tips',
+        'coping tips'     => '/show_coping_tips',
+        'no thanks'       => '/deny',
+        'no thank you'    => '/deny',
+        'no'              => '/deny',
+    ];
+
+    return $map[$k] ?? null;
 }
 
 }
