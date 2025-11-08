@@ -959,7 +959,7 @@ private function empathicPrompt(string $first, array $labels, string $lang, int 
             $txt = "I hear you{MIRROR}. When did you start feeling this way, and what usually makes it better or worse? / Nadungog tika{MIRROR}. Kanus-a ni nagsugod, ug unsay kasagarang makapamaayo o makapalala?";
             break;
         default:
-            $txt = "That makes sense, {USER_FIRST}. Before I suggest anything, is there one small thing you want to change this week? / Nasabtan nako, {USER_FIRST}. Sa dili pa ko mo-sugyot, naa bay gamay nga butang nga gusto nimo mausab karong semanaha?";
+            $txt = "That makes sense, {USER_FIRST}. Before I suggest anything, whats make you feel that way? / Nasabtan nako, {USER_FIRST}. Sa dili pa ko mo-sugyot, naa bay gamay nga butang nga gusto nimo mausab karong semanaha?";
     }
 
     // Insert mirrors + name placeholders; language pick happens later by pickLanguageVariant()
