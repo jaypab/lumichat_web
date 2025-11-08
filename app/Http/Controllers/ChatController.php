@@ -434,19 +434,13 @@ public function store(Request $request)
     }
     $sessionId = $session->id;
 
-// 3) Language + risk (use the same analysisText used for emotions)
+ // 3) Language + risk (use the same analysisText used for emotions)
 $lang    = $this->inferLanguage($text);
 $msgRisk = $this->evaluateRiskLevel($analysisText);
 
 // keep "high" only if it's not just a booking ask
 if ($selfThreat && !$this->wantsAppointment($analysisText)) {
     $msgRisk = 'high';
-}
-
-/* >>> ADD THIS RIGHT HERE <<< */
-// If high risk this turn, never stay in or return to venting.
-if ($msgRisk === 'high') {
-    $this->clearPostRasaVent($sessionId);
 }
 
     // 4) Save user message — idempotent & race-safe
@@ -514,110 +508,22 @@ if ($msgRisk === 'high') {
         }
     } catch (\Throwable $e) { /* swallow */ }
 
-   // 5) Decide: vent first, post-Rasa vent, or call Rasa now
-$rasaUrl  = $this->rasaWebhookUrl();
-$metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk) + [
-    'user' => ['id'=>auth()->id(),'name'=>$name,'first'=>$first],
+    // 5) Call Rasa — PRESERVE buttons
+    $rasaUrl  = $this->rasaWebhookUrl();
+    $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk) + [
+    'user' => [
+        'id'    => auth()->id(),
+        'name'  => $name,
+        'first' => $first,
+    ],
 ];
+    $botReplies = []; // each item: ['text'=>string, 'buttons'=>array]
+    
 
-$botReplies = []; // each: ['text'=>string, 'buttons'=>array]
-
-// Count user turns in this session (after saving current user message above)
-$userTurnCount = Chat::where('chat_session_id', $sessionId)->where('sender','user')->count();
-
-// Check if we should bypass any venting
-$askedForAppt = $this->wantsAppointment($analysisText) || $this->confirmedAfterOffer($analysisText, $sessionId);
-$bypass       = $this->shouldBypassVenting($analysisText, $selfThreat, $msgRisk, $askedForAppt);
-
-// Post-Rasa vent cycle remaining?
-$postRemaining = $this->getPostRasaVentRemaining($sessionId);
-
-/* =========================
- * FAST-LANE: direct booking
- * =========================
- * If student explicitly wants to book and it's not a crisis,
- * skip both venting and Rasa; reply with CTA and (optionally) redirect.
- */
-if ($askedForAppt && $msgRisk !== 'high') {
-    // kill any vent loops
-    $this->clearPostRasaVent($sessionId);
-
-    // Build booking link (same logic you already use later)
-    $link = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
-        ? \Illuminate\Support\Facades\URL::signedRoute('features.enable_appointment')
-        : (\Illuminate\Support\Facades\Route::has('appointment.index')
-            ? route('appointment.index')
-            : url('/appointment'));
-
-    $ctaHtml = '<a href="'.e($link).'">Book an appointment</a>';
-
-    // Bilingual CTA (keeps your pickLanguageVariant + personalization)
-    $replyText = "You can book a time with a school counselor here: {APPOINTMENT_LINK} / "
-               . "Pwede ka magpa-book sa school counselor dinhi: {APPOINTMENT_LINK}";
-
-    // Personalization happens later, but we must inject the link now
-    $replyText = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $replyText);
-
-    // Save bot message
-    $bot = Chat::create([
-        'user_id'         => $userId,
-        'chat_session_id' => $sessionId,
-        'sender'          => 'bot',
-        'message'         => Crypt::encryptString($replyText),
-        'sent_at'         => now(),
-    ]);
-
-    // Optional: give the UI a direct open instruction (you can handle this on the frontend)
-    return response()->json([
-        'user_message' => [
-            'text'       => $text,
-            'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
-            'sent_at'    => now()->toIso8601String(),
-        ],
-        'bot_reply' => [[
-            'id'         => $bot->id,
-            'text'       => $replyText,
-            'buttons'    => [['title' => 'Open booking', 'url' => $link]],
-            'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
-            'sent_at'    => $bot->sent_at->toIso8601String(),
-        ]],
-        // Front-end fast action (implement in your JS if you want auto-redirect)
-        'redirect_to' => $link,
-        'time_human'  => now()->timezone(config('app.timezone'))->format('g:i:s A'),
-    ]);
-}
-
-// Initial vent applies only before we ever called Rasa AND no post-cycle in progress
-$initialVentActive = ($userTurnCount <= $this->ventTurns()) && ($postRemaining === 0);
-
-// If we’re not bypassing, we’re “in vent window” when either initial vent is active
-// or a post-Rasa vent cycle is currently running.
-$inVentWindow = (!$bypass) && ( $initialVentActive || $postRemaining > 0 );
-
-if ($inVentWindow) {
-    // Determine stage number 1..N for prompt sequencing
-    if ($postRemaining > 0) {
-        // We are in a post-Rasa vent loop
-        $stageBase = $this->postRasaVentTurns();             // e.g., 3
-        $stage     = ($stageBase - $postRemaining) + 1;      // 1..N
-        $stage     = max(1, min($stageBase, $stage));
-    } else {
-        // We are in the initial vent window
-        $stage = max(1, min($this->ventTurns(), $userTurnCount));
-    }
-
-    $replyText   = $this->empathicPrompt($first, $labels, $lang, $stage);
-    $botReplies[] = ['text' => $replyText, 'buttons' => []];
-
-    // If we’re running a post-Rasa vent cycle, tick it down now
-    if ($postRemaining > 0) {
-        $this->decPostRasaVent($sessionId);
-    }
-} else {
-    // Normal path: call Rasa
     $timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
     $verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
 
+    $r = null;
     try {
         $r = Http::timeout($timeout)
             ->withOptions(['verify' => $verify])
@@ -644,26 +550,16 @@ if ($inVentWindow) {
             }
         }
     } catch (\Throwable $e) {
-        $botReplies = [
-            ['text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?"],
+    $botReplies = [
+        ['text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?"],
         ];
     }
 
     if (empty($botReplies)) {
-        $botReplies = [
-            ['text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?"],
+       $botReplies = [
+        ['text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?"],
         ];
     }
-
-    // 🔁 Start a post-Rasa vent cycle unless we should keep things action-oriented or safe
-    // (don’t loop if crisis/high risk or user is explicitly booking).
-    if ($msgRisk !== 'high' && !$askedForAppt) {
-        $this->setPostRasaVent($sessionId, $this->postRasaVentTurns());
-    } else {
-        $this->clearPostRasaVent($sessionId);
-    }
-}
-
 
     // 6) Risk elevation + crisis prompt
     $current = $session->risk_level ?: 'low';
@@ -928,63 +824,4 @@ if ($inVentWindow) {
             // best-effort only
         }
     }
-    /** Return Nth-stage reflective prompt (no Rasa) during vent window. */
-private function empathicPrompt(string $first, array $labels, string $lang, int $stage): string
-{
-    $first = trim($first) !== '' ? $first : 'there';
-
-    // Build a short “mirroring” phrase from emotions (max 2)
-    $top = array_values(array_unique(array_slice($labels, 0, 2)));
-    $mirror = '';
-    if (!empty($top)) {
-        $mirror = ' ' . implode(' & ', array_map(fn($x)=>strtolower($x), $top));
-    }
-
-    // English / Cebuano paired lines (keep your " / " convention)
-    switch ($stage) {
-        case 1:
-            $txt = "Thanks for sharing, {USER_FIRST}. I’m listening—tell me a bit more about what’s been hardest lately{$mirror}. / Salamat sa pag-share, {USER_FIRST}. Nagpaminaw ko—masulti pa kung unsay pinakalisod nimo karon{$mirror}.";
-            break;
-        case 2:
-            $txt = "I hear you{MIRROR}. When did you start feeling this way, and what usually makes it better or worse? / Nadungog tika{MIRROR}. Kanus-a ni nagsugod, ug unsay kasagarang makapamaayo o makapalala?";
-            break;
-        default:
-            $txt = "That makes sense, {USER_FIRST}. Before I suggest anything, is there one small thing you want to change this week? / Nasabtan nako, {USER_FIRST}. Sa dili pa ko mo-sugyot, naa bay gamay nga butang nga gusto nimo mausab karong semanaha?";
-    }
-
-    // Insert mirrors + name placeholders; language pick happens later by pickLanguageVariant()
-    $mirrorTag = $mirror !== '' ? '—' . trim($mirror) : '';
-    $txt = str_replace('{MIRROR}', $mirrorTag, $txt);
-    return $txt;
-}
-
-/** Heuristic: should we bypass vent window and go straight to Rasa? */
-private function shouldBypassVenting(string $text, bool $selfThreat, string $risk, bool $askedForAppt): bool
-{
-    if ($risk === 'high' || $selfThreat) return true;               // safety first
-    if ($askedForAppt) return true;                                  // they want to act
-    // direct question heuristic (keeps things responsive)
-    if (preg_match('/\?\s*$/u', trim($text))) return true;
-    if (preg_match('/\b(how|what|why|can|should|where|when)\b/iu', $text)) return true;
-    return false;
-}
-/** Configurable counts */
-private function ventTurns(): int { return (int) env('CHAT_VENT_TURNS', 3); }
-private function postRasaVentTurns(): int { return (int) env('CHAT_POST_RASA_VENT_TURNS', 3); }
-
-/** Cycle state stored per session (no DB migration needed) */
-private function getPostRasaVentRemaining(int $sessionId): int {
-    return (int) session('post_rasa_vent_remaining_'.$sessionId, 0);
-}
-private function setPostRasaVent(int $sessionId, int $n): void {
-    session(['post_rasa_vent_remaining_'.$sessionId => max(0, $n)]);
-}
-private function decPostRasaVent(int $sessionId): void {
-    $n = $this->getPostRasaVentRemaining($sessionId);
-    session(['post_rasa_vent_remaining_'.$sessionId => max(0, $n - 1)]);
-}
-private function clearPostRasaVent(int $sessionId): void {
-    session()->forget('post_rasa_vent_remaining_'.$sessionId);
-}
-
 }
