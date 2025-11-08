@@ -434,13 +434,19 @@ public function store(Request $request)
     }
     $sessionId = $session->id;
 
- // 3) Language + risk (use the same analysisText used for emotions)
+// 3) Language + risk (use the same analysisText used for emotions)
 $lang    = $this->inferLanguage($text);
 $msgRisk = $this->evaluateRiskLevel($analysisText);
 
 // keep "high" only if it's not just a booking ask
 if ($selfThreat && !$this->wantsAppointment($analysisText)) {
     $msgRisk = 'high';
+}
+
+/* >>> ADD THIS RIGHT HERE <<< */
+// If high risk this turn, never stay in or return to venting.
+if ($msgRisk === 'high') {
+    $this->clearPostRasaVent($sessionId);
 }
 
     // 4) Save user message — idempotent & race-safe
@@ -508,7 +514,7 @@ if ($selfThreat && !$this->wantsAppointment($analysisText)) {
         }
     } catch (\Throwable $e) { /* swallow */ }
 
-    // 5) Decide: venting first or call Rasa now
+   // 5) Decide: vent first, post-Rasa vent, or call Rasa now
 $rasaUrl  = $this->rasaWebhookUrl();
 $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk) + [
     'user' => ['id'=>auth()->id(),'name'=>$name,'first'=>$first],
@@ -516,26 +522,44 @@ $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk) + [
 
 $botReplies = []; // each: ['text'=>string, 'buttons'=>array]
 
-// Count user turns in this session (after saving current message above)
+// Count user turns in this session (after saving current user message above)
 $userTurnCount = Chat::where('chat_session_id', $sessionId)->where('sender','user')->count();
 
-// Ask: are we bypassing the vent window?
+// Check if we should bypass any venting
 $askedForAppt = $this->wantsAppointment($analysisText) || $this->confirmedAfterOffer($analysisText, $sessionId);
-$bypass = $this->shouldBypassVenting($analysisText, $selfThreat, $msgRisk, $askedForAppt);
+$bypass       = $this->shouldBypassVenting($analysisText, $selfThreat, $msgRisk, $askedForAppt);
 
-// Vent window = first 3 user messages (1,2,3). We hold Rasa until after #3,
-// unless we bypass for safety/intent/questions.
-$inVentWindow = ($userTurnCount <= 3) && !$bypass;
+// Post-Rasa vent cycle remaining?
+$postRemaining = $this->getPostRasaVentRemaining($sessionId);
+
+// Initial vent applies only before we ever called Rasa AND no post-cycle in progress
+$initialVentActive = ($userTurnCount <= $this->ventTurns()) && ($postRemaining === 0);
+
+// If we’re not bypassing, we’re “in vent window” when either initial vent is active
+// or a post-Rasa vent cycle is currently running.
+$inVentWindow = (!$bypass) && ( $initialVentActive || $postRemaining > 0 );
 
 if ($inVentWindow) {
-    // Generate a reflective micro-prompt; stage = 1..3
-    $stage = max(1, min(3, $userTurnCount));
-    $replyText = $this->empathicPrompt($first, $labels, $lang, $stage);
+    // Determine stage number 1..N for prompt sequencing
+    if ($postRemaining > 0) {
+        // We are in a post-Rasa vent loop
+        $stageBase = $this->postRasaVentTurns();             // e.g., 3
+        $stage     = ($stageBase - $postRemaining) + 1;      // 1..N
+        $stage     = max(1, min($stageBase, $stage));
+    } else {
+        // We are in the initial vent window
+        $stage = max(1, min($this->ventTurns(), $userTurnCount));
+    }
 
-    // Keep your existing fallback placeholders style. Buttons are empty during vent.
+    $replyText   = $this->empathicPrompt($first, $labels, $lang, $stage);
     $botReplies[] = ['text' => $replyText, 'buttons' => []];
+
+    // If we’re running a post-Rasa vent cycle, tick it down now
+    if ($postRemaining > 0) {
+        $this->decPostRasaVent($sessionId);
+    }
 } else {
-    // Normal path: call Rasa (your original code, compacted)
+    // Normal path: call Rasa
     $timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
     $verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
 
@@ -565,7 +589,6 @@ if ($inVentWindow) {
             }
         }
     } catch (\Throwable $e) {
-        // Keep your empathetic fallback
         $botReplies = [
             ['text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?"],
         ];
@@ -575,6 +598,14 @@ if ($inVentWindow) {
         $botReplies = [
             ['text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?"],
         ];
+    }
+
+    // 🔁 Start a post-Rasa vent cycle unless we should keep things action-oriented or safe
+    // (don’t loop if crisis/high risk or user is explicitly booking).
+    if ($msgRisk !== 'high' && !$askedForAppt) {
+        $this->setPostRasaVent($sessionId, $this->postRasaVentTurns());
+    } else {
+        $this->clearPostRasaVent($sessionId);
     }
 }
 
@@ -881,6 +912,24 @@ private function shouldBypassVenting(string $text, bool $selfThreat, string $ris
     if (preg_match('/\?\s*$/u', trim($text))) return true;
     if (preg_match('/\b(how|what|why|can|should|where|when)\b/iu', $text)) return true;
     return false;
+}
+/** Configurable counts */
+private function ventTurns(): int { return (int) env('CHAT_VENT_TURNS', 3); }
+private function postRasaVentTurns(): int { return (int) env('CHAT_POST_RASA_VENT_TURNS', 3); }
+
+/** Cycle state stored per session (no DB migration needed) */
+private function getPostRasaVentRemaining(int $sessionId): int {
+    return (int) session('post_rasa_vent_remaining_'.$sessionId, 0);
+}
+private function setPostRasaVent(int $sessionId, int $n): void {
+    session(['post_rasa_vent_remaining_'.$sessionId => max(0, $n)]);
+}
+private function decPostRasaVent(int $sessionId): void {
+    $n = $this->getPostRasaVentRemaining($sessionId);
+    session(['post_rasa_vent_remaining_'.$sessionId => max(0, $n - 1)]);
+}
+private function clearPostRasaVent(int $sessionId): void {
+    session()->forget('post_rasa_vent_remaining_'.$sessionId);
 }
 
 }
