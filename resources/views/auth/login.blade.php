@@ -9,10 +9,10 @@
   $postRoute = $ctx === 'admin' ? route('admin.login.post') : route('login');
 @endphp
 
-
+<div class="min-h-[88vh] grid place-items-center">
   <div class="relative w-full max-w-md">
     <div class="absolute -inset-[1px] rounded-3xl bg-gradient-to-r from-violet-400/40 via-indigo-400/40 to-blue-400/40 blur opacity-60"></div>
-    <div class="relative lumi-card rounded-3xl bg-white backdrop-blur-xl shadow-2xl ring-1 ring-slate-200/60 p-8"> 
+    <div class="relative lumi-card rounded-3xl bg-white backdrop-blur-xl shadow-2xl ring-1 ring-slate-200/60 p-8">
 
       {{-- Header --}}
       <div class="flex flex-col items-center text-center">
@@ -32,65 +32,42 @@
 
       {{-- ===== Scoped CSS ===== --}}
       <style>
-        /* Softer ring colors so the float chip doesn't look like it has padding */
         :root{
           --ring-hover: 165,180,252;  /* indigo-300 */
           --ring-focus: 129,140,248;  /* indigo-400 */
-          --ring-shadow: 2,6,23;      /* deep slate for subtle inner glow */
         }
 
-        #loginForm .field.error{ border-color:#ef4444; box-shadow:inset 0 0 0 2px rgba(239,68,68,.22); }  
+        #loginForm .field.error{ border-color:#ef4444; box-shadow:inset 0 0 0 2px rgba(239,68,68,.22); }
 
         .lumi-card { --card-bg:#ffffff; }
+
         /* Field shell */
         #loginForm .field{
-          position:relative;
-          display:flex; align-items:center;
-          height:48px;
-          background: transparent;
-          border:1px solid #cbd5e1;           /* slate-300 */
-          border-radius:0.875rem;              /* ~rounded-xl */
-          padding:0 .75rem;
+          position:relative; display:flex; align-items:center;
+          height:48px; background:transparent;
+          border:1px solid #cbd5e1; /* slate-300 */
+          border-radius:0.875rem; padding:0 .75rem;
           transition: box-shadow .18s ease, border-color .18s ease;
         }
-
-        /* Hover – subtle, does NOT match focus glow */
-          #loginForm .field:hover{
-            border-color: rgba(99,102,241,.85);
-            box-shadow:
-              inset 0 0 0 2px rgba(99,102,241,.35),
-              inset 0 6px 14px rgba(0,0,0,.06);
-          }
-
-        /* Focus – cleaner + LESS violet glow */
-        #loginForm .field:focus-within {
-          border-color: rgba(99,102,241,.85);     /* indigo-500 */
-          box-shadow:
-            inset 0 0 0 2px rgba(99,102,241,.35), /* smaller glow */
-            inset 0 6px 14px rgba(0,0,0,.06);
-          background: transparent;
+        /* Hover – soft, distinct from focus */
+        #loginForm .field:hover{
+          border-color: rgba(99,102,241,.5);
+          box-shadow: inset 0 0 0 1px rgba(99,102,241,.25), inset 0 4px 12px rgba(0,0,0,.04);
+        }
+        /* Focus – cleaner, reduced violet */
+        #loginForm .field:focus-within{
+          border-color: rgba(99,102,241,.85);
+          box-shadow: inset 0 0 0 2px rgba(99,102,241,.35), inset 0 6px 14px rgba(0,0,0,.06);
+          background:transparent;
         }
 
-        #loginForm .icon-20{
-          width:20px;height:20px;margin-right:.5rem;
-          opacity:.85;user-select:none;pointer-events:none;
-        }
-        
-        #loginForm .float-label::after {
-          box-shadow: 0 0 0 6px var(--card-bg); /* ensure it clears the glow fully */
-        }
+        #loginForm .icon-20{ width:20px;height:20px;margin-right:.5rem;opacity:.85;user-select:none;pointer-events:none; }
 
-        /* Inputs look transparent; must be .peer for the label states */
+        /* Inputs */
         #loginForm input.input{
-          width:100%; height:100%;
-          background:transparent; border:none; outline:none; box-shadow:none;
-          font-size:16px; color:#0f172a;       /* slate-900 */
-          line-height:48px;
-          padding:0 2.25rem 0 .25rem;          /* room for eye on password */
+          width:100%; height:100%; background:transparent; border:none; outline:none; box-shadow:none;
+          font-size:14px; color:#0f172a; line-height:48px; padding:0 2.25rem 0 .25rem;
         }
-        #loginForm input.input.peer{ padding:0 2.25rem 0 .25rem; }
-
-        /* Chrome autofill: keep transparent look */
         #loginForm input:-webkit-autofill,
         #loginForm input:-webkit-autofill:hover,
         #loginForm input:-webkit-autofill:focus{
@@ -99,90 +76,163 @@
           -webkit-text-fill-color: #0f172a !important;
         }
 
-        /* ===== Floating label (compact) ===== */
+        /* Floating label */
         #loginForm .float-label{
-          position:absolute;
-          left:3rem;                 /* keep near the icon */
-          top:50%;
-          transform: translateY(-54%);;/* slightly lower baseline */
-          font-size:.80rem;          /* base size (smaller than before) */
-          line-height:1;             /* tighter height */
-          color:#64748b;
-          padding:0;                 /* <<< zero padding */
-          margin:0;
-          pointer-events:none;
-          z-index:2;
+          position:absolute; left:3rem; top:50%; transform:translateY(-54%);
+          font-size:.80rem; line-height:1; color:#64748b; padding:0; margin:0;
+          pointer-events:none; z-index:2;
           transition:transform .18s ease, color .18s ease, font-size .18s ease, opacity .18s ease;
         }
-
-        /* Knockout chip — thinner & narrower */
         #loginForm .float-label::after{
-          content:"";
-          position:absolute;
-          left:-1px; right:-1px; 
-          top:0; bottom:0;   
-          background: var(--card-bg);
-          border-radius:6px;         /* tighter corners */
-          box-shadow:0 0 0 4px var(--card-bg);
-          opacity:1;                 /* same color as card → invisible */
-          z-index:-1;
+          content:""; position:absolute; left:-1px; right:-1px; top:0; bottom:0;
+          background: var(--card-bg); border-radius:6px; box-shadow:0 0 0 6px var(--card-bg); z-index:-1;
           transition:left .18s ease, right .18s ease, top .18s ease, bottom .18s ease, box-shadow .18s ease;
         }
-
-        /* Floated state — small & higher, chip stays compact */
         #loginForm .peer:focus ~ .float-label,
         #loginForm .peer[data-filled="true"] ~ .float-label,
         #loginForm .peer:not(:placeholder-shown) ~ .float-label{
-          color:#334155;
-          font-size:.72rem;          /* smaller floated text */
-          transform:translateY(-250%) scale(.98); /* lift without huge travel */
-        }
-
-        /* Keep the chip the same size when floated (no expansion) */
-        #loginForm .peer:focus ~ .float-label::after,
-        #loginForm .peer[data-filled="true"] ~ .float-label::after,
-        #loginForm .peer:not(:placeholder-shown) ~ .float-label::after{
-          left:-2px; right:-2px; top:-1px; bottom:-1px;
-          box-shadow:0 0 0 4px var(--card-bg);
+          color:#334155; font-size:.72rem; transform:translateY(-250%) scale(.98);
         }
 
         /* Eye button */
-        .eye-btn{position:absolute;right:.5rem;top:50%;transform:translateY(-50%);padding:.25rem;border-radius:.375rem}
-        .eye-btn:hover{background:#e5e7eb}
-        .eye-btn img{display:block;width:20px;height:20px}
-
-        /* Checkbox spacing + style */
-        .checkbox-wrapper-46 .cbx span:last-child{padding-left:12px}
-        .checkbox-wrapper-46 input[type="checkbox"]{display:none;visibility:hidden}
-        .checkbox-wrapper-46 .cbx{margin:auto;-webkit-user-select:none;user-select:none;cursor:pointer;display:flex;align-items:center}
-        .checkbox-wrapper-46 .cbx span{display:inline-block;vertical-align:middle;transform:translate3d(0,0,0)}
-        .checkbox-wrapper-46 .cbx span:first-child{position:relative;width:18px;height:18px;border-radius:3px;border:1px solid #9098a9;transition:all .2s ease;background:transparent}
-        .checkbox-wrapper-46 .cbx span:first-child svg{position:absolute;top:3px;left:2px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:16px;stroke-dashoffset:16px;transition:all .3s ease .1s}
-        .checkbox-wrapper-46 .cbx span:first-child:before{content:"";width:100%;height:100%;background:#6366f1;display:block;transform:scale(0);opacity:1;border-radius:50%}
-        .checkbox-wrapper-46 .cbx:hover span:first-child{border-color:#6366f1}
-        .checkbox-wrapper-46 .inp-cbx:checked + .cbx span:first-child{background:#6366f1;border-color:#6366f1;animation:wave-46 .4s ease}
-        .checkbox-wrapper-46 .inp-cbx:checked + .cbx span:first-child svg{stroke-dashoffset:0}
-        .checkbox-wrapper-46 .inp-cbx:checked + .cbx span:first-child:before{transform:scale(3.5);opacity:0;transition:all .6s ease}
-        @keyframes wave-46{50%{transform:scale(.9)}}
-
-        /* Loader */
-        .three-body{ --uib-size:35px; --uib-speed:.8s; --uib-color:#5D3FD3; position:relative; display:inline-block; height:var(--uib-size); width:var(--uib-size); animation:spin78236 calc(var(--uib-speed)*2.5) infinite linear; }
-        .three-body__dot{position:absolute;height:100%;width:30%}
-        .three-body__dot:after{content:'';position:absolute;height:0%;width:100%;padding-bottom:100%;background-color:var(--uib-color);border-radius:50%}
-        .three-body__dot:nth-child(1){bottom:5%;left:0;transform:rotate(60deg);transform-origin:50% 85%}
-        .three-body__dot:nth-child(1)::after{bottom:0;left:0;animation:wobble1 var(--uib-speed) infinite ease-in-out;animation-delay:calc(var(--uib-speed)*-0.3)}
-        .three-body__dot:nth-child(2){bottom:5%;right:0;transform:rotate(-60deg);transform-origin:50% 85%}
-        .three-body__dot:nth-child(2)::after{bottom:0;left:0;animation:wobble1 var(--uib-speed) infinite calc(var(--uib-speed)*-0.15) ease-in-out}
-        .three-body__dot:nth-child(3){bottom:-5%;left:0;transform:translateX(116.666%)}
-        .three-body__dot:nth-child(3)::after{top:0;left:0;animation:wobble2 var(--uib-speed) infinite ease-in-out}
-        @keyframes spin78236{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
-        @keyframes wobble1{0%,100%{transform:translateY(0) scale(1);opacity:1}50%{transform:translateY(-66%) scale(.65);opacity:.8}}
-        @keyframes wobble2{0%,100%{transform:translateY(0) scale(1);opacity:1}50%{transform:translateY(66%) scale(.65);opacity:.8}}
+        .eye-btn{ position:absolute; right:.5rem; top:50%; transform:translateY(-50%); padding:.25rem; border-radius:.375rem; }
+        .eye-btn:hover{ background:#e5e7eb; }
+        .eye-btn img{ display:block; width:20px; height:20px; }
 
         @supports not ((-webkit-backdrop-filter: blur(24px)) or (backdrop-filter: blur(24px))){
           .lumi-card{ background:#fff; }
         }
         @media (prefers-reduced-motion: reduce){ *{ transition:none !important; } }
+        @media (max-width: 420px){
+        .swal2-title.lumi-title{ font-size: 20px !important; }
+        .swal2-html-container.lumi-body{ font-size: 14px !important; }
+}
+
+        /* ==== Custom checkbox (Remember me) ==== */
+        .checkbox-wrapper-46 .cbx span:last-child{ padding-left:12px }
+        .checkbox-wrapper-46 input[type="checkbox"]{ display:none; visibility:hidden }
+
+        .checkbox-wrapper-46 .cbx{
+          -webkit-user-select:none; user-select:none; cursor:pointer;
+          display:flex; align-items:center;
+        }
+
+        .checkbox-wrapper-46 .cbx span{
+          display:inline-block; vertical-align:middle; transform:translate3d(0,0,0);
+        }
+
+        /* box */
+        .checkbox-wrapper-46 .cbx span:first-child{
+          position:relative; width:18px; height:18px; border-radius:3px;
+          border:1px solid #9098a9; transition:all .2s ease; background:transparent;
+        }
+
+        /* checkmark */
+        .checkbox-wrapper-46 .cbx span:first-child svg{
+          position:absolute; top:3px; left:2px; fill:none; stroke:#fff; stroke-width:2;
+          stroke-linecap:round; stroke-linejoin:round;
+          stroke-dasharray:16px; stroke-dashoffset:16px; transition:all .3s ease .1s;
+        }
+
+        /* hover ring */
+        .checkbox-wrapper-46 .cbx:hover span:first-child{ border-color:#6366f1 }
+
+        /* checked state */
+        .checkbox-wrapper-46 .inp-cbx:checked + .cbx span:first-child{
+          background:#6366f1; border-color:#6366f1; animation:wave-46 .4s ease;
+        }
+        .checkbox-wrapper-46 .inp-cbx:checked + .cbx span:first-child svg{ stroke-dashoffset:0 }
+
+        /* ripple */
+        .checkbox-wrapper-46 .cbx span:first-child:before{
+          content:""; width:100%; height:100%; background:#6366f1; display:block;
+          transform:scale(0); opacity:1; border-radius:50%;
+        }
+        .checkbox-wrapper-46 .inp-cbx:checked + .cbx span:first-child:before{
+          transform:scale(3.5); opacity:0; transition:all .6s ease;
+        }
+
+        @keyframes wave-46{ 50%{ transform:scale(.9) } }
+        /* ==== Lumi SweetAlert, single-action style (refined) ==== */
+        .swal2-container.lumi-container{
+          backdrop-filter: blur(2px);
+          background:
+            radial-gradient(40% 25% at 50% 0%, rgba(124,58,237,.18) 0%, rgba(124,58,237,0) 60%),
+            radial-gradient(45% 25% at 50% 100%, rgba(79,70,229,.16) 0%, rgba(79,70,229,0) 65%),
+            rgba(0,0,0,.45) !important;
+        }
+        .swal2-popup.lumi-alert{
+          border-radius: 1rem !important;
+          width: min(440px, 92vw) !important;   /* a bit narrower for 1366px screens */
+          padding: 20px 22px 16px !important;        /* a bit wider but responsive */
+          box-shadow: 0 22px 60px rgba(2,6,23,.20), 0 2px 8px rgba(2,6,23,.08) !important;
+          border: 1px solid rgba(15,23,42,.06);
+        }
+        .swal2-title.lumi-title{
+          margin: 4px 0 0 !important; 
+          font-weight: 800 !important;
+          color: #0f172a !important;
+          letter-spacing: .1px;
+          font-size: clamp(22px, 2.6vw, 30px) !important; /* slightly bigger */
+        }
+
+        .lumi-cross{
+          transform: translateY(-8px);  
+        }
+
+        .swal2-html-container.lumi-body{
+          text-wrap: pretty;  
+          letter-spacing: .1px; 
+          margin: 10px 0 0 !important;
+          color:#334155 !important;
+          font-size: 15px !important;                   /* crisper text */
+          line-height: 1.55 !important;
+          text-align: center !important;                /* centered copy */
+        }
+        .swal2-actions.lumi-actions{
+          margin-top: 18px !important;
+        }
+        .swal2-confirm.lumi-confirm{
+          font-size: 14.5px !important;
+          min-width: 108px;  
+          background-image: linear-gradient(90deg,#4f46e5,#7c3aed) !important;
+          color:#fff !important;
+          border-radius: 0.9rem !important;
+          font-weight: 800 !important;
+          padding: .75rem 1.35rem !important;
+          border: 0 !important;
+          box-shadow: 0 12px 28px rgba(79,70,229,.28);
+        }
+        .swal2-confirm.lumi-confirm:hover{ filter: brightness(.98); }
+        .swal2-confirm.lumi-confirm:active{ transform: translateY(1px); }
+        .swal2-confirm.lumi-confirm:focus-visible{
+          outline: none !important;
+          box-shadow:
+            0 0 0 3px rgba(255,255,255,.9),
+            0 0 0 6px rgba(99,102,241,.55) !important;   /* accessible focus ring */
+        }
+
+        /* animated error icon */
+        .lumi-cross{
+          margin: 6px auto 0;   
+          width:64px;height:64px;border-radius:9999px;
+          display:grid;place-items:center;margin:10px auto 0;
+          background:#fee2e2;border:1px solid #fecaca;
+          box-shadow: inset 0 0 0 6px #fff; position:relative;
+          transform: translateY(-6px);
+        }
+        .lumi-cross::before{
+          content:""; position:absolute; inset:-10px; border-radius:inherit;
+          background: radial-gradient(60% 60% at 50% 50%, rgba(124,58,237,.10), rgba(124,58,237,0) 70%);
+        }
+
+        .lumi-cross::after{
+          content:""; position:absolute; inset:-6px; border-radius:inherit;
+          box-shadow: 0 0 0 0 rgba(239,68,68,.26);
+          animation:pulseRing 1.6s ease-out infinite;
+        }
+        @keyframes pulseRing{ 0%{box-shadow:0 0 0 0 rgba(239,68,68,.26)} 100%{box-shadow:0 0 0 18px rgba(239,68,68,0)} }
+        .lumi-cross-svg{ width:28px;height:28px; stroke:#ef4444; stroke-width:3; }
       </style>
 
       {{-- ===== Form ===== --}}
@@ -193,20 +243,10 @@
         <div class="field">
           <img src="{{ asset('images/icons/mail.png') }}" alt="mail" class="icon-20">
           <input
-            id="login-email"
-            name="email"
-            aria-describedby="emailHelp"
-            type="text"
-            value="{{ old('email') }}"
-            required
-            placeholder=" "
-            autocomplete="username"
-            autocapitalize="off"
-            spellcheck="false"
-            inputmode="email"
-            maxlength="254"
-            class="input peer"
-            data-filled="false"
+            id="login-email" name="email" aria-describedby="emailHelp"
+            type="text" value="{{ old('email') }}" required placeholder=" "
+            autocomplete="username" autocapitalize="off" spellcheck="false" inputmode="email" maxlength="254"
+            class="input peer" data-filled="false"
           />
           <label for="login-email" class="float-label">Email or Student ID</label>
         </div>
@@ -216,21 +256,14 @@
         <div class="field">
           <img src="{{ asset('images/icons/lock.png') }}" alt="lock" class="icon-20">
           <input
-            id="passwordInput"
-            name="password"
-            type="password"
-            required
-            placeholder=" "
-            autocomplete="current-password"
-            class="input pr-10 peer"
-            data-filled="false"
+            id="passwordInput" name="password" type="password" required placeholder=" "
+            autocomplete="current-password" class="input pr-10 peer" data-filled="false"
           />
           <label for="passwordInput" class="float-label">Password</label>
           <button id="togglePassword" type="button" class="eye-btn" aria-label="Show password" aria-pressed="false">
             <img src="{{ asset('images/icons/eye.png') }}" alt="toggle">
           </button>
         </div>
-
         <p id="capsNote" class="!mt-1 text-xs text-amber-600 hidden">Caps Lock is on.</p>
 
         {{-- Remember me --}}
@@ -259,8 +292,9 @@
           For authorized campus users only. Accounts are provisioned by the school.
         </p>
       </form>
-   </div>        <!-- closes .lumi-card -->
-</div> 
+    </div>
+  </div>
+</div>
 
 {{-- Loader --}}
 <div id="loginLoading" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -275,82 +309,169 @@
   </div>
 </div>
 
+{{-- SweetAlert2 --}}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+{{-- SweetAlert triggers (errors/toasts) --}}
 <script>
-function canSubmit(){ 
-  return (email.value.trim() !== '' && pwd.value.trim() !== '');
-}
-function toggleBtn(){ 
-  loginBtn.disabled = !canSubmit(); 
-}
+document.addEventListener('DOMContentLoaded', () => {
+  const bladeErrors  = @json($errors->any() ? $errors->all() : []);
+  const flashError   = @json(session('error'));
+  const flashSuccess = @json(session('success'));
+  const flashInfo    = @json(session('info'));
+  const cooldown     = Number(@json(session('cooldown')) || 0); // 👈 seconds from controller
 
-// ---- elements
-const email   = document.getElementById('login-email');
-const pwd     = document.getElementById('passwordInput');
-const loginBtn= document.getElementById('loginBtn');
-const capsNote= document.getElementById('capsNote');
+  const escapeHtml = (s) => (s||'').toString()
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
-// live enable/disable
-[email, pwd].forEach(el => ['input','change','blur'].forEach(ev => el.addEventListener(ev, toggleBtn)));
-toggleBtn();
+  // Pretty mm:ss
+  const fmt = (sec) => {
+    const m = Math.floor(sec / 60), s = sec % 60;
+    return `${String(m).padStart(1,'0')}:${String(s).padStart(2,'0')}`;
+  };
 
-// caps-lock indicator
-['keydown','keyup'].forEach(ev=>{
-  pwd.addEventListener(ev, e=>{
-    const on = e.getModifierState && e.getModifierState('CapsLock');
-    if (capsNote) capsNote.classList.toggle('hidden', !on);
+  // Decide body content
+  let bodyHtml = '';
+  if (cooldown > 0) {
+    bodyHtml = `
+      <div style="margin-top:4px;color:#334155;font-size:15px;line-height:1.55;text-align:center">
+        Too many login attempts. Please try again in
+        <span id="lumi-count" style="font-weight:800;color:#4f46e5">${fmt(cooldown)}</span>.
+      </div>`;
+  } else if (bladeErrors && bladeErrors.length) {
+    bodyHtml = `<ul style="margin:6px 0 0;padding:0 0 0 18px;text-align:left">
+      ${bladeErrors.map(e => `<li>${escapeHtml(e)}</li>`).join('')}
+    </ul>`;
+  } else if (flashError) {
+    bodyHtml = `<div style="text-align:center">${escapeHtml(flashError)}</div>`;
+  }
+
+  if (bodyHtml) {
+    if (Swal.isVisible()) Swal.close();
+
+    Swal.fire({
+      icon: 'none',
+      title: 'Login failed',
+      html: `
+        <div class="lumi-cross">
+          <svg class="lumi-cross-svg" viewBox="0 0 24 24" fill="none">
+            <path d="M6 6l12 12M18 6L6 18"></path>
+          </svg>
+        </div>
+        <div class="lumi-body">${bodyHtml}</div>
+      `,
+      showConfirmButton: true,
+      confirmButtonText: 'Okay',
+      width: 460,
+      allowEnterKey: true,
+      customClass: {
+        container: 'lumi-container',
+        popup: 'lumi-alert',
+        title: 'lumi-title',
+        htmlContainer: 'lumi-body',
+        actions: 'lumi-actions',
+        confirmButton: 'lumi-confirm'
+      },
+      didOpen: (popup) => {
+        // Live countdown
+        if (cooldown > 0) {
+          const span = popup.querySelector('#lumi-count');
+          let t = cooldown;
+          const tick = () => {
+            t -= 1;
+            if (t <= 0) {
+              span.textContent = '0:00';
+              clearInterval(timer);
+              // Optional: refresh so the limiter state is rechecked
+              location.reload();
+              return;
+            }
+            span.textContent = fmt(t);
+          };
+          span.textContent = fmt(t);
+          var timer = setInterval(tick, 1000);
+        }
+      }
+    });
+  }
+
+  // Toasts
+  const toast = Swal.mixin({
+    toast: true, position: 'top-end',
+    showConfirmButton: false, timer: 2800, timerProgressBar: true
   });
+  if (flashSuccess) toast.fire({ icon: 'success', title: flashSuccess });
+  if (flashInfo)    toast.fire({ icon: 'info',    title: flashInfo    });
 });
+</script>
 
-// submit: sanitize + busy state + loader
-form.addEventListener('submit', () => {
-  const emailInput = form.querySelector('input[name="email"]');
-  if (emailInput && typeof emailInput.value === 'string') {
-    emailInput.value = emailInput.value.normalize('NFKC').trim().replace(/\s+/g, '');
-  }
-  loginBtn.disabled = true;
-  loginBtn.setAttribute('aria-busy','true');   // a11y
-  loading.classList.remove('hidden'); loading.classList.add('flex');
-});
+{{-- Page JS --}}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // ---- DOM refs
+  const form      = document.getElementById('loginForm');
+  const email     = document.getElementById('login-email');
+  const pwd       = document.getElementById('passwordInput');
+  const toggleBtn = document.getElementById('togglePassword');
+  const toggleImg = toggleBtn ? toggleBtn.querySelector('img') : null;
+  const loginBtn  = document.getElementById('loginBtn');
+  const loading   = document.getElementById('loginLoading');
+  const capsNote  = document.getElementById('capsNote');
 
-(() => {
-  // Mark filled (handles autofill + programmatic)
-  function setFilled(el){
-    el.dataset.filled = (el.value && el.value.trim() !== '') ? 'true' : 'false';
-  }
-  ['#login-email','#passwordInput'].forEach(sel => {
-    const el = document.querySelector(sel); if(!el) return;
+  // float/fill state (handles autofill)
+  function setFilled(el){ el.dataset.filled = (el.value.trim() !== '') ? 'true' : 'false'; }
+  [email, pwd].forEach(el => {
+    if (!el) return;
     ['input','change','blur'].forEach(ev => el.addEventListener(ev, () => setFilled(el)));
     setTimeout(() => setFilled(el), 50);
     setTimeout(() => setFilled(el), 400);
     setTimeout(() => setFilled(el), 1200);
   });
 
+  // enable/disable submit
+  function canSubmit(){ return !!(email && pwd && email.value.trim() && pwd.value.trim()); }
+  function syncBtn(){ if (loginBtn) loginBtn.disabled = !canSubmit(); }
+  [email, pwd].forEach(el => el && ['input','change','blur'].forEach(ev => el.addEventListener(ev, syncBtn)));
+  syncBtn();
+
+  // Caps Lock hint
+  if (pwd && capsNote){
+    ['keydown','keyup'].forEach(ev=>{
+      pwd.addEventListener(ev, e=>{
+        const on = e.getModifierState && e.getModifierState('CapsLock');
+        capsNote.classList.toggle('hidden', !on);
+      });
+    });
+  }
+
   // Eye toggle
-  const pwd = document.getElementById('passwordInput');
-  const btn = document.getElementById('togglePassword');
-  const img = btn.querySelector('img');
-  const eyeOpen   = "{{ asset('images/icons/eye.png') }}";
-  const eyeClosed = "{{ asset('images/icons/eye-off.png') }}";
-  btn.addEventListener('click', () => {
-    const showing = pwd.type === 'text';
-    pwd.type = showing ? 'password' : 'text';
-    img.src = showing ? eyeOpen : eyeClosed;
-    btn.setAttribute('aria-pressed', showing ? 'false' : 'true');
-    pwd.focus({preventScroll:true});
-  });
+  if (pwd && toggleBtn && toggleImg){
+    const eyeOpen   = "{{ asset('images/icons/eye.png') }}";
+    const eyeClosed = "{{ asset('images/icons/eye-off.png') }}";
+    toggleBtn.addEventListener('click', () => {
+      const showing = pwd.type === 'text';
+      pwd.type = showing ? 'password' : 'text';
+      toggleImg.src = showing ? eyeOpen : eyeClosed;
+      toggleBtn.setAttribute('aria-pressed', showing ? 'false' : 'true');
+      pwd.focus({preventScroll:true});
+    });
+  }
 
   // Submit: sanitize + loader
-  const form     = document.getElementById('loginForm');
-  const loginBtn = document.getElementById('loginBtn');
-  const loading  = document.getElementById('loginLoading');
-  form.addEventListener('submit', () => {
-    const emailInput = form.querySelector('input[name="email"]');
-    if (emailInput && typeof emailInput.value === 'string') {
-      emailInput.value = emailInput.value.normalize('NFKC').trim().replace(/\s+/g, '');
-    }
-    loginBtn.disabled = true;
-    loading.classList.remove('hidden'); loading.classList.add('flex');
-  });
-})();
+  if (form){
+    form.addEventListener('submit', () => {
+      const emailInput = form.querySelector('input[name="email"]');
+      if (emailInput && typeof emailInput.value === 'string') {
+        emailInput.value = emailInput.value.normalize('NFKC').trim().replace(/\s+/g, '');
+      }
+      if (loginBtn) {
+        loginBtn.disabled = true;
+        loginBtn.setAttribute('aria-busy','true');
+      }
+      if (loading) { loading.classList.remove('hidden'); loading.classList.add('flex'); }
+    });
+  }
+});
 </script>
 @endsection
