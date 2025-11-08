@@ -508,22 +508,37 @@ if ($selfThreat && !$this->wantsAppointment($analysisText)) {
         }
     } catch (\Throwable $e) { /* swallow */ }
 
-    // 5) Call Rasa — PRESERVE buttons
-    $rasaUrl  = $this->rasaWebhookUrl();
-    $metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk) + [
-    'user' => [
-        'id'    => auth()->id(),
-        'name'  => $name,
-        'first' => $first,
-    ],
+    // 5) Decide: venting first or call Rasa now
+$rasaUrl  = $this->rasaWebhookUrl();
+$metadata = $this->buildRasaMetadata($sessionId, $lang, $msgRisk) + [
+    'user' => ['id'=>auth()->id(),'name'=>$name,'first'=>$first],
 ];
-    $botReplies = []; // each item: ['text'=>string, 'buttons'=>array]
-    
 
+$botReplies = []; // each: ['text'=>string, 'buttons'=>array]
+
+// Count user turns in this session (after saving current message above)
+$userTurnCount = Chat::where('chat_session_id', $sessionId)->where('sender','user')->count();
+
+// Ask: are we bypassing the vent window?
+$askedForAppt = $this->wantsAppointment($analysisText) || $this->confirmedAfterOffer($analysisText, $sessionId);
+$bypass = $this->shouldBypassVenting($analysisText, $selfThreat, $msgRisk, $askedForAppt);
+
+// Vent window = first 3 user messages (1,2,3). We hold Rasa until after #3,
+// unless we bypass for safety/intent/questions.
+$inVentWindow = ($userTurnCount <= 3) && !$bypass;
+
+if ($inVentWindow) {
+    // Generate a reflective micro-prompt; stage = 1..3
+    $stage = max(1, min(3, $userTurnCount));
+    $replyText = $this->empathicPrompt($first, $labels, $lang, $stage);
+
+    // Keep your existing fallback placeholders style. Buttons are empty during vent.
+    $botReplies[] = ['text' => $replyText, 'buttons' => []];
+} else {
+    // Normal path: call Rasa (your original code, compacted)
     $timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
     $verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
 
-    $r = null;
     try {
         $r = Http::timeout($timeout)
             ->withOptions(['verify' => $verify])
@@ -550,16 +565,19 @@ if ($selfThreat && !$this->wantsAppointment($analysisText)) {
             }
         }
     } catch (\Throwable $e) {
-    $botReplies = [
-        ['text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?"],
+        // Keep your empathetic fallback
+        $botReplies = [
+            ['text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?"],
         ];
     }
 
     if (empty($botReplies)) {
-       $botReplies = [
-        ['text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?"],
+        $botReplies = [
+            ['text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more? / Sige ra na, {USER_FIRST}. Ania ko maminaw. Gusto nimo mo-share pa?"],
         ];
     }
+}
+
 
     // 6) Risk elevation + crisis prompt
     $current = $session->risk_level ?: 'low';
@@ -824,4 +842,45 @@ if ($selfThreat && !$this->wantsAppointment($analysisText)) {
             // best-effort only
         }
     }
+    /** Return Nth-stage reflective prompt (no Rasa) during vent window. */
+private function empathicPrompt(string $first, array $labels, string $lang, int $stage): string
+{
+    $first = trim($first) !== '' ? $first : 'there';
+
+    // Build a short “mirroring” phrase from emotions (max 2)
+    $top = array_values(array_unique(array_slice($labels, 0, 2)));
+    $mirror = '';
+    if (!empty($top)) {
+        $mirror = ' ' . implode(' & ', array_map(fn($x)=>strtolower($x), $top));
+    }
+
+    // English / Cebuano paired lines (keep your " / " convention)
+    switch ($stage) {
+        case 1:
+            $txt = "Thanks for sharing, {USER_FIRST}. I’m listening—tell me a bit more about what’s been hardest lately{$mirror}. / Salamat sa pag-share, {USER_FIRST}. Nagpaminaw ko—masulti pa kung unsay pinakalisod nimo karon{$mirror}.";
+            break;
+        case 2:
+            $txt = "I hear you{MIRROR}. When did you start feeling this way, and what usually makes it better or worse? / Nadungog tika{MIRROR}. Kanus-a ni nagsugod, ug unsay kasagarang makapamaayo o makapalala?";
+            break;
+        default:
+            $txt = "That makes sense, {USER_FIRST}. Before I suggest anything, is there one small thing you want to change this week? / Nasabtan nako, {USER_FIRST}. Sa dili pa ko mo-sugyot, naa bay gamay nga butang nga gusto nimo mausab karong semanaha?";
+    }
+
+    // Insert mirrors + name placeholders; language pick happens later by pickLanguageVariant()
+    $mirrorTag = $mirror !== '' ? '—' . trim($mirror) : '';
+    $txt = str_replace('{MIRROR}', $mirrorTag, $txt);
+    return $txt;
+}
+
+/** Heuristic: should we bypass vent window and go straight to Rasa? */
+private function shouldBypassVenting(string $text, bool $selfThreat, string $risk, bool $askedForAppt): bool
+{
+    if ($risk === 'high' || $selfThreat) return true;               // safety first
+    if ($askedForAppt) return true;                                  // they want to act
+    // direct question heuristic (keeps things responsive)
+    if (preg_match('/\?\s*$/u', trim($text))) return true;
+    if (preg_match('/\b(how|what|why|can|should|where|when)\b/iu', $text)) return true;
+    return false;
+}
+
 }
