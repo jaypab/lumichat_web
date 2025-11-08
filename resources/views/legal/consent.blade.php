@@ -181,12 +181,12 @@
     </label>
 
     <div class="flex items-center gap-3">
-      {{-- Decline & Logout --}}
+      {{-- Decline --}}
       <form id="decline-form" method="POST" action="{{ route('legal.decline') }}">
         @csrf
         <button type="submit"
           class="text-sm font-medium text-slate-500 hover:text-slate-700">
-          Decline & Logout
+          Decline
         </button>
       </form>
 
