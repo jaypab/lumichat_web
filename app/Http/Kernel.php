@@ -72,4 +72,9 @@ class Kernel extends HttpKernel
         'admin'         => \App\Http\Middleware\AdminOnly::class,
         'admin.headers' => \App\Http\Middleware\AdminSecurityHeaders::class, // optional, if created
     ];
+    protected $routeMiddleware = [
+    // ...
+    'tos' => \App\Http\Middleware\EnsureTermsAccepted::class,
+];
+
 }

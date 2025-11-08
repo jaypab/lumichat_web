@@ -16,10 +16,9 @@ class LegalController extends Controller
 
     public function accept(Request $request)
     {
-        $request->validate(['agree' => ['required','accepted']]);
+        $request->validate(['agree' => ['required', 'accepted']]);
 
         $user = $request->user();
-
         $user->forceFill([
             'tos_version'     => (int) config('legal.tos_version', 1),
             'tos_accepted_at' => now(),
@@ -35,26 +34,15 @@ class LegalController extends Controller
         return redirect()->route('chat.index');
     }
 
-    public function handle(Request $request, Closure $next)
+    public function decline(Request $request)
     {
-        $user = $request->user();
-        if (! $user) {
-            return redirect()->route('login');
-        }
+        // Logout and invalidate session
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
 
-        // let them through if already accepted
-        if ($user->tos_accepted_at) {
-            return $next($request);
-        }
-
-        // allow consent + accept + logout while unaccepted
-        if ($request->routeIs('legal.consent','legal.accept','logout')) {
-            return $next($request);
-        }
-
-        // remember where they were going
-        $request->session()->put('tos.intended', url()->full());
-
-        return redirect()->route('legal.consent');
+        return redirect()
+            ->route('login')
+            ->with('status', 'You must accept the Terms & Conditions to use LumiCHAT.');
     }
 }
