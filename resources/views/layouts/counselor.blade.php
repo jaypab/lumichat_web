@@ -14,12 +14,36 @@
 
   <style>
     :root{
+      --z-modal: 1100;     /* panel */
+      --z-backdrop: 1099;  /* backdrop */
       --rail-expanded: 18rem;
       --rail-collapsed: 84px;
       --header-h: 56px;
       --sidebar-grad-a: #4f46e5;
       --sidebar-grad-b: #7c3aed;
     }
+
+    /* Use on the modal root container */
+    .modal-zp{ position: fixed; inset: 0; z-index: var(--z-modal); }
+
+    /* Backdrop: dark tint + blur */
+    .modal-zp .modal-backdrop{
+      position: absolute; inset: 0;
+      background: rgba(2, 6, 23, 0.60); /* slate-950 with alpha */
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px); /* Safari */
+      z-index: var(--z-backdrop);
+    }
+
+    /* Panel should stack above the backdrop */
+    .modal-zp .modal-panel{ position: relative; z-index: calc(var(--z-modal) + 1); }
+
+    /* Optional: stronger blur for “glass” modals */
+    .modal-zp .modal-backdrop--lg{
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+    
     body.no-scroll { overflow: hidden; }
     html,body{height:100%}
     body{overflow-x:hidden;-webkit-tap-highlight-color:transparent}

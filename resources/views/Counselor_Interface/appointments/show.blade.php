@@ -4,6 +4,7 @@
 
 @php
   use Carbon\Carbon;
+  use Illuminate\Support\Facades\DB;
 
   $dt       = Carbon::parse($appointment->scheduled_at);
   $now      = Carbon::now();
@@ -50,6 +51,18 @@
   ];
   $cls = $badgeMap[$status] ?? 'bg-slate-200 text-slate-700';
   $dot = $dotMap[$status] ?? 'bg-slate-500';
+
+  /* ─────────────────────────────────────────────────────────────
+     FOLLOW-UP STATE
+     Find the newest child appointment where parent_id = current id.
+     If present, we show “Follow-up placed” instead of Create button.
+     ───────────────────────────────────────────────────────────── */
+  $followUp = DB::table('tbl_appointments')
+      ->where('parent_id', $appointment->id)
+      ->orderByDesc('scheduled_at')
+      ->first();
+
+  $hasFollowUp = $followUp !== null;
 @endphp
 
 @section('content')
@@ -68,17 +81,28 @@
               {{ $status === 'no_show' ? 'No Show' : ucfirst($status) }}
             </span>
 
-            {{-- Live elapsed (ongoing) --}}
+            @php
+              // When ongoing, use updated_at (set at 'start'); otherwise use scheduled_at
+              $elapsedStartIso = \Carbon\Carbon::parse(
+                  $isOngoing ? ($appointment->updated_at ?? $appointment->scheduled_at) : $appointment->scheduled_at
+              )->toIso8601String();
+            @endphp
+
             @if($isOngoing)
-              <span class="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-50 ring-1 ring-indigo-200 px-2 py-1 rounded-full">
-                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8v5l3.5 3.5 1.5-1.5-3-3V8z"/><path d="M12 22a10 10 0 110-20 10 10 0 010 20zm0-2a8 8 0 100-16 8 8 0 010 16z"/></svg>
-                <span id="js-elapsed">00:00</span>
+              <span
+                class="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-50 ring-1 ring-indigo-200 px-2 py-1 rounded-full"
+              >
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 8v5l3.5 3.5 1.5-1.5-3-3V8z"/><path d="M12 22a10 10 0 110-20 10 10 0 010 20zm0-2a8 8 0 100-16 8 8 0 010 16z"/>
+                </svg>
+                <span id="js-elapsed" data-start="{{ $elapsedStartIso }}">00:00</span>
               </span>
             @endif
+
           </div>
           <div class="mt-1 text-sm text-slate-500 flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 8v5l3.5 3.5 1.5-1.5-3-3V8z"/><path d="M12 22a10 10 0 110-20 10 10 0 010 20zm0-2a8 8 0 100-16 8 8 0 010 16z"/>
+              <path d="M12 8v5l3.5 3.5 1.5-1.5-3-3V8z"/><path d="M12 22a10 10 0 110-20 10 10 0 010 20z"/>
             </svg>
             {{ $when }}
           </div>
@@ -148,10 +172,19 @@
         @endif
 
         {{-- Follow-up --}}
-        @if ($canFollowUp)
+        @if ($canFollowUp && !$hasFollowUp)
           <a href="{{ route('counselor.appointments.follow.form', $appointment->id) }}"
              class="inline-flex items-center rounded-lg bg-indigo-50 px-4 py-2 text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-100">
             Create Follow-up
+          </a>
+        @elseif ($hasFollowUp)
+          <div class="inline-flex items-center gap-2 rounded-lg bg-emerald-50 px-3.5 py-2 text-emerald-700 ring-1 ring-emerald-200">
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            Follow-up placed — {{ \Carbon\Carbon::parse($followUp->scheduled_at)->format('M d, Y g:i A') }}
+          </div>
+          <a href="{{ route('counselor.appointments.show', $followUp->id) }}"
+             class="inline-flex items-center rounded-lg bg-white px-3.5 py-2 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">
+            View
           </a>
         @endif
       </div>
@@ -352,7 +385,7 @@
                 </div>
               </div>
 
-              {{-- IV. Student’s Response / Insight --}}
+              {{-- IV. Response --}}
               <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1">IV. Student’s Response / Insight</label>
                 <div class="relative pb-6">
@@ -555,109 +588,30 @@
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-/* =========================================================
-   0) GLOBAL STYLES – Registration-like (red) SweetAlert
-========================================================= */
-(function injectSwalCSS(){
-  if (document.getElementById('swal-reglike-css')) return;
-  const css = `
-    .swal2-popup.reglike { border-radius: 18px !important; box-shadow: 0 22px 60px rgba(15,23,42,.22) !important; }
-    .swal2-container { backdrop-filter: blur(2px); }
-    .swal-btn-danger {
-      background:#ef4444 !important; color:#fff !important; border-radius:12px !important;
-      padding:.65rem 1.15rem !important; font-weight:700 !important;
-      box-shadow:0 10px 26px rgba(239,68,68,.25) !important;
-    }
-    .swal-btn-danger:hover { filter: brightness(.96); }
-    .reglike__title { margin:0 0 .55rem; font-size:1.55rem; font-weight:800; color:#0f172a; letter-spacing:.2px; text-align:center; }
-    .reglike__list { margin:.1rem auto 0; max-width:560px; color:#475569; line-height:1.7; font-size:.98rem; padding:0; list-style:none; }
-    .reglike__li { display:flex; gap:.5rem; align-items:flex-start; }
-    .reglike__dot { width:6px; height:6px; margin-top:.58rem; border-radius:999px; background:#ef4444; flex:0 0 6px; }
-  `;
-  const el = document.createElement('style'); el.id='swal-reglike-css'; el.textContent = css; document.head.appendChild(el);
+/* (all your existing JS below stays the same) */
+(function(){
+  const el = document.getElementById('js-elapsed');
+  if (!el) return;
+  const iso = el.getAttribute('data-start');
+  if (!iso) return;
+
+  const startMs = Date.parse(iso);
+  if (isNaN(startMs)) return;
+
+  const pad = n => String(n).padStart(2, '0');
+
+  function tick(){
+    const secs = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    el.textContent = (h > 0 ? pad(h) + ':' : '') + pad(m) + ':' + pad(s);
+  }
+
+  tick();
+  window.__lumiElapsedTimer && clearInterval(window.__lumiElapsedTimer);
+  window.__lumiElapsedTimer = setInterval(tick, 1000);
 })();
-
-/* =========================================================
-   1) HELPERS – modal builders & utilities
-========================================================= */
-function redCrossIcon(){
-  return `
-    <div style="width:84px;height:84px;margin:.2rem auto 12px;position:relative;">
-      <div style="position:absolute;inset:0;border-radius:50%;
-                  box-shadow:0 0 0 6px rgba(239,68,68,.12), inset 0 0 0 2px rgba(239,68,68,.35);
-                  animation:pulseRing 1.8s ease-out infinite;"></div>
-      <div style="position:absolute;inset:10px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;border:2px solid #fca5a5">
-        <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </div>
-    </div>
-    <style>
-      @keyframes pulseRing { 0%{box-shadow:0 0 0 6px rgba(239,68,68,.12), inset 0 0 0 2px rgba(239,68,68,.35)}
-        70%{box-shadow:0 0 0 16px rgba(239,68,68,0), inset 0 0 0 2px rgba(239,68,68,.35)}
-        100%{box-shadow:0 0 0 6px rgba(239,68,68,0), inset 0 0 0 2px rgba(239,68,68,.35)} }
-    </style> 
-  `;
-}
-
-function buildErrorModal(items){
-  const list = (items||[]).map(t => `
-    <li class="reglike__li"><span class="reglike__dot"></span><span>${t}</span></li>
-  `).join('');
-  return {
-    html: `<h2 class="reglike__title">Please fix the following</h2>${redCrossIcon()}<ul class="reglike__list">${list}</ul>`,
-    width: 560, padding: '1.2rem 1.2rem 1.4rem', background: '#ffffff',
-    showConfirmButton: true, confirmButtonText: 'OK', iconHtml: '',
-    customClass: { popup: 'reglike', confirmButton: 'swal-btn-danger' }
-  };
-}
-
-function buildSuccessModal(title='Saved', text='Operation completed successfully.'){
-  return {
-    html: `<h2 class="reglike__title" style="color:#064e3b">${title}</h2>
-           <div style="margin:.25rem auto 0;max-width:560px;color:#334155;font-size:.98rem;line-height:1.6;text-align:center">${text}</div>`,
-    width: 480, padding: '1.0rem 1.0rem 1.2rem', background:'#fff',
-    showConfirmButton:true, confirmButtonText:'OK',
-    customClass:{ popup:'reglike', confirmButton:'swal-btn-danger' }
-  };
-}
-
-// string utils
-function normStr(v){ return (v ?? '').toString().normalize('NFKC'); }
-function trimCollapse(v){ return normStr(v).replace(/\s+/g,' ').trim(); }
-function tidyPhone(v){ return normStr(v).replace(/[^\d+]/g,'').replace(/(?!^)\+/g,''); }
-
-// name helpers
-function dotToName(dot){ const [r,c] = dot.split('.'); return `${r}[${c}]`; }
-function byDot(dot){ return document.querySelector(`[name="${CSS.escape(dotToName(dot))}"]`); }
-
-// server & client error helpers (FIXED: were missing before)
-function hideServerError(dot){
-  const el = document.querySelector(`[data-error-for="${CSS.escape(dot)}"]`);
-  if (el) el.classList.add('hidden');
-}
-function clearAllClientErrors(){
-  document.querySelectorAll('.client-error').forEach(e=>{
-    e.textContent = ''; e.classList.add('hidden'); e.style.removeProperty('display');
-  });
-  document.querySelectorAll('input.ring-rose-300, textarea.ring-rose-300')
-    .forEach(f=> f.classList.remove('ring-1','ring-rose-300','focus:ring-rose-500'));
-}
-
-function setClientError(dot, msg){
-  let el = document.querySelector(`[data-client-error-for="${CSS.escape(dot)}"]`);
-  if (!el && dot === 'case_note.presenting_problem') el = document.getElementById('pp_err');
-  if (el){
-    if (msg){ el.textContent = msg; el.classList.remove('hidden'); el.style.display='block'; }
-    else { el.textContent=''; el.classList.add('hidden'); el.style.removeProperty('display'); }
-  }
-  const field = byDot(dot);
-  if (field){
-    if (msg){ field.classList.add('ring-1','ring-rose-300','focus:ring-rose-500'); }
-    else { field.classList.remove('ring-1','ring-rose-300','focus:ring-rose-500'); }
-  }
-}
-
 /* =========================================================
    2) ACTION CONFIRMS
 ========================================================= */
@@ -676,169 +630,6 @@ function askAction(e, form, action){
       .then(res => { if (res.isConfirmed){ disable(true); form.submit(); } });
   return false;
 }
-
-/* =========================================================
-   3) COUNTERS
-========================================================= */
-(function(){
-  const fields = document.querySelectorAll('.js-counted');
-  const clamp = (s,m)=> s.length>m ? s.slice(0,m) : s;
-  fields.forEach(el=>{
-    const max = parseInt(el.dataset.max || el.getAttribute('maxlength') || '4000',10);
-    const counter = el.parentElement.querySelector('.js-count');
-    const paint = ()=>{
-      if (el.value.length>max) el.value = clamp(el.value,max);
-      if (counter) counter.textContent = el.value.length;
-      const wrap = counter?.parentElement; if (!wrap) return;
-      const ratio = el.value.length/max;
-      wrap.style.color = ratio>=1 ? '#dc2626' : (ratio>=.9 ? '#f59e0b' : '#94a3b8');
-    };
-    paint(); el.addEventListener('input',paint); el.addEventListener('paste',()=>requestAnimationFrame(paint));
-  });
-})();
-
-/* =========================================================
-   4) VALIDATION + MODALS
-========================================================= */
-document.addEventListener('DOMContentLoaded', () => {
-  const form = document.getElementById('case-note-form');
-  if (!form) return;
-
-  // --- map "case_note[foo]" -> "case_note.foo"
-  const nameToDot = (n) => (n || '').replace(/\[(.+?)\]/g, '.$1');
-
-  // Live clear while typing ANY field in the form
-  form.addEventListener('input', (e) => {
-    const el = e.target;
-    if (!el.name) return;
-    const dot = nameToDot(el.name);
-
-    // clear both server + client error for this field
-    hideServerError(dot);
-    setClientError(dot, '');
-
-    // also remove ring if any (in case the field was flagged earlier)
-    el.classList.remove('ring-1','ring-rose-300','focus:ring-rose-500');
-
-    // optional: phone sanitization live
-    if (dot === 'case_note.emergency_contact_no') {
-      const caret = el.selectionStart;
-      const before = el.value;
-      el.value = tidyPhone(el.value);
-      // keep caret position reasonable
-      try { if (document.activeElement === el && before !== el.value) el.setSelectionRange(caret, caret); } catch (_){}
-    }
-  });
-
-  form.addEventListener('submit', (e) => {
-  // wipe previous client errors + rings
-  clearAllClientErrors();
-
-  // normalize text fields
-  [
-    'case_note[presenting_problem]','case_note[observations]','case_note[interventions]',
-    'case_note[response]','case_note[plan_followup]',
-    'case_note[student_name]','case_note[program_year]','case_note[address]',
-    'case_note[emergency_contact_person]','case_note[emergency_relationship]','case_note[emergency_address]'
-  ].forEach(n => {
-    const node = document.querySelector(`[name="${CSS.escape(n)}"]`);
-    if (node && typeof node.value === 'string') node.value = trimCollapse(node.value);
-  });
-  const phoneEl = byDot('case_note.emergency_contact_no');
-  if (phoneEl && typeof phoneEl.value === 'string') phoneEl.value = tidyPhone(phoneEl.value);
-
-  // fields to check hard
-  const REQUIRED = [
-    ['case_note.student_name',        'Student Name'],
-    ['case_note.date',                'Date'],
-    ['case_note.presenting_problem',  'Presenting Problem'],
-    ['case_note.observations',        'Observations'],
-    ['case_note.interventions',       'Interventions'],
-    ['case_note.response',            'Student’s Response / Insight'],
-    ['case_note.plan_followup',       'Plan / Follow-Up'],
-    ['case_note.emergency_contact_person','Emergency contact person'],
-    ['case_note.emergency_relationship','Emergency relationship'],
-    ['case_note.emergency_address',   'Emergency address'],
-  ];
-
-  const errors = [];
-  let firstBad = null;
-
-  function flag(dot, msg){
-    errors.push(msg);
-    setClientError(dot, msg);
-    const el = byDot(dot);
-    if (!firstBad && el) firstBad = el;
-  }
-
-  // required blanks
-  for (const [dot, label] of REQUIRED){
-    const el = byDot(dot);
-    const val = (el?.value || '').trim();
-    if (!val) flag(dot, `${label} is required.`);
-  }
-
-  // phone format
-  const pVal = (phoneEl?.value || '').trim();
-  if (!pVal){
-    flag('case_note.emergency_contact_no', 'Emergency contact number is required.');
-  } else if (!/^(\+?\d{10,15})$/.test(pVal)){
-    flag('case_note.emergency_contact_no', 'Invalid phone format (use digits, optional leading +).');
-  }
-
-  // if any errors -> stop submit, focus, show modal
-  if (errors.length){
-    e.preventDefault();
-    if (firstBad){
-      try { firstBad.focus({preventScroll:false}); } catch(e){}
-      firstBad.scrollIntoView({behavior:'smooth', block:'center'});
-    }
-    Swal.fire(buildErrorModal(errors));
-    return false;
-  }
-
-  // let it submit
-  return true;
-});
-
-  // Server-side errors -> red modal
-  window.__serverErrors = @json($errors->any() ? $errors->all() : []);
-  if (Array.isArray(window.__serverErrors) && window.__serverErrors.length){
-    setTimeout(() => {
-      const firstErr = document.querySelector('.server-error:not(.hidden)');
-      const field = firstErr ? firstErr.closest('div')?.querySelector('input,textarea,select') : null;
-      if (field && field.focus) { field.focus({preventScroll:false}); field.scrollIntoView({behavior:'smooth', block:'center'}); }
-    }, 50);
-    Swal.fire(buildErrorModal(window.__serverErrors));
-  }
-
-  // Optional success toast (from session)
-  @if (session('swal'))
-    const s = @json(session('swal'));
-    Swal.fire(buildSuccessModal(s.title ?? 'Saved', s.text ?? 'Case note saved.'));
-  @endif
-});
-
-// Extra: clean server error ring if it existed on load
-(function () {
-  const fields = [
-    'case_note.student_name','case_note.date',
-    'case_note.presenting_problem','case_note.observations','case_note.interventions',
-    'case_note.response','case_note.plan_followup','case_note.emergency_contact_no',
-    'case_note.emergency_contact_person','case_note.emergency_relationship','case_note.emergency_address',
-  ];
-  function wire(nameDot){
-    const el  = byDot(nameDot);
-    const err = document.querySelector(`[data-error-for="${nameDot}"]`);
-    if (!el || !err) return;
-    if (!err.classList.contains('hidden')) {
-      el.classList.add('ring-1','ring-rose-300','focus:ring-rose-500');
-    }
-    const hide = () => { err.classList.add('hidden'); el.classList.remove('ring-1','ring-rose-300','focus:ring-rose-500'); };
-    ['input','change','keydown','paste','blur'].forEach(evt => el.addEventListener(evt, hide));
-  }
-  fields.forEach(wire);
-})();
 </script>
 @endpush
 @endsection

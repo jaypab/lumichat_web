@@ -486,7 +486,8 @@ class AppointmentController extends Controller
 
     public function status(Request $request, int $id)
     {
-        $cid = $this->myCounselorId(); abort_unless($cid, 404);
+        $cid = $this->myCounselorId();
+        abort_unless($cid, 404);
 
         $appt = DB::table('tbl_appointments')
             ->where('id', $id)
@@ -495,59 +496,219 @@ class AppointmentController extends Controller
         abort_unless($appt, 404);
 
         $now      = now();
-        $startAt  = \Carbon\Carbon::parse($appt->scheduled_at);
-        $graceMin = 10; // optional: allow starting a few minutes early
+        $startAt  = Carbon::parse($appt->scheduled_at);
+        $graceMin = 10;
 
-        switch ($action) {
-            case 'confirm':
-                if ($appt->status === 'pending') {
-                    DB::table('tbl_appointments')->where('id', $id)->update([
-                        'status' => 'confirmed',
-                        'updated_at' => $now,
-                    ]);
-                    return back()->with('swal', [
-                        'icon'=>'success','title'=>'Confirmed','text'=>'The appointment is now confirmed.'
-                    ]);
-                }
-                break;
-
-            case 'start':
-                // allow start when status is confirmed and current time is >= start - grace
-                if ($appt->status === 'confirmed' && $now->gte($startAt->copy()->subMinutes($graceMin))) {
-                    DB::table('tbl_appointments')->where('id', $id)->update([
-                        'status' => 'ongoing',
-                        'updated_at' => $now,
-                    ]);
-                    return back()->with('swal', [
-                        'icon'=>'info','title'=>'Session Started','text'=>'Status set to Ongoing.'
-                    ]);
-                }
-                return back()->with('swal', [
-                    'icon'=>'warning','title'=>'Too early','text'=>"You can start within {$graceMin} minutes of the scheduled time."
-                ]);
-
-            case 'done':
-                // allow completing from confirmed (if started) or ongoing
-                $allowed = in_array($appt->status, ['ongoing','confirmed'], true);
-                if ($allowed && $now->gte($startAt)) {
-                    DB::table('tbl_appointments')->where('id', $id)->update([
-                        'status' => 'completed',
-                        'updated_at' => $now,
-                    ]);
-                    return back()->with('swal', [
-                        'icon'=>'success','title'=>'Completed','text'=>'Session marked as done.'
-                    ]);
-                }
-                return back()->with('swal', [
-                    'icon'=>'info','title'=>'Not yet','text'=>'You can only mark as done after start time.'
-                ]);
-
-            // You likely already handle no_show in a dedicated method, keeping as-is.
+        // ✅ FIX: read the action from the request
+        $action  = (string) $request->input('action', '');
+        $allowed = ['confirm', 'start', 'done', 'no_show'];
+        if (!in_array($action, $allowed, true)) {
+            return back()->withErrors('Unknown action.')->withInput();
         }
 
-        return back()->with('swal', [
-            'icon'=>'info','title'=>'No change','text'=>'Nothing to update for this status.'
-        ]);
+        // Normalize current status
+        $status = strtolower((string) $appt->status);
+
+        // Guard rails per action
+        if ($action === 'confirm') {
+            if ($status !== 'pending') {
+                return back()->withErrors('Only pending appointments can be confirmed.');
+            }
+            DB::table('tbl_appointments')->where('id', $id)->update([
+                'status'     => 'confirmed',
+                'updated_at' => $now,
+            ]);
+            return back()->with('swal', ['title' => 'Confirmed', 'text' => 'Appointment confirmed.']);
+        }
+
+        if ($action === 'start') {
+            if ($status !== 'confirmed') {
+                return back()->withErrors('Only confirmed appointments can be started.');
+            }
+            if ($now->lt($startAt->copy()->subMinutes($graceMin))) {
+                return back()->withErrors("You can start within {$graceMin} minutes before the scheduled time.");
+            }
+            DB::table('tbl_appointments')->where('id', $id)->update([
+                'status'     => 'ongoing',
+                // 'started_at' => $now,   // ❌ remove (column doesn't exist)
+                'updated_at' => $now,
+            ]);
+            return back()->with('swal', ['title' => 'Session started', 'text' => 'Status set to Ongoing.']);
+        }
+
+        if ($action === 'done') {
+            if (!in_array($status, ['confirmed', 'ongoing'], true)) {
+                return back()->withErrors('Only confirmed/ongoing appointments can be ended.');
+            }
+            if ($now->lt($startAt)) {
+                return back()->withErrors('You can only end after the scheduled start time.');
+            }
+            DB::table('tbl_appointments')->where('id', $id)->update([
+                'status'     => 'completed',
+                // 'ended_at'   => $now,   // ❌ remove
+                'updated_at' => $now,
+            ]);
+            return back()->with('swal', ['title' => 'Completed', 'text' => 'Appointment marked as Completed.']);
+        }
+
+        if ($action === 'no_show') {
+            if (!in_array($status, ['pending', 'confirmed'], true)) {
+                return back()->withErrors('Only pending/confirmed can be marked No-Show.');
+            }
+            DB::table('tbl_appointments')->where('id', $id)->update([
+                'status'     => 'no_show',
+                'updated_at' => $now,
+            ]);
+            return back()->with('swal', ['title' => 'Marked No-Show', 'text' => 'Student marked as No-Show.']);
+        }
+
+        // Fallback (shouldn’t hit)
+        return back();
     }
+    
+   public function followUpSlots(Request $request, \App\Models\Appointment $appointment)
+    {
+        $cid = $this->myCounselorId();
+
+        // Keep UI happy: never 404—return reasons.
+        if (!$cid) {
+            return response()->json(['reason' => 'not_counselor']);
+        }
+        if ((int)$appointment->counselor_id !== (int)$cid) {
+            return response()->json(['reason' => 'not_owner']);
+        }
+
+        $date = (string) $request->query('date', '');
+        if ($date === '') {
+            return response()->json(['reason' => 'no_date']);
+        }
+
+        try {
+            $day = \Carbon\Carbon::parse($date)->startOfDay();
+        } catch (\Throwable $e) {
+            return response()->json(['reason' => 'bad_date']);
+        }
+
+        if ($day->isPast())    return response()->json(['reason' => 'past']);
+        // Use ISO weekday: 1=Mon ... 7=Sun (match student side + your data)
+        $isoDow = (int) $day->isoWeekday();
+        if ($isoDow < 1 || $isoDow > 5) return response()->json(['reason' => 'weekend']);
+
+        // Accepting flag: align with student controller
+        $accepting = \Illuminate\Support\Facades\DB::table('tbl_counselors')
+            ->where('id', $cid)
+            ->value('is_accepting_appointments');
+        if ((string)$accepting === '0') {
+            return response()->json(['reason' => 'disabled', 'blocked' => true]);
+        }
+
+        // Get availability rows (date-specific overrides recurring)
+        $ranges = $this->rangesForCounselorOnDateIso($cid, $day);
+        if ($ranges->isEmpty()) {
+            return response()->json(['reason' => 'no_availability']);
+        }
+
+        // Build slots inside AVAILABLE ranges; BLOCKED overrides.
+        $slotMinutes = (int) self::STEP_MINUTES; // 60
+        $slots = [];
+        foreach ($ranges as $r) {
+            if (($r->slot_type ?? 'available') !== 'available') continue;
+            if (!is_string($r->start_time) || !is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') continue;
+
+            $start = \Carbon\Carbon::parse($date.' '.$r->start_time)->second(0);
+            $end   = \Carbon\Carbon::parse($date.' '.$r->end_time)->second(0);
+
+            for ($t = $start->copy(); $t->lt($end); $t->addMinutes($slotMinutes)) {
+                $tEnd = $t->copy()->addMinutes($slotMinutes);
+
+                // skip past times if same day
+                if ($day->isToday() && $t->lte(now())) continue;
+
+                // respect blocks
+                if (!$this->slotAllowedForCounselorIso($cid, $t, $tEnd, $day)) continue;
+
+                $hhmm = $t->format('H:i');
+
+                // Busy check: counselor has appt at exact start with active statuses
+                $taken = DB::table('tbl_appointments')
+                    ->where('counselor_id', $cid)
+                    ->whereDate('scheduled_at', $day->toDateString())
+                    ->whereTime('scheduled_at', $hhmm.':00')
+                    ->whereIn('status', ['pending','confirmed','ongoing'])
+                    ->exists();
+
+                $slots[] = [
+                    'label'     => $t->format('g:i A'),
+                    'value'     => $hhmm,
+                    'available' => $taken ? 0 : 1,
+                ];
+            }
+        }
+
+        if (!$slots) return response()->json(['reason' => 'no_slots']);
+
+        // If everything is taken
+        $open = collect($slots)->sum(fn($s) => $s['available'] ? 1 : 0);
+        if ($open === 0) return response()->json(['reason' => 'fully_booked']);
+
+        // Unique + sorted
+        $slots = collect($slots)->unique('value')->sortBy('value')->values()->all();
+
+        return response()->json(['slots' => $slots]);
+    }
+
+    /**
+     * Counselor availability rows for a date:
+     * - Prefer date-specific rows; else fallback to recurring by ISO weekday (1..7).
+     * - Reads start_time, end_time, slot_type ('available'|'blocked').
+     */
+    private function rangesForCounselorOnDateIso(int $cid, \Carbon\Carbon $date): \Illuminate\Support\Collection
+    {
+        $isoDow = $date->isoWeekday(); // 1..7
+
+        $dated = DB::table('tbl_counselor_availabilities')
+            ->where('counselor_id', $cid)
+            ->whereDate('date', $date->toDateString())
+            ->orderBy('start_time')
+            ->get(['start_time','end_time','slot_type']);
+
+        if ($dated->count() > 0) return $dated;
+
+        return DB::table('tbl_counselor_availabilities')
+            ->where('counselor_id', $cid)
+            ->whereNull('date')
+            ->where('weekday', $isoDow) // 🔑 ISO alignment
+            ->orderBy('start_time')
+            ->get(['start_time','end_time','slot_type']);
+    }
+
+    /**
+     * True if the slot is within ANY 'available' range AND NOT in ANY 'blocked' range
+     * after date-specific override. (Matches student side behavior.)
+     */
+    private function slotAllowedForCounselorIso(int $cid, \Carbon\Carbon $slotStart, \Carbon\Carbon $slotEnd, \Carbon\Carbon $date): bool
+    {
+        $rows = $this->rangesForCounselorOnDateIso($cid, $date);
+
+        $insideAvailable = false;
+        foreach ($rows as $r) {
+            if (!is_string($r->start_time) || !is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') continue;
+
+            $st = \Carbon\Carbon::parse($date->toDateString().' '.$r->start_time);
+            $en = \Carbon\Carbon::parse($date->toDateString().' '.$r->end_time);
+
+            $inside = $slotStart->gte($st) && $slotEnd->lte($en);
+            if (!$inside) continue;
+
+            if (($r->slot_type ?? 'available') === 'blocked') {
+                return false; // any block wins
+            }
+            if (($r->slot_type ?? 'available') === 'available') {
+                $insideAvailable = true;
+            }
+        }
+        return $insideAvailable;
+    }
+
 
 }
