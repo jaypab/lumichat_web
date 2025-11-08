@@ -167,45 +167,34 @@ class ChatController extends Controller
         // Intentionally blank in this version
     }
 
-private function wantsAppointment(string $text): bool
+    private function wantsAppointment(string $text): bool
 {
     $t = mb_strtolower($text);
 
-    // 1) Ultra-short, action-only intents (e.g., "book", "i want to book", "book appointment")
-    //    Keep this first so the fast-lane trips immediately on brief booking asks.
-    if (preg_match('/\b(book|booking|schedule|appointment|appt)\b/iu', $t)) {
-        // very short messages like "book", "i want to book", "book appointment"
-        if (str_word_count($t) <= 6) return true;
-
-        // polite/intent phrasing with action anywhere
-        if (preg_match('/\b(i\s+(?:want|need|like)|pls|please|can\s+i|pwede|palihug)\b/iu', $t)) {
-            return true;
-        }
-    }
-
-    // 2) Strong, explicit patterns (action near counselor)
+    // ===== Strong, explicit patterns (keep yours, cleaned) =====
     $strong = [
-        // ENG
+        // ENG: action near counselor
         '/\b(appoint(?:ment)?|schedule|book|booking|reserve|set\s*an?\s*appointment)\b[\s\S]{0,80}\b(counsel(?:or|ling)|therap(?:ist|y)|advisor)\b/iu',
         '/\b(counsel(?:or|ling)|therap(?:ist|y)|advisor)\b[\s\S]{0,80}\b(appoint(?:ment)?|schedule|book|booking|reserve|set\s*an?\s*appointment)\b/iu',
         '/\b(i\s+want|i\'?d\s+like|can\s+i|please)\b[\s\S]{0,40}\b(schedule|book|appointment)\b[\s\S]{0,40}\b(counsel(?:or|ling)|therap(?:ist|y)|advisor)\b/iu',
         '/\bsee\s+(?:a\s+)?counselor\b/iu',
 
-        // CEB
+        // CEB: booking a counselor
         '/\b(pa-?schedule|magpa-?iskedyul|mo-?book)\b[\s\S]{0,80}\b(counsel(?:or|ing)?|konselor|tambag|makig[- ]?istorya)\b/iu',
     ];
-    foreach ($strong as $r) {
-        if (preg_match($r, $t)) return true;
-    }
+    foreach ($strong as $r) if (preg_match($r, $t)) return true;
 
-    // 3) Soft: action + counselor anywhere in the same text
-    $hasAction    = (bool) preg_match('/\b(appoint(?:ment)?|schedule|book(?:ing)?|reserve|set\s*(?:an?|up)?\s*appointment|appt)\b/iu', $t);
-    $hasCounselor = (bool) preg_match('/\b(counsel(?:or|ling)|therap(?:ist|y)|advisor|konselor|tambag)\b/iu', $t);
+    // ===== Soft but still “counselor-context required” =====
+    // e.g. “Can I set an appointment?” followed by “with the counselor” on next message
+    // Here we only trigger if both sides (action + counselor) appear (anywhere) in the same text,
+    // not just "book" alone.
+    $hasAction     = (bool) preg_match('/\b(appoint(?:ment)?|schedule|book(?:ing)?|reserve|set\s*(?:an?|up)?\s*appointment)\b/iu', $t);
+    $hasCounselor  = (bool) preg_match('/\b(counsel(?:or|ling)|therap(?:ist|y)|advisor|konselor|tambag)\b/iu', $t);
+
     if ($hasAction && $hasCounselor) return true;
 
     return false;
 }
-
 
 
     /**
@@ -392,18 +381,6 @@ public function store(Request $request)
     $rawDisplay = (string) $request->input('display_text', '');
     $display = trim(preg_replace('/\s+/u', ' ', preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawDisplay) ?? ''));
 
-    // Map UI quick-reply labels to slash payloads (works even if frontend still sends plain text)
-$mapped = $this->mapQuickRepliesToPayload($display) ?: $this->mapQuickRepliesToPayload($text);
-if ($mapped) {
-    $text = $mapped; // send payload to Rasa
-}
-
-// Is this a slash-intent payload? (e.g., /show_coping_tips)
-$isPayload = str_starts_with($text, '/');
-
-// What to show in history: prefer display label if present; otherwise the raw text/payload
-$toStoreUserText = $display !== '' ? $display : $text;
-
     // prefer “human” text for heuristics
     $analysisText = $display !== '' ? $display : $text;
 
@@ -480,7 +457,7 @@ if ($msgRisk === 'high') {
                 'user_id'         => $userId,        // can be null; that’s OK
                 'chat_session_id' => $sessionId,
                 'sender'          => 'user',
-                'message'         => Crypt::encryptString($toStoreUserText),
+                'message'         => Crypt::encryptString($text),
                 'sent_at'         => now(),
             ]
         );
@@ -550,16 +527,10 @@ $userTurnCount = Chat::where('chat_session_id', $sessionId)->where('sender','use
 
 // Check if we should bypass any venting
 $askedForAppt = $this->wantsAppointment($analysisText) || $this->confirmedAfterOffer($analysisText, $sessionId);
-$bypass       = $this->shouldBypassVenting($analysisText, $selfThreat, $msgRisk, $askedForAppt) || $isPayload;
+$bypass       = $this->shouldBypassVenting($analysisText, $selfThreat, $msgRisk, $askedForAppt);
 
 // Post-Rasa vent cycle remaining?
 $postRemaining = $this->getPostRasaVentRemaining($sessionId);
-
-// If a payload is clicked, we always kill any vent loop to act immediately
-if ($isPayload) {
-    $this->clearPostRasaVent($sessionId);
-}
-
 
 /* =========================
  * FAST-LANE: direct booking
@@ -581,7 +552,8 @@ if ($askedForAppt && $msgRisk !== 'high') {
     $ctaHtml = '<a href="'.e($link).'">Book an appointment</a>';
 
     // Bilingual CTA (keeps your pickLanguageVariant + personalization)
-    $replyText = "You can book a time with a school counselor here: {APPOINTMENT_LINK}";
+    $replyText = "You can book a time with a school counselor here: {APPOINTMENT_LINK} / "
+               . "Pwede ka magpa-book sa school counselor dinhi: {APPOINTMENT_LINK}";
 
     // Personalization happens later, but we must inject the link now
     $replyText = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $replyText);
@@ -617,7 +589,10 @@ if ($askedForAppt && $msgRisk !== 'high') {
 
 // Initial vent applies only before we ever called Rasa AND no post-cycle in progress
 $initialVentActive = ($userTurnCount <= $this->ventTurns()) && ($postRemaining === 0);
-$inVentWindow = (!$bypass) && !$isPayload && ( $initialVentActive || $postRemaining > 0 );
+
+// If we’re not bypassing, we’re “in vent window” when either initial vent is active
+// or a post-Rasa vent cycle is currently running.
+$inVentWindow = (!$bypass) && ( $initialVentActive || $postRemaining > 0 );
 
 if ($inVentWindow) {
     // Determine stage number 1..N for prompt sequencing
@@ -974,7 +949,7 @@ private function empathicPrompt(string $first, array $labels, string $lang, int 
             $txt = "I hear you{MIRROR}. When did you start feeling this way, and what usually makes it better or worse? / Nadungog tika{MIRROR}. Kanus-a ni nagsugod, ug unsay kasagarang makapamaayo o makapalala?";
             break;
         default:
-            $txt = "That makes sense, {USER_FIRST}. Before I suggest anything, whats make you feel that way? / Nasabtan nako, {USER_FIRST}. Sa dili pa ko mo-sugyot, naa bay gamay nga butang nga gusto nimo mausab karong semanaha?";
+            $txt = "That makes sense, {USER_FIRST}. Before I suggest anything, is there one small thing you want to change this week? / Nasabtan nako, {USER_FIRST}. Sa dili pa ko mo-sugyot, naa bay gamay nga butang nga gusto nimo mausab karong semanaha?";
     }
 
     // Insert mirrors + name placeholders; language pick happens later by pickLanguageVariant()
@@ -1010,28 +985,6 @@ private function decPostRasaVent(int $sessionId): void {
 }
 private function clearPostRasaVent(int $sessionId): void {
     session()->forget('post_rasa_vent_remaining_'.$sessionId);
-}
-/** Map common quick-reply display texts to Rasa payloads. */
-private function mapQuickRepliesToPayload(string $s): ?string
-{
-    $k = mb_strtolower(trim($s));
-    if ($k === '') return null;
-
-    // Normalize punctuation/extra spaces
-    $k = preg_replace('/[^\p{L}\p{N}\s]/u', '', $k);
-    $k = preg_replace('/\s+/', ' ', $k);
-
-    $map = [
-        'yes show tips'   => '/show_coping_tips',
-        'yes show me tips'=> '/show_coping_tips',
-        'show tips'       => '/show_coping_tips',
-        'coping tips'     => '/show_coping_tips',
-        'no thanks'       => '/deny',
-        'no thank you'    => '/deny',
-        'no'              => '/deny',
-    ];
-
-    return $map[$k] ?? null;
 }
 
 }
