@@ -167,34 +167,45 @@ class ChatController extends Controller
         // Intentionally blank in this version
     }
 
-    private function wantsAppointment(string $text): bool
+private function wantsAppointment(string $text): bool
 {
     $t = mb_strtolower($text);
 
-    // ===== Strong, explicit patterns (keep yours, cleaned) =====
+    // 1) Ultra-short, action-only intents (e.g., "book", "i want to book", "book appointment")
+    //    Keep this first so the fast-lane trips immediately on brief booking asks.
+    if (preg_match('/\b(book|booking|schedule|appointment|appt)\b/iu', $t)) {
+        // very short messages like "book", "i want to book", "book appointment"
+        if (str_word_count($t) <= 6) return true;
+
+        // polite/intent phrasing with action anywhere
+        if (preg_match('/\b(i\s+(?:want|need|like)|pls|please|can\s+i|pwede|palihug)\b/iu', $t)) {
+            return true;
+        }
+    }
+
+    // 2) Strong, explicit patterns (action near counselor)
     $strong = [
-        // ENG: action near counselor
+        // ENG
         '/\b(appoint(?:ment)?|schedule|book|booking|reserve|set\s*an?\s*appointment)\b[\s\S]{0,80}\b(counsel(?:or|ling)|therap(?:ist|y)|advisor)\b/iu',
         '/\b(counsel(?:or|ling)|therap(?:ist|y)|advisor)\b[\s\S]{0,80}\b(appoint(?:ment)?|schedule|book|booking|reserve|set\s*an?\s*appointment)\b/iu',
         '/\b(i\s+want|i\'?d\s+like|can\s+i|please)\b[\s\S]{0,40}\b(schedule|book|appointment)\b[\s\S]{0,40}\b(counsel(?:or|ling)|therap(?:ist|y)|advisor)\b/iu',
         '/\bsee\s+(?:a\s+)?counselor\b/iu',
 
-        // CEB: booking a counselor
+        // CEB
         '/\b(pa-?schedule|magpa-?iskedyul|mo-?book)\b[\s\S]{0,80}\b(counsel(?:or|ing)?|konselor|tambag|makig[- ]?istorya)\b/iu',
     ];
-    foreach ($strong as $r) if (preg_match($r, $t)) return true;
+    foreach ($strong as $r) {
+        if (preg_match($r, $t)) return true;
+    }
 
-    // ===== Soft but still “counselor-context required” =====
-    // e.g. “Can I set an appointment?” followed by “with the counselor” on next message
-    // Here we only trigger if both sides (action + counselor) appear (anywhere) in the same text,
-    // not just "book" alone.
-    $hasAction     = (bool) preg_match('/\b(appoint(?:ment)?|schedule|book(?:ing)?|reserve|set\s*(?:an?|up)?\s*appointment)\b/iu', $t);
-    $hasCounselor  = (bool) preg_match('/\b(counsel(?:or|ling)|therap(?:ist|y)|advisor|konselor|tambag)\b/iu', $t);
-
+    // 3) Soft: action + counselor anywhere in the same text
+    $hasAction    = (bool) preg_match('/\b(appoint(?:ment)?|schedule|book(?:ing)?|reserve|set\s*(?:an?|up)?\s*appointment|appt)\b/iu', $t);
+    $hasCounselor = (bool) preg_match('/\b(counsel(?:or|ling)|therap(?:ist|y)|advisor|konselor|tambag)\b/iu', $t);
     if ($hasAction && $hasCounselor) return true;
 
     return false;
 }
+
 
 
     /**
