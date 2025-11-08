@@ -563,8 +563,7 @@ if ($askedForAppt && $msgRisk !== 'high') {
     $ctaHtml = '<a href="'.e($link).'">Book an appointment</a>';
 
     // Bilingual CTA (keeps your pickLanguageVariant + personalization)
-    $replyText = "You can book a time with a school counselor here: {APPOINTMENT_LINK} / "
-               . "Pwede ka magpa-book sa school counselor dinhi: {APPOINTMENT_LINK}";
+    $replyText = "You can book a time with a school counselor here: {APPOINTMENT_LINK}";
 
     // Personalization happens later, but we must inject the link now
     $replyText = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $replyText);
