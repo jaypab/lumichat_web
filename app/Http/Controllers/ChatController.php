@@ -532,6 +532,61 @@ $bypass       = $this->shouldBypassVenting($analysisText, $selfThreat, $msgRisk,
 // Post-Rasa vent cycle remaining?
 $postRemaining = $this->getPostRasaVentRemaining($sessionId);
 
+/* =========================
+ * FAST-LANE: direct booking
+ * =========================
+ * If student explicitly wants to book and it's not a crisis,
+ * skip both venting and Rasa; reply with CTA and (optionally) redirect.
+ */
+if ($askedForAppt && $msgRisk !== 'high') {
+    // kill any vent loops
+    $this->clearPostRasaVent($sessionId);
+
+    // Build booking link (same logic you already use later)
+    $link = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
+        ? \Illuminate\Support\Facades\URL::signedRoute('features.enable_appointment')
+        : (\Illuminate\Support\Facades\Route::has('appointment.index')
+            ? route('appointment.index')
+            : url('/appointment'));
+
+    $ctaHtml = '<a href="'.e($link).'">Book an appointment</a>';
+
+    // Bilingual CTA (keeps your pickLanguageVariant + personalization)
+    $replyText = "You can book a time with a school counselor here: {APPOINTMENT_LINK} / "
+               . "Pwede ka magpa-book sa school counselor dinhi: {APPOINTMENT_LINK}";
+
+    // Personalization happens later, but we must inject the link now
+    $replyText = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $replyText);
+
+    // Save bot message
+    $bot = Chat::create([
+        'user_id'         => $userId,
+        'chat_session_id' => $sessionId,
+        'sender'          => 'bot',
+        'message'         => Crypt::encryptString($replyText),
+        'sent_at'         => now(),
+    ]);
+
+    // Optional: give the UI a direct open instruction (you can handle this on the frontend)
+    return response()->json([
+        'user_message' => [
+            'text'       => $text,
+            'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => now()->toIso8601String(),
+        ],
+        'bot_reply' => [[
+            'id'         => $bot->id,
+            'text'       => $replyText,
+            'buttons'    => [['title' => 'Open booking', 'url' => $link]],
+            'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => $bot->sent_at->toIso8601String(),
+        ]],
+        // Front-end fast action (implement in your JS if you want auto-redirect)
+        'redirect_to' => $link,
+        'time_human'  => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+    ]);
+}
+
 // Initial vent applies only before we ever called Rasa AND no post-cycle in progress
 $initialVentActive = ($userTurnCount <= $this->ventTurns()) && ($postRemaining === 0);
 
