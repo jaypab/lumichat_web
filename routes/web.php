@@ -13,7 +13,15 @@ use App\Http\Controllers\FeaturesController;
 use App\Http\Controllers\SelfAssessmentController;
 use App\Http\Controllers\AboutController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\LegalController;
 
+
+
+// Consent page + accept action
+Route::middleware('auth')->group(function () {
+    Route::get('/legal/consent', [LegalController::class, 'consent'])->name('legal.consent');
+    Route::post('/legal/accept',  [LegalController::class, 'accept'])->name('legal.accept');
+});
 /*
 |--------------------------------------------------------------------------
 | Web Routes (Student-facing)
@@ -65,7 +73,7 @@ Route::get('/rasa-health', function () {
 | Authenticated user area
 |--------------------------------------------------------------------------
 */
-Route::middleware('auth')->group(function () {
+Route::middleware('auth' , 'tos')->group(function () {
 
     /* ----------------------------- Chat ------------------------------ */
     Route::get('/chat',                 [ChatController::class, 'index'])->name('chat.index');
