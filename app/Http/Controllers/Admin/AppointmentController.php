@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use App\Models\User;
 use App\Notifications\SimpleDatabaseNotification;
-
+use App\Support\Notify;
 class AppointmentController extends Controller
 {
     // ==== Flash keys ====
@@ -244,17 +244,37 @@ public function index(Request $r): View
             ->where('id', $id)
             ->first();
 
-        if ($appt && $appt->status === 'completed') {
-            $updates = [
-                'risk_level' => null,
-                'updated_at' => now(),
-            ];
-            if (Schema::hasColumn((new ChatSession)->getTable(), 'risk_score')) {
-                $updates['risk_score'] = 0;
+        if ($appt) {
+            // 🔔 Per-status student notifications (in-app)
+            switch ($appt->status) {
+                case 'confirmed':
+                    Notify::student((int)$appt->student_id, 'Appointment confirmed', 'Your appointment has been confirmed.');
+                    break;
+                case 'completed':
+                    Notify::student((int)$appt->student_id, 'Appointment completed', 'Your appointment has been marked as completed.');
+                    break;
+                case 'no_show':
+                    Notify::student((int)$appt->student_id, 'Marked as no-show', 'The appointment was marked as no-show.');
+                    break;
+                case 'canceled':
+                    Notify::student((int)$appt->student_id, 'Appointment canceled', 'The appointment was canceled.');
+                    break;
+                // other statuses: no notification
             }
-            ChatSession::where('user_id', $appt->student_id)
-                ->whereRaw("LOWER(COALESCE(risk_level, '')) IN ('high','high-risk','high_risk')")
-                ->update($updates);
+
+            // ✅ Your existing risk reset stays intact and only runs for 'completed'
+            if ($appt->status === 'completed') {
+                $updates = [
+                    'risk_level' => null,
+                    'updated_at' => now(),
+                ];
+                if (Schema::hasColumn((new ChatSession)->getTable(), 'risk_score')) {
+                    $updates['risk_score'] = 0;
+                }
+                ChatSession::where('user_id', $appt->student_id)
+                    ->whereRaw("LOWER(COALESCE(risk_level, '')) IN ('high','high-risk','high_risk')")
+                    ->update($updates);
+            }
         }
 
         return back()->with(self::FLASH_SWAL, [
@@ -262,7 +282,7 @@ public function index(Request $r): View
             'title' => 'Updated',
             'text'  => 'Appointment status has been updated.',
         ]);
-    }
+}
 
     public function exportPdf(Request $request)
     {
@@ -514,43 +534,95 @@ public function index(Request $r): View
         return view('admin.appointments.assign', compact('appointment', 'counselors'));
     }
 
-    public function assign(Request $request, int $id): RedirectResponse
-    {
-        $data = $request->validate([
-            'counselor_id' => ['required', 'exists:tbl_counselors,id'],
+public function assign(Request $request, int $id): RedirectResponse
+{
+    $data = $request->validate([
+        'counselor_id' => ['required', 'exists:tbl_counselors,id'],
+    ]);
+
+    $ap = \DB::table('tbl_appointments')->where('id', $id)->first();
+    abort_unless($ap, 404);
+
+    if ($ap->status !== 'pending') {
+        return back()->with(self::FLASH_SWAL, [
+            'icon'  => 'warning',
+            'title' => 'Not allowed',
+            'text'  => 'Only pending appointments can be assigned.',
         ]);
+    }
 
-        $ap = \DB::table('tbl_appointments')->where('id', $id)->first();
-        abort_unless($ap, 404);
+    // Try assigning the counselor
+    $res = $this->appointments->assignCounselor($id, (int) $data['counselor_id']);
+    if (!$res['ok']) {
+        $map = [
+            'not_found'     => ['warning','Not found','Appointment not found.'],
+            'in_past'       => ['warning','Not allowed','Cannot assign in the past.'],
+            'not_available' => ['error','Counselor busy','Selected counselor is no longer free.'],
+            'race_taken'    => ['error','Just taken','That slot was taken moments ago.'],
+        ];
+        [$icon,$title,$text] = $map[$res['reason']] ?? ['error','Error','Unable to assign counselor.'];
+        return back()->with(self::FLASH_SWAL, compact('icon','title','text'));
+    }
 
-        if ($ap->status !== 'pending') {
-            return back()->with(self::FLASH_SWAL, [
-                'icon'  => 'warning',
-                'title' => 'Not allowed',
-                'text'  => 'Only pending appointments can be assigned.',
-            ]);
+    // Auto-confirm ONCE (keep your rule)
+    $this->appointments->updateStatusByAction($id, 'confirm');
+
+    // ─────────────────────────────────────────────────────────────
+    // In-app notifications (student + counselor) with deep links
+    // ─────────────────────────────────────────────────────────────
+    try {
+        $row = \DB::table('tbl_appointments as a')
+            ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
+            ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
+            ->where('a.id', $id)
+            ->select([
+                'a.id',
+                'a.scheduled_at',
+                's.id as student_id',
+                's.name as student_name',
+                's.email as student_email',
+                'c.id as counselor_id',
+                'c.name as counselor_name',
+                'c.email as counselor_email',
+            ])->first();
+
+        if ($row) {
+            $whenNice     = Carbon::parse($row->scheduled_at)->format('M d, Y g:i A');
+            $studentUrl   = route('appointment.view', $row->id);
+            $counselorUrl = \Illuminate\Support\Facades\Route::has('counselor.appointments.show')
+                ? route('counselor.appointments.show', $row->id)
+                : null;
+
+            // Student bell
+            \App\Support\Notify::student(
+                (int) $row->student_id,
+                'Appointment approved',
+                'Your appointment has been approved. Counselor: '.$row->counselor_name.' · '.$whenNice.'.',
+                $studentUrl
+            );
+
+            // Counselor bell (only if the Notify::counselor helper exists)
+            if ($row->counselor_id && method_exists(\App\Support\Notify::class, 'counselor')) {
+                \App\Support\Notify::counselor(
+                    (int) $row->counselor_id,
+                    'New appointment assigned',
+                    'Student: '.$row->student_name.' · '.$whenNice.'.',
+                    $counselorUrl
+                );
+            }
         }
+    } catch (\Throwable $e) {
+        \Log::warning('Admin assign: in-app notifications failed', [
+            'appointment_id' => $id,
+            'error' => $e->getMessage(),
+        ]);
+    }
 
-        $res = $this->appointments->assignCounselor($id, (int)$data['counselor_id']);
-        if (!$res['ok']) {
-            $map = [
-                'not_found'     => ['warning','Not found','Appointment not found.'],
-                'in_past'       => ['warning','Not allowed','Cannot assign in the past.'],
-                'not_available' => ['error','Counselor busy','Selected counselor is no longer free.'],
-                'race_taken'    => ['error','Just taken','That slot was taken moments ago.'],
-            ];
-            [$icon,$title,$text] = $map[$res['reason']] ?? ['error','Error','Unable to assign counselor.'];
-            return back()->with(self::FLASH_SWAL, compact('icon','title','text'));
-        }
-
-        // Auto-confirm after successful assign (optional business rule)
-        $this->appointments->updateStatusByAction($id, 'confirm');
-
-                /* ─────────────────────────────────────────────────────────────
-        EMAIL NOTICES (robust: try Mailables; fallback to plaintext)
-        ───────────────────────────────────────────────────────────── */
-        try {
-            // Re-fetch with joined names/emails (no model changes)
+    // ─────────────────────────────────────────────────────────────
+    // EMAIL NOTICES (try Mailables; fallback to plaintext)
+    // ─────────────────────────────────────────────────────────────
+    try {
+        if (!isset($row)) {
             $row = \DB::table('tbl_appointments as a')
                 ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
                 ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
@@ -565,84 +637,86 @@ public function index(Request $r): View
                     'c.name as counselor_name',
                     'c.email as counselor_email',
                 ])->first();
+        }
 
-            if ($row && $row->student_email && $row->counselor_email) {
-                $whenNice = \Carbon\Carbon::parse($row->scheduled_at)->format('M d, Y g:i A');
+        if ($row && $row->student_email && $row->counselor_email) {
+            $whenNice = \Carbon\Carbon::parse($row->scheduled_at)->format('M d, Y g:i A');
+            $sentViaMailable = false;
 
-                $sentViaMailable = false;
+            if (class_exists(\App\Mail\AppointmentAssignedStudent::class)
+                && class_exists(\App\Mail\AppointmentAssignedCounselor::class)) {
+                try {
+                    \Mail::to($row->student_email)->send(new \App\Mail\AppointmentAssignedStudent(
+                        appointmentId: $row->id,
+                        studentName:   (string) $row->student_name,
+                        counselorName: (string) $row->counselor_name,
+                        scheduledAt:   $row->scheduled_at,
+                        whenNice:      $whenNice
+                    ));
 
-                // Try Mailables if both classes exist AND their constructors accept our payload.
-                if (class_exists(\App\Mail\AppointmentAssignedStudent::class)
-                    && class_exists(\App\Mail\AppointmentAssignedCounselor::class)) {
+                    \Mail::to($row->counselor_email)->send(new \App\Mail\AppointmentAssignedCounselor(
+                        appointmentId: $row->id,
+                        studentName:   (string) $row->student_name,
+                        counselorName: (string) $row->counselor_name,
+                        scheduledAt:   $row->scheduled_at,
+                        whenNice:      $whenNice
+                    ));
 
-                    try {
-                        // Try named-args first
-                        Mail::to($row->student_email)->send(new \App\Mail\AppointmentAssignedStudent(
-                            appointmentId: $row->id,
-                            studentName:   (string) $row->student_name,
-                            counselorName: (string) $row->counselor_name,
-                            scheduledAt:   $row->scheduled_at,
-                            whenNice:      $whenNice
-                        ));
-
-                        Mail::to($row->counselor_email)->send(new \App\Mail\AppointmentAssignedCounselor(
-                            appointmentId: $row->id,
-                            studentName:   (string) $row->student_name,
-                            counselorName: (string) $row->counselor_name,
-                            scheduledAt:   $row->scheduled_at,
-                            whenNice:      $whenNice
-                        ));
-
-                        $sentViaMailable = true;
-                    } catch (\Throwable $mErr) {
-                        // Constructors likely have different signatures — log and fall back.
-                        \Log::warning('Mailable signature mismatch; falling back to plaintext', [
-                            'appointment_id' => $id,
-                            'error' => $mErr->getMessage(),
-                        ]);
-                    }
+                    $sentViaMailable = true;
+                } catch (\Throwable $mErr) {
+                    \Log::warning('Mailable signature mismatch; falling back to plaintext', [
+                        'appointment_id' => $id,
+                        'error' => $mErr->getMessage(),
+                    ]);
                 }
-
-                if (!$sentViaMailable) {
-                    // Plaintext fallback — guaranteed to work
-                    Mail::raw(
-                        "Hi {$row->student_name},\n\n".
-                        "Your appointment has been approved.\n\n".
-                        "Counselor: {$row->counselor_name}\n".
-                        "When: {$whenNice}\n\n".
-                        "If you didn’t request this, reply to this email.\n",
-                        function ($m) use ($row) {
-                            $m->to($row->student_email)->subject('LumiCHAT — Appointment Approved');
-                        }
-                    );
-
-                    Mail::raw(
-                        "New appointment assigned to you.\n\n".
-                        "Student: {$row->student_name}\n".
-                        "When: ".\Carbon\Carbon::parse($row->scheduled_at)->format('M d, Y g:i A')."\n\n".
-                        "Please prepare accordingly.\n",
-                        function ($m) use ($row) {
-                            $m->to($row->counselor_email)->subject('LumiCHAT — New Appointment Assigned');
-                        }
-                    );
-                }
-            } else {
-                \Log::warning('Email skipped: missing student/counselor email', [
-                    'appointment_id' => $id,
-                    'student_email' => $row->student_email ?? null,
-                    'counselor_email' => $row->counselor_email ?? null,
-                ]);
             }
-        } catch (\Throwable $e) {
-            // Don’t break the flow if email fails; just log it.
-            \Log::warning('Appointment assign email failed', [
-                'appointment_id' => $id,
-                'error'          => $e->getMessage(),
+
+            if (!$sentViaMailable) {
+                \Mail::raw(
+                    "Hi {$row->student_name},\n\n".
+                    "Your appointment has been approved.\n\n".
+                    "Counselor: {$row->counselor_name}\n".
+                    "When: {$whenNice}\n\n".
+                    "If you didn’t request this, reply to this email.\n",
+                    function ($m) use ($row) {
+                        $m->to($row->student_email)->subject('LumiCHAT — Appointment Approved');
+                    }
+                );
+
+                \Mail::raw(
+                    "New appointment assigned to you.\n\n".
+                    "Student: {$row->student_name}\n".
+                    "When: ".\Carbon\Carbon::parse($row->scheduled_at)->format('M d, Y g:i A')."\n\n".
+                    "Please prepare accordingly.\n",
+                    function ($m) use ($row) {
+                        $m->to($row->counselor_email)->subject('LumiCHAT — New Appointment Assigned');
+                    }
+                );
+            }
+        } else {
+            \Log::warning('Email skipped: missing student/counselor email', [
+                'appointment_id'  => $id,
+                'student_email'   => $row->student_email ?? null,
+                'counselor_email' => $row->counselor_email ?? null,
             ]);
         }
-        /* ───────────── end email notices ───────────── */
+    } catch (\Throwable $e) {
+        \Log::warning('Appointment assign email failed', [
+            'appointment_id' => $id,
+            'error'          => $e->getMessage(),
+        ]);
+    }
+    // ───────────── end email notices ─────────────
 
-        return redirect()
+    // Consistent date/time in the toast
+    $whenDate = isset($row)
+        ? Carbon::parse($row->scheduled_at)->format('M d, Y')
+        : Carbon::parse($ap->scheduled_at)->format('M d, Y');
+    $whenTime = isset($row)
+        ? \Carbon\Carbon::parse($row->scheduled_at)->format('g:i A')
+        : \Carbon\Carbon::parse($ap->scheduled_at)->format('g:i A');
+
+    return redirect()
         ->route('admin.appointments.show', $id)
         ->with(self::FLASH_SWAL, [
             'icon'  => 'success',
@@ -652,15 +726,18 @@ public function index(Request $r): View
                 <div><b>Date:</b> %s</div>
                 <div><b>Time:</b> %s</div>
                 <div style="margin-top:.35rem;color:#475569">
-                    Student and counselor have been notified via email.
+                    Student and counselor have been notified.
                 </div>
                 </div>',
-                e(\Carbon\Carbon::parse($ap->scheduled_at)->format('M d, Y')),
-                e(\Carbon\Carbon::parse($ap->scheduled_at)->format('g:i A'))
+                e($whenDate),
+                e($whenTime)
             ),
             'confirmButtonText' => 'OK',
         ]);
-    }
+}
+
+
+    
 
     /* ===================== Follow-up ===================== */
 
@@ -725,6 +802,30 @@ public function index(Request $r): View
         }
         return $dt;
     }
+
+/**
+ * Notify the student that a counselor has been assigned (or changed).
+ */
+    private function notifyStudentCounselorAssigned(int $appointmentId): void
+    {
+        $ap = DB::table('tbl_appointments')->where('id', $appointmentId)->first();
+        if (!$ap) return;
+
+        $counselor = $ap->counselor_id
+            ? DB::table('tbl_counselors')->where('id', $ap->counselor_id)->first()
+            : null;
+
+        $slot = $ap->scheduled_at ? Carbon::parse($ap->scheduled_at) : null;
+
+        $title = $counselor ? 'Counselor assigned' : 'Counselor changed';
+        $body  = trim(
+            ($counselor ? ('You have been assigned to ' . $counselor->name) : 'A counselor was assigned')
+            . ($slot ? (' on ' . $slot->format('M d, Y g:i A') . '.') : '.')
+        );
+
+        Notify::student((int)$ap->student_id, $title, $body);
+    }
+
 
     public function followUpStore(Request $request, int $id)
     {
@@ -813,6 +914,8 @@ public function index(Request $r): View
             throw $e;
         }
 
+
+        
         return redirect()
             ->route('admin.appointments.index')
             ->with(self::FLASH_SWAL, [

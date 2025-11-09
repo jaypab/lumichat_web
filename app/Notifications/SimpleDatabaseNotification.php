@@ -4,6 +4,7 @@ namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
+use Illuminate\Notifications\Messages\DatabaseMessage;
 
 class SimpleDatabaseNotification extends Notification
 {
@@ -12,7 +13,7 @@ class SimpleDatabaseNotification extends Notification
     public function __construct(
         public string $title,
         public string $body = '',
-        public ?string $url = null,   // ⬅️ optional deep-link
+        public ?string $url = null,
     ) {}
 
     public function via($notifiable): array
@@ -20,12 +21,12 @@ class SimpleDatabaseNotification extends Notification
         return ['database'];
     }
 
-    public function toArray($notifiable): array
+    public function toDatabase($notifiable): DatabaseMessage
     {
-        return [
+        return new DatabaseMessage([
             'title' => $this->title,
             'body'  => $this->body,
-            'url'   => $this->url,  // ⬅️ stored in notifications.data (JSON)
-        ];
+            'url'   => $this->url,
+        ]);
     }
 }

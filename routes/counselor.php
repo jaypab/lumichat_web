@@ -3,9 +3,8 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Counselor\CounselorDashboardController;
 use App\Http\Controllers\Counselor\CounselorAvailabilityController;
-use App\Http\Controllers\Counselor\HighriskReviewController;
 use App\Http\Controllers\Counselor\AppointmentController as CounselorAppointmentController;
-
+use App\Http\Controllers\NotificationController;
 Route::middleware(['auth','counselor'])
   ->prefix('counselor')
   ->name('counselor.')
@@ -37,11 +36,6 @@ Route::middleware(['auth','counselor'])
     Route::post('/appointments/{appointment}/follow-up',      [CounselorAppointmentController::class,'followUpStore'])->whereNumber('appointment')->name('appointments.follow.store');
     Route::get('/appointments/{appointment}/follow-up/slots', [CounselorAppointmentController::class,'followUpSlots'])->whereNumber('appointment')->name('appointments.follow.slots');
 
-    // High-risk review
-    Route::get('/highrisk',      [HighriskReviewController::class,'index'])->name('highrisk.index');
-    Route::get('/highrisk/{id}', [HighriskReviewController::class,'show'])->whereNumber('id')->name('highrisk.show');
-    Route::put('/highrisk/{id}', [HighriskReviewController::class,'update'])->whereNumber('id')->name('highrisk.update');
-
     // Appointments
     Route::get('/appointments',                 [CounselorAppointmentController::class,'index'])->name('appointments.index');
     Route::get('/appointments/{id}',            [CounselorAppointmentController::class,'show'])->whereNumber('id')->name('appointments.show');
@@ -52,6 +46,13 @@ Route::middleware(['auth','counselor'])
     Route::post('/appointments/{id}/case-note', [CounselorAppointmentController::class,'storeCaseNote'])->whereNumber('id')->name('appointments.case_note.store');
     Route::put('/appointments/{id}/case-note',  [CounselorAppointmentController::class,'storeCaseNote'])->whereNumber('id')->name('appointments.case_note.update');
     Route::get('/appointments/{id}/case-note/pdf', [CounselorAppointmentController::class,'caseNotePdf'])->whereNumber('id')->name('appointments.case_note.pdf');
+
+    Route::prefix('notifications')->as('notifications.')->group(function () {
+        Route::get('/', [NotificationController::class, 'index'])->name('index');
+        Route::get('/feed', [NotificationController::class, 'feed'])->name('feed');
+        Route::post('/mark/{id}', [NotificationController::class, 'mark'])->whereUuid('id')->name('mark');   // UUID, not numeric
+        Route::post('/mark-all', [NotificationController::class, 'markAll'])->name('mark_all');
+    });
 });
 
 // (Optional) public slots API you already had:

@@ -8,7 +8,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Collection;
 use Carbon\Carbon;
 use App\Notifications\SimpleDatabaseNotification;
-use App\Models\User; // ⬅️ add this
+use App\Models\User; 
+use App\Support\Notify;
 
 class AppointmentController extends Controller
 {
@@ -331,110 +332,125 @@ class AppointmentController extends Controller
         return response()->json(['slots'=>$slots]);
     }
 
-    /* --------------------------- Store booking -------------------------- */
-    public function store(Request $request)
-    {
-        $request->validate([
-            'date'    => ['required','date_format:Y-m-d'],
-            'time'    => ['required','regex:/^\d{2}:\d{2}$/'],
-            'consent' => ['accepted'],
-        ], [], ['date'=>'date', 'time'=>'time']);
+    /* --------------------------- Store booking -------------------------- */public function store(Request $request)
+{
+    $request->validate([
+        'date'    => ['required','date_format:Y-m-d'],
+        'time'    => ['required','regex:/^\d{2}:\d{2}$/'],
+        'consent' => ['accepted'],
+    ], [], ['date'=>'date', 'time'=>'time']);
 
-        $studentId = Auth::id();
+    $studentId = Auth::id();
 
-        // First, auto-sweep past actives to no_show so they won't block booking
-        $this->autoSweepNoShowsForStudent($studentId);
+    // First, auto-sweep past actives to no_show so they won't block booking
+    $this->autoSweepNoShowsForStudent($studentId);
 
-        $raw  = Carbon::parse($request->date.' '.$request->time.':00')->second(0);
-        $slot = $this->floorToSlot($raw);
+    $raw  = Carbon::parse($request->date.' '.$request->time.':00')->second(0);
+    $slot = $this->floorToSlot($raw);
 
-        if ($raw->ne($slot)) {
-            return back()->withErrors(['time'=>'Please choose a 60-minute step (e.g., 09:00, 10:00).'])->withInput();
-        }
-
-        $hasActiveAny = DB::table('tbl_appointments')
-            ->where('student_id', $studentId)
-            ->whereIn('status', self::STUDENT_ACTIVE_STATUSES)
-            ->exists();
-        if ($hasActiveAny) {
-            return back()->withErrors([
-                'error' => 'You already have a pending/confirmed appointment. Complete or cancel it before booking another.',
-            ])->withInput();
-        }
-
-        $dowIso = $slot->isoWeekday();
-        if ($dowIso < 1 || $dowIso > 5) {
-            return back()->withErrors(['date'=>'Appointments are available Monday to Friday only.'])->withInput();
-        }
-        if ($slot->lte(now())) {
-            return back()->withErrors(['time'=>'Please choose a future time.'])->withInput();
-        }
-
-        $hasSameDay = DB::table('tbl_appointments')
-            ->where('student_id', $studentId)
-            ->whereDate('scheduled_at', $slot->toDateString())
-            ->whereIn('status', self::BLOCKING_STATUSES)
-            ->exists();
-        if ($hasSameDay) {
-            return back()->withErrors(['date'=>'You already have an appointment on this date.'])->withInput();
-        }
-
-        try {
-            $newId = null;
-
-            DB::transaction(function () use ($studentId, $slot, &$newId) {
-                $remaining = $this->remainingCapacityAt($slot);
-                if ($remaining <= 0) {
-                    throw new \RuntimeException('FULL');
-                }
-
-                // get ID for deep link
-                $newId = DB::table('tbl_appointments')->insertGetId([
-                    'student_id'   => $studentId,
-                    'counselor_id' => null,
-                    'scheduled_at' => $slot,
-                    'status'       => 'pending',
-                    'created_at'   => now(),
-                    'updated_at'   => now(),
-                ]);
-            }, 3);
-
-            // 🔔 notify student (requested)
-            $this->notifyUser(
-                $studentId,
-                'Appointment requested',
-                'We received your booking for ' . $slot->format('M d, Y g:i A') . '. You’ll be notified when it’s approved.',
-                route('appointment.view', $newId)
-            );
-
-        } catch (\RuntimeException $e) {
-            if ($e->getMessage() === 'FULL') {
-                return back()->withInput()->with('swal', [
-                    'icon'  => 'info',
-                    'title' => 'Time slot unavailable',
-                    'text'  => 'That time just filled up. Please pick another slot.',
-                ]);
-            }
-            throw $e;
-        }
-
-        return redirect()
-            ->route('appointment.history')
-            ->with('swal', [
-                'icon'  => 'success',
-                'title' => 'Appointment booked!',
-                'html'  => sprintf(
-                    '<div style="text-align:left">
-                    <div><b>Date:</b> %s</div>
-                    <div><b>Time:</b> %s</div>
-                    <div style="margin-top:.25rem;color:#475569"><em>A counselor has not been assigned yet. You’ll be notified once an admin assigns one.</em></div>
-                    </div>',
-                    e($slot->format('M d, Y')),
-                    e($slot->format('g:i A'))
-                ),
-                'confirmButtonText' => 'OK',
-            ]);
+    if ($raw->ne($slot)) {
+        return back()->withErrors(['time'=>'Please choose a 60-minute step (e.g., 09:00, 10:00).'])->withInput();
     }
+
+    $hasActiveAny = DB::table('tbl_appointments')
+        ->where('student_id', $studentId)
+        ->whereIn('status', self::STUDENT_ACTIVE_STATUSES)
+        ->exists();
+    if ($hasActiveAny) {
+        return back()->withErrors([
+            'error' => 'You already have a pending/confirmed appointment. Complete or cancel it before booking another.',
+        ])->withInput();
+    }
+
+    $dowIso = $slot->isoWeekday();
+    if ($dowIso < 1 || $dowIso > 5) {
+        return back()->withErrors(['date'=>'Appointments are available Monday to Friday only.'])->withInput();
+    }
+    if ($slot->lte(now())) {
+        return back()->withErrors(['time'=>'Please choose a future time.'])->withInput();
+    }
+
+    $hasSameDay = DB::table('tbl_appointments')
+        ->where('student_id', $studentId)
+        ->whereDate('scheduled_at', $slot->toDateString())
+        ->whereIn('status', self::BLOCKING_STATUSES)
+        ->exists();
+    if ($hasSameDay) {
+        return back()->withErrors(['date'=>'You already have an appointment on this date.'])->withInput();
+    }
+
+    try {
+        $newId = null;
+
+        DB::transaction(function () use ($studentId, $slot, &$newId) {
+            $remaining = $this->remainingCapacityAt($slot);
+            if ($remaining <= 0) {
+                throw new \RuntimeException('FULL');
+            }
+
+            // get ID for deep link
+            $newId = DB::table('tbl_appointments')->insertGetId([
+                'student_id'   => $studentId,
+                'counselor_id' => null,
+                'scheduled_at' => $slot,
+                'status'       => 'pending',
+                'created_at'   => now(),
+                'updated_at'   => now(),
+            ]);
+        }, 3);
+
+        // 🔔 notify student (requested)
+        $this->notifyUser(
+            $studentId,
+            'Appointment requested',
+            'We received your booking for ' . $slot->format('M d, Y g:i A') . '. You’ll be notified when it’s approved.',
+            route('appointment.view', $newId)
+        );
+
+        // 🔔 Step A: notify all Admins that assignment is needed
+        try {
+            $whenNice = $slot->format('M d, Y g:i A');
+            // Keep it two-arg to avoid signature mismatches; include the id in the body
+            Notify::admins(
+                'New appointment pending',
+                'A new student appointment (ID: '.$newId.') needs counselor assignment for '.$whenNice.'.'
+            );
+        } catch (\Throwable $e) {
+            \Log::warning('Admin notify failed (new pending appt)', [
+                'appointment_id' => $newId,
+                'error'          => $e->getMessage(),
+            ]);
+        }
+
+    } catch (\RuntimeException $e) {
+        if ($e->getMessage() === 'FULL') {
+            return back()->withInput()->with('swal', [
+                'icon'  => 'info',
+                'title' => 'Time slot unavailable',
+                'text'  => 'That time just filled up. Please pick another slot.',
+            ]);
+        }
+        throw $e;
+    }
+
+    return redirect()
+        ->route('appointment.history')
+        ->with('swal', [
+            'icon'  => 'success',
+            'title' => 'Appointment booked!',
+            'html'  => sprintf(
+                '<div style="text-align:left">
+                <div><b>Date:</b> %s</div>
+                <div><b>Time:</b> %s</div>
+                <div style="margin-top:.25rem;color:#475569"><em>A counselor has not been assigned yet. You’ll be notified once an admin assigns one.</em></div>
+                </div>',
+                e($slot->format('M d, Y')),
+                e($slot->format('g:i A'))
+            ),
+            'confirmButtonText' => 'OK',
+        ]);
+}
+
 
     /* ----------------------------- History ----------------------------- */
     public function history(Request $request)

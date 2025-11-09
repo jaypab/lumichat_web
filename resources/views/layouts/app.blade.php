@@ -30,9 +30,9 @@
   <style id="lumi-header-glass">
   /* Frosted, sticky app header */
   .header-shell{
-    position: sticky;           /* stays at the top while content scrolls */
+    position: sticky;
     top: 0;
-    z-index: 2147483000;        /* below your modal z-fixes, above content */
+    z-index: 2147483000;        /* below notif & modals, above content */
     background: rgba(255,255,255,.66);
     border-bottom: 1px solid rgba(148,163,184,.28);
     backdrop-filter: blur(10px) saturate(140%);
@@ -52,12 +52,8 @@
 
   /* If the browser can't do backdrop-filter, fall back to a stronger bg */
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))){
-    .header-shell{
-      background: rgba(255,255,255,.94);
-    }
-    html.dark .header-shell{
-      background: rgba(17,24,39,.92);
-    }
+    .header-shell{ background: rgba(255,255,255,.94); }
+    html.dark .header-shell{ background: rgba(17,24,39,.92); }
   }
 </style>
 
@@ -206,6 +202,14 @@
     .swal2-popup.swal2-toast .swal2-title{ margin:0!important; padding:0!important; font-size:14px!important; font-weight:700!important; line-height:1.2!important; display:flex; align-items:center; }
   </style>
 
+  {{-- === Notification popover z-index fix === --}}
+  <style id="nb-popover-z">
+    /* Create a high stacking context for the bell and its popover */
+    [data-nb-root]{ position:relative; z-index:2147483641; }
+    /* If the bell renders a portal/popover container, ensure it stacks above header */
+    .nb-portal, [data-nb-portal], #nb-portal{ position:absolute; z-index:2147483642 !important; }
+  </style>
+
   @stack('styles')
 
   <style id="lumi-modal-zfix">
@@ -281,7 +285,7 @@
                 $href = $item['route'] && is_string($item['route']) ? route($item['route']) : '#';
                 $isActive = $item['route'] && is_string($item['route']) ? request()->routeIs($item['route']) : false;
 
-                /* === IDs for the interactive tour === */
+                /* IDs for the interactive tour */
                 $extraId = match($item['label']) {
                   'Chat History' => 'nav-chat-history',
                   'Settings'     => 'nav-settings',
@@ -382,9 +386,11 @@
           </svg>
         </button>
 
-        {{-- Notification bell --}}
+        {{-- Notification bell (wrapped to create a high z-index root) --}}
         @auth
-          <x-notification-bell class="ml-2" />
+          <div data-nb-root class="relative z-[2147483641]">
+            <x-notification-bell class="ml-2" />
+          </div>
         @endauth
 
         {{-- User chip + menu --}}
@@ -455,7 +461,7 @@
       });
     })();
 
-    // Theme toggle (if using the built-in button)
+    // Theme toggle
     (function(){
       const btn = document.getElementById('theme-toggle');
       btn?.addEventListener('click', () => {

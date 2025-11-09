@@ -142,6 +142,7 @@ Route::middleware('auth' , 'tos')->group(function () {
   ->name('notifications.mark_all')
   ->middleware('auth');
 
+
 });
 
 /*

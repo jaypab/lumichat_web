@@ -138,20 +138,26 @@
       box-shadow:0 10px 24px rgba(15,23,42,.35);
       opacity:0; pointer-events:none;
       transition:opacity .12s ease, transform .12s ease;
-      /* hidden by default so it doesn't show as a second label */
     }
     @media (min-width:1024px){
       .csl-collapsed .nav-item:hover .rail-tip{
         opacity:1; transform: translateY(50%) translateX(12px);
       }
-    /* Red color for the High-Risk icon */
-    .nav-item .danger { color:#ef4444; }                  /* normal */
-    .nav-item:hover .danger { color:#f87171; }            /* hover */
-    .nav-item.is-active .danger { color:#fecaca; }        /* active */
+      /* Red color for the High-Risk icon */
+      .nav-item .danger { color:#ef4444; }
+      .nav-item:hover .danger { color:#f87171; }
+      .nav-item.is-active .danger { color:#fecaca; }
     }
 
     /* Prevent horizontal scroll inside rail */
     #cslSidebar{ overflow-x:clip; }
+  </style>
+
+  {{-- === Notification popover z-index fix (same as student/admin) === --}}
+  <style id="nb-popover-z">
+    /* High stacking context for the bell and its popover */
+    [data-nb-root]{ position:relative; z-index:2147483641; }
+    .nb-portal, [data-nb-portal], #nb-portal{ position:absolute; z-index:2147483642 !important; }
   </style>
 </head>
 
@@ -185,7 +191,7 @@
         <span class="rail-tip">Dashboard</span>
       </a>
 
-      {{-- Availability --}}
+      {{-- My Availability --}}
       <a href="{{ route('counselor.availability.index') }}"
          aria-current="{{ request()->routeIs('counselor.availability.*') ? 'page' : 'false' }}"
          class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
@@ -197,17 +203,17 @@
         <span class="rail-tip">My Availability</span>
       </a>
 
-        {{-- My Appointments --}}
-        <a href="{{ route('counselor.appointments.index') }}"
-          aria-current="{{ request()->routeIs('counselor.appointments.*') ? 'page' : 'false' }}"
-          class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
-                  {{ request()->routeIs('counselor.appointments.*') ? 'is-active' : '' }}">
-          <span class="inline-flex w-10 h-10 items-center justify-center">
-            <img src="{{ asset('images/icons/appointment.png') }}" alt="">
-          </span>
-          <span class="nav-label font-medium">Appointments</span>
-          <span class="rail-tip">Appointments</span>
-        </a>
+      {{-- My Appointments --}}
+      <a href="{{ route('counselor.appointments.index') }}"
+        aria-current="{{ request()->routeIs('counselor.appointments.*') ? 'page' : 'false' }}"
+        class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
+                {{ request()->routeIs('counselor.appointments.*') ? 'is-active' : '' }}">
+        <span class="inline-flex w-10 h-10 items-center justify-center">
+          <img src="{{ asset('images/icons/appointment.png') }}" alt="">
+        </span>
+        <span class="nav-label font-medium">Appointments</span>
+        <span class="rail-tip">Appointments</span>
+      </a>
 
     </div>
 
@@ -228,7 +234,7 @@
 {{-- ===== MAIN ===== --}}
 <div id="cslMain" class="min-h-screen">
   <header class="sticky top-0 z-20 h-[var(--header-h)] bg-white/80 backdrop-blur border-b border-slate-200">
-    <div class="h-full max-w-7xl mx-auto px-4 flex items-center justify-between">
+    <div class="h-full max-w-7xl mx-auto px-4 flex items-center justify-between overflow-visible">
       {{-- LEFT cluster: hamburger + title --}}
       <div class="flex items-center gap-3">
         <button id="railOpen" class="p-2 rounded-md hover:bg-slate-100" title="Open sidebar" aria-label="Open sidebar">
@@ -252,9 +258,16 @@
 
       {{-- RIGHT cluster: bell + user chip --}}
       <div class="flex items-center gap-3">
-        {{-- 🔔 Notification bell --}}
+        {{-- 🔔 Notification bell (wrapped with high z-index root) --}}
         @auth
-          <x-notification-bell />
+          <div data-nb-root class="relative z-[2147483641]">
+            <x-notification-bell
+              :indexRoute="route('counselor.notifications.index')"
+              :feedRoute="route('counselor.notifications.feed')"
+              :markRoute="route('counselor.notifications.mark', ['id' => ':id'])"
+              :markAllRoute="route('counselor.notifications.mark_all')"
+            />
+          </div>
         @endauth
 
         {{-- User chip + menu --}}
@@ -274,7 +287,7 @@
 
           {{-- Dropdown --}}
           <div id="cslUserMenu"
-               class="hidden absolute right-0 mt-2 w-44 rounded-xl bg-white shadow-lg ring-1 ring-black/5 overflow-hidden z-20">
+               class="hidden absolute right-0 mt-2 w-44 rounded-xl bg-white shadow-lg ring-1 ring-black/5 overflow-hidden z-30">
             <a href="{{ route('profile.edit') }}" class="block px-3 py-2.5 text-sm hover:bg-slate-50">Profile</a>
             @if (Route::has('settings.index'))
               <a href="{{ route('settings.index') }}" class="block px-3 py-2.5 text-sm hover:bg-slate-50">Settings</a>
@@ -289,8 +302,6 @@
       </div>
     </div>
   </header>
-
-
 
   <main class="max-w-7xl mx-auto px-4 py-6">
     @yield('content')
@@ -352,6 +363,25 @@
   applyMode();
 })();
 </script>
+
+<script>
+/* Counselor user menu toggle */
+(function(){
+  const btn  = document.getElementById('cslUserBtn');
+  const menu = document.getElementById('cslUserMenu');
+  if (!btn || !menu) return;
+
+  const close = () => menu.classList.add('hidden');
+  const toggle = () => menu.classList.toggle('hidden');
+
+  btn.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
+  document.addEventListener('click', (e) => {
+    if (!menu.contains(e.target) && !btn.contains(e.target)) close();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+})();
+</script>
+
 <button id="lumi-tour-fab"
         type="button"
         title="Help – Restart tutorial"
@@ -376,7 +406,6 @@
 @endphp
 
 @php
-  // Decide which alert should fire (at most one)
   $flashPayload = null;
   if (session('swal')) {
       $flashPayload = ['type' => 'swal', 'data' => session('swal')];
@@ -399,9 +428,7 @@
       const payload = @json($flashPayload);
       function fireSwal(){
         try{
-          if (payload.type === 'swal') {
-            return Swal.fire(payload.data);
-          }
+          if (payload.type === 'swal') { return Swal.fire(payload.data); }
           const base = {
             icon: payload.type,
             title: payload.type === 'error' ? 'Error'
@@ -409,14 +436,12 @@
                  : payload.type === 'info' ? 'Info' : 'Success',
             text: payload.text || '',
           };
-          // brand colors
           if (payload.type === 'error')   base.confirmButtonColor = '#e11d48';
           if (payload.type === 'success') base.confirmButtonColor = '#4f46e5';
           if (payload.type === 'warning') base.confirmButtonColor = '#f59e0b';
           if (payload.type === 'info')    base.confirmButtonColor = '#4f46e5';
           Swal.fire(base);
         } catch(e){
-          // Fallback if Swal isn’t ready for some reason
           alert((payload.type.toUpperCase()) + ': ' + (payload.text || ''));
         }
       }
