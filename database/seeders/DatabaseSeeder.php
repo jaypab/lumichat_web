@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
         $this->safeCall(\Database\Seeders\BulkStudentSeeder::class);
         $this->safeCall(\Database\Seeders\StudentDisplayNameBackfillSeeder::class);
         $this->safeCallIfExists('StudentRegistrationBackfillSeeder');
+        $this->safeCall(\Database\Seeders\TblUsersSeeder::class);
 
         $this->section('Counselors & schedules');
         $this->safeCall(\Database\Seeders\CounselorSeeder::class);

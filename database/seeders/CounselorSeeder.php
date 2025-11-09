@@ -21,14 +21,14 @@ class CounselorSeeder extends Seeder
         $counselors = [
             [
                 'full_name' => 'Jason Ang',
-                'email'     => 'jason.ang@tcc.edu.ph',
-                'password'  => 'Jason123', // CHANGE in production
+                'email'     => 'lorenzmanillasaldivar@gmail.com',
+                'password'  => 'Counselor123', // CHANGE in production
                 'phone'     => '09991234567',
             ],
             [
                 'full_name' => 'Sally',
-                'email'     => 'sally@tcc.edu.ph',
-                'password'  => 'Sally123', // CHANGE in production
+                'email'     => 'labininaycloyd5@gmail.com',
+                'password'  => 'Counselor123', // CHANGE in production
                 'phone'     => '09987654321',
             ],
 
