@@ -15,7 +15,7 @@ class TblUsersSeeder extends Seeder
 
         $rows = [
             [
-                'email' => 'Student01@gmail.com',
+                'email' => 'lorenzmanillasaldivar@gmail.com',
                 'name'  => 'Test Student 01',
                 'course' => 'BSIT',
                 'year_level' => '3',
@@ -39,7 +39,7 @@ class TblUsersSeeder extends Seeder
                 'updated_at' => $now,
             ],
             [
-                'email' => 'Student02@gmail.com',
+                'email' => 'labininaycloyd5@gmail.com',
                 'name'  => 'Test Student 02',
                 'course' => 'BSIT',
                 'year_level' => '3',
