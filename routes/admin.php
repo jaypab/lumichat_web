@@ -65,6 +65,13 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
     Route::get('chatbot-sessions/{session}/high-risk-all', [ChatbotSessionController::class, 'highRiskAll'])
         ->whereNumber('session')->name('chatbot-sessions.highrisk_all');
 
+    // --- Risk tagging (admin) ---
+    Route::post('chatbot-sessions/{session}/set-risk', [ChatbotSessionController::class, 'setRisk'])
+        ->whereNumber('session')->name('chatbot-sessions.setRisk');
+
+    Route::get('chatbot-sessions/{session}/risk-history', [ChatbotSessionController::class, 'riskHistory'])
+        ->whereNumber('session')->name('chatbot-sessions.riskHistory');
+
     Route::resource('chatbot-sessions', ChatbotSessionController::class)
         ->only(['index', 'show'])
         ->parameters(['chatbot-sessions' => 'session'])
