@@ -85,6 +85,11 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
     Route::get('/appointments/{id}/assign', [AdminAppointmentController::class, 'assignForm'])->whereNumber('id')->name('appointments.assign.form');
     Route::patch('/appointments/{id}/assign', [AdminAppointmentController::class, 'assign'])->whereNumber('id')->name('appointments.assign');
 
+    Route::post('/appointments/{id}/change-request/{action}',
+        [AdminAppointmentController::class, 'handleChangeRequest']
+    )->whereNumber('id')->whereIn('action',['approve','decline'])
+    ->name('appointments.change_request.handle');
+
     // COUNSELOR LOGS
     Route::get('/counselor-logs', [CounselorLogController::class, 'index'])->name('counselor-logs.index');
     Route::get('/counselor-logs/{counselor}', [CounselorLogController::class, 'show'])->whereNumber('counselor')->name('counselor-logs.show');

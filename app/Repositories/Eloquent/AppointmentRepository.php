@@ -253,8 +253,9 @@ class AppointmentRepository implements AppointmentRepositoryInterface
     // ==== Availability helpers (unchanged) ====
     public function counselorIdsFreeAt(Carbon $scheduledAt): array
     {
-        $slotEnd = $scheduledAt->copy()->addMinutes(30);
-        $dow = (int) $scheduledAt->isoWeekday();
+        // Use 60-minute slot consistently
+        $slotEnd = $scheduledAt->copy()->addMinutes(60);
+        $dow     = (int) $scheduledAt->isoWeekday();
         $dateStr = $scheduledAt->toDateString();
 
         $cids = DB::table('tbl_counselors')->where('is_active', 1)->pluck('id')->all();
@@ -262,32 +263,36 @@ class AppointmentRepository implements AppointmentRepositoryInterface
 
         $free = [];
         foreach ($cids as $cid) {
+            // Resolve availability windows for this weekday (adjust if you also store date-specific rows)
             $ranges = DB::table('tbl_counselor_availabilities')
                 ->where('counselor_id', $cid)
                 ->where('weekday', $dow)
                 ->whereNotNull('start_time')
                 ->whereNotNull('end_time')
-                ->get(['start_time','end_time']);
+                ->get(['start_time','end_time','slot_type']);
 
             $fits = false;
             foreach ($ranges as $r) {
-                if (!\is_string($r->start_time) || !\is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') {
+                if (!is_string($r->start_time) || !is_string($r->end_time) || $r->start_time==='' || $r->end_time==='') {
                     continue;
                 }
                 try {
-                    $rangeStart = Carbon::parse($dateStr.' '.$r->start_time);
-                    $rangeEnd   = Carbon::parse($dateStr.' '.$r->end_time);
-                } catch (\Throwable $e) {
-                    continue;
-                }
-                if ($scheduledAt->gte($rangeStart) && $slotEnd->lte($rangeEnd)) { $fits = true; break; }
+                    $rangeStart = Carbon::parse("$dateStr {$r->start_time}");
+                    $rangeEnd   = Carbon::parse("$dateStr {$r->end_time}");
+                } catch (\Throwable $e) { continue; }
+
+                $inside = $scheduledAt->gte($rangeStart) && $slotEnd->lte($rangeEnd);
+                if (!$inside) continue;
+                if (($r->slot_type ?? 'available') === 'blocked') { $fits = false; break; }
+                $fits = true;
             }
             if (!$fits) continue;
 
-            $taken = DB::table('tbl_appointments')
+            // Hard conflict at exact start (pending/confirmed/ongoing)
+            $taken = DB::table(self::TABLE)
                 ->where('counselor_id', $cid)
                 ->where('scheduled_at', $scheduledAt)
-                ->whereIn('status', ['pending','confirmed','completed'])
+                ->whereIn('status', ['pending','confirmed','ongoing'])
                 ->exists();
 
             if (!$taken) $free[] = (int) $cid;
@@ -298,33 +303,43 @@ class AppointmentRepository implements AppointmentRepositoryInterface
 
     public function counselorIsFreeAt(int $counselorId, Carbon $scheduledAt): bool
     {
-        return \in_array($counselorId, $this->counselorIdsFreeAt($scheduledAt), true);
+        return in_array($counselorId, $this->counselorIdsFreeAt($scheduledAt), true);
     }
-
     public function assignCounselor(int $appointmentId, int $counselorId): array
     {
-        $ap = DB::table(self::TABLE)->where('id', $appointmentId)->first();
-        if (!$ap) return ['ok'=>false, 'reason'=>'not_found'];
+        return DB::transaction(function () use ($appointmentId, $counselorId) {
 
-        $when = Carbon::parse($ap->scheduled_at);
-        if ($when->lte(now())) return ['ok'=>false, 'reason'=>'in_past'];
+            // Lock row
+            $ap = DB::table(self::TABLE)->where('id', $appointmentId)->lockForUpdate()->first();
+            if (!$ap) return ['ok'=>false,'reason'=>'not_found'];
 
-        if (!$this->counselorIsFreeAt($counselorId, $when)) {
-            return ['ok'=>false, 'reason'=>'not_available'];
-        }
+            if (!in_array($ap->status, ['pending','confirmed'], true))
+                return ['ok'=>false,'reason'=>'invalid_status'];
 
-        try {
-            DB::table(self::TABLE)
+            if (!empty($ap->counselor_id))
+                return ['ok'=>false,'reason'=>'already_assigned'];
+
+            if (!$ap->scheduled_at || Carbon::parse($ap->scheduled_at)->lte(now()))
+                return ['ok'=>false,'reason'=>'in_past'];
+
+            $start = Carbon::parse($ap->scheduled_at)->second(0);
+
+            // Availability check (60-min, pooled windows already respected by helper)
+            if (!$this->counselorIsFreeAt($counselorId, $start))
+                return ['ok'=>false,'reason'=>'not_available'];
+
+            // Compare-and-set (prevents races)
+            $affected = DB::table(self::TABLE)
                 ->where('id', $appointmentId)
+                ->whereNull('counselor_id')
                 ->update([
                     'counselor_id' => $counselorId,
                     'updated_at'   => now(),
                 ]);
+
+            if ($affected === 0) return ['ok'=>false,'reason'=>'race_taken'];
+
             return ['ok'=>true];
-        } catch (\Illuminate\Database\QueryException $e) {
-            $code = (int)($e->errorInfo[1] ?? 0);
-            if ($code === 1062) return ['ok'=>false, 'reason'=>'race_taken'];
-            return ['ok'=>false, 'reason'=>'db_error'];
-        }
+        });
     }
 }

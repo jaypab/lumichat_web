@@ -14,6 +14,7 @@ use App\Http\Controllers\SelfAssessmentController;
 use App\Http\Controllers\AboutController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\LegalController;
+use App\Http\Controllers\CounselorChangeRequestController;
 
 
 
@@ -114,6 +115,11 @@ Route::middleware('auth' , 'tos')->group(function () {
     Route::get('/appointment/{id}/export/pdf', [AppointmentController::class, 'exportShowPdf'])
         ->whereNumber('id')
         ->name('appointment.show.export.pdf');
+
+     // Student: request a different counselor
+    Route::post('/appointment/{id}/request-counselor-change',
+        [\App\Http\Controllers\CounselorChangeRequestController::class, 'store']
+    )->name('appointment.request_change');
 
     // Actions / APIs
     Route::post('/appointment', [AppointmentController::class, 'store'])->name('appointment.store');

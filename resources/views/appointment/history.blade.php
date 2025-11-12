@@ -81,7 +81,7 @@
   @endphp
 
   {{-- ======= Filters (enhanced) ======= --}}
-<form method="GET" action="{{ route('appointment.history') }}" class="screen-only">
+<form id="studentApptFilters" method="GET" action="{{ route('appointment.history') }}" class="screen-only">
   <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
 
     {{-- Quick period chips (Today / This Week / etc.) --}}
@@ -117,7 +117,7 @@
       <div class="md:col-span-5 min-w-0">
         <label class="block text-xs font-medium text-slate-600 mb-1">Search</label>
         <div class="relative">
-          <input id="qInput" type="text" name="q" value="{{ $q }}" autocomplete="off"
+          <input id="student-appt-q" type="text" name="q" value="{{ $q }}" autocomplete="off" 
                 placeholder="Search counselor"
                 class="w-full h-10 bg-white border border-slate-200 rounded-xl pl-10 pr-9 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"/>
           <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -207,12 +207,52 @@
                 @else
                   @php $cname = trim((string) ($row->counselor_name ?? '')); @endphp
                   @if ($cname === '')
-                    <span class="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1 text-[13px] text-slate-700 ring-1 ring-slate-200">
-                      <span class="inline-block size-1.5 rounded-full bg-slate-400"></span>
-                      Awaiting admin assignment
-                    </span>
+                    <div class="flex flex-col gap-1">
+                      <span class="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1 text-[13px] text-slate-700 ring-1 ring-slate-200">
+                        <span class="inline-block size-1.5 rounded-full bg-slate-400"></span>
+                        Awaiting admin assignment
+                      </span>
+
+                      {{-- change-request chip (if any) also shows here even if no counselor yet --}}
+                      @if(isset($row->cr_status))
+                        @php
+                          $crTime = !empty($row->cr_created_at) ? \Carbon\Carbon::parse($row->cr_created_at)->diffForHumans() : null;
+                          $crMap = match($row->cr_status) {
+                            'requested' => ['bg'=>'bg-violet-50','text'=>'text-violet-700','ring'=>'ring-violet-200','label'=>'Under review for reassignment'],
+                            'approved'  => ['bg'=>'bg-emerald-50','text'=>'text-emerald-700','ring'=>'ring-emerald-200','label'=>'Reassignment approved'],
+                            'declined'  => ['bg'=>'bg-rose-50','text'=>'text-rose-700','ring'=>'ring-rose-200','label'=>'Reassignment declined'],
+                            default     => null
+                          };
+                        @endphp
+                        @if($crMap)
+                          <span class="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium {{ $crMap['bg'] }} {{ $crMap['text'] }} ring-1 {{ $crMap['ring'] }}">
+                            {{ $crMap['label'] }} @if($crTime)<span class="text-slate-400">•</span> <span class="opacity-70">{{ $crTime }}</span>@endif
+                          </span>
+                        @endif
+                      @endif
+                    </div>
                   @else
-                    <span class="text-slate-700">{{ $cname }}</span>
+                    <div class="flex flex-col gap-1">
+                      <span class="text-slate-700">{{ $cname }}</span>
+
+                      {{-- change-request chip placed directly under the counselor name --}}
+                      @if(isset($row->cr_status))
+                        @php
+                          $crTime = !empty($row->cr_created_at) ? \Carbon\Carbon::parse($row->cr_created_at)->diffForHumans() : null;
+                          $crMap = match($row->cr_status) {
+                            'requested' => ['bg'=>'bg-violet-50','text'=>'text-violet-700','ring'=>'ring-violet-200','label'=>'Under review for reassignment'],
+                            'approved'  => ['bg'=>'bg-emerald-50','text'=>'text-emerald-700','ring'=>'ring-emerald-200','label'=>'Reassignment approved'],
+                            'declined'  => ['bg'=>'bg-rose-50','text'=>'text-rose-700','ring'=>'ring-rose-200','label'=>'Reassignment declined'],
+                            default     => null
+                          };
+                        @endphp
+                        @if($crMap)
+                          <span class="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium {{ $crMap['bg'] }} {{ $crMap['text'] }} ring-1 {{ $crMap['ring'] }}">
+                            {{ $crMap['label'] }} @if($crTime)<span class="text-slate-400">•</span> <span class="opacity-70">{{ $crTime }}</span>@endif
+                          </span>
+                        @endif
+                      @endif
+                    </div>
                   @endif
                 @endif
               </td>
@@ -225,12 +265,13 @@
               </td>
 
               <td class="px-6 py-4 whitespace-nowrap">
+                {{-- main status pill (existing) --}}
                 <span class="relative inline-flex items-center h-7 w-[128px] rounded-full text-xs font-medium leading-none {{ $cls }}">
                   <span class="absolute left-3 inline-block size-2 rounded-full {{ $dot }}"></span>
                   <span class="mx-auto">{{ $label }}</span>
                 </span>
               </td>
-
+              
               <td class="px-6 py-4 text-right">
                 <div class="flex items-center justify-end gap-2 whitespace-nowrap">
                   <a href="{{ route('appointment.view', $row->id) }}"

@@ -72,9 +72,14 @@
         </div>
 
         {{-- Right: Actions --}}
+        @php
+          // reuse normalized $status and $hasCounselor from above
+          $canAssign = ($status === 'pending') || ($status === 'confirmed' && !$hasCounselor);
+        @endphp
+
         <div class="flex items-center gap-2">
           <a href="{{ route('admin.appointments.index') }}"
-             class="inline-flex items-center gap-2 rounded-xl bg-white/95 text-slate-800 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/25 hover:bg-white active:scale-[.99] transition">
+            class="inline-flex items-center gap-2 rounded-xl bg-white/95 text-slate-800 px-4 py-2 text-sm font-medium shadow-sm ring-1 ring-white/25 hover:bg-white active:scale-[.99] transition">
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
             </svg>
@@ -82,8 +87,8 @@
           </a>
 
           <a href="{{ route('admin.appointments.export.show.pdf', $appointment->id) }}"
-             target="_blank" rel="noopener"
-             class="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
+            target="_blank" rel="noopener"
+            class="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
@@ -96,14 +101,19 @@
               <span class="inline-block size-2 rounded-full bg-emerald-300"></span>
               Counselor already assigned
             </span>
-          @else
+          @elseif ($canAssign)
             <a href="{{ route('admin.appointments.assign.form', $appointment->id) }}"
-               class="inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-indigo-800 active:scale-[.99] transition">
+              class="inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-800 active:scale-[.99] transition">
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
               </svg>
               Assign Counselor
             </a>
+          @else
+            <span class="inline-flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm ring-1 ring-white/20">
+              <span class="inline-block size-2 rounded-full bg-amber-300"></span>
+              Assignment locked for status: {{ $statusLabel }}
+            </span>
           @endif
         </div>
       </div>
@@ -207,12 +217,62 @@
             </div>
           @endif
         </section>
+        @if(!empty($changeReq))
+          <section class="rounded-2xl ring-1 ring-slate-200 bg-white overflow-hidden lg:col-span-2">
+            <header class="px-4 py-2.5 bg-slate-50/60 flex items-center justify-between">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Counselor Change Request
+              </h3>
+              <span class="inline-flex items-center gap-1.5 rounded-md bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 ring-1 ring-violet-200">
+                {{ \Illuminate\Support\Str::headline($changeReq->status) }}
+                <span class="text-violet-500/70">• {{ \Carbon\Carbon::parse($changeReq->created_at)->diffForHumans() }}</span>
+              </span>
+            </header>
+
+            <div class="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <div class="text-[13px] uppercase tracking-wide text-slate-500">Reason</div>
+                <div class="font-medium text-slate-900">{{ \Illuminate\Support\Str::headline($changeReq->reason_code) }}</div>
+                <div class="text-sm text-slate-700 mt-1">{{ $changeReq->reason_text }}</div>
+              </div>
+
+              <div>
+                <div class="text-[13px] uppercase tracking-wide text-slate-500">Preferred Counselor</div>
+              <div class="font-medium text-slate-900">
+                  {{ $preferredCounselorName ?: '—' }}
+                </div>
+              </div>
+
+              <div class="md:text-right">
+                @if($changeReq->status === 'requested')
+                  <form method="POST" action="{{ route('admin.appointments.change_request.handle', [$appointment->id, 'approve']) }}" class="inline">
+                    @csrf
+                    <button class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
+                      Approve
+                    </button>
+                  </form>
+                  <form method="POST" action="{{ route('admin.appointments.change_request.handle', [$appointment->id, 'decline']) }}" class="inline ml-2">
+                    @csrf
+                    <button class="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">
+                      Decline
+                    </button>
+                  </form>
+                @else
+                  <span class="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-1.5 text-sm text-slate-700 ring-1 ring-slate-200">
+                    Decision recorded
+                  </span>
+                @endif
+              </div>
+            </div>
+          </section>
+          @endif
       </div>
     </div>
   </div>
-
 </div>
 @endsection
+
+
 
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>

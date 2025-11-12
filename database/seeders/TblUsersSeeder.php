@@ -15,11 +15,11 @@ class TblUsersSeeder extends Seeder
 
         $rows = [
             [
-                'email' => 'lowelljaypabua@gmail.com',
-                'name'  => 'Test Student 01',
+                'email' => 'earlsepida63@gmail.com',
+                'name'  => 'Earl Sepida',
                 'course' => 'BSIT',
-                'year_level' => '3',
-                'contact_number' => '09170000001',
+                'year_level' => '4th Year',
+                'contact_number' => '09569279299',
                 'email_verified_at' => $now,             // set to null if you prefer unverified
                 'password' => Hash::make('12345678'),
 

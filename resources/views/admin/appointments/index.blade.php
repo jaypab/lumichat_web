@@ -180,8 +180,13 @@
                 ];
                 $s   = $statusMap[$row->status] ?? ['bg'=>'bg-slate-50','text'=>'text-slate-700','ring'=>'ring-slate-200','dot'=>'bg-slate-400'];
                 $cls = $s['bg'].' '.$s['text'].' ring-1 '.$s['ring'];
-                $dot = $s['dot'];
-              @endphp
+               $dot = $s['dot'];
+
+                $crPending = isset($row->cr_status) && $row->cr_status === 'requested';
+                $crTime    = !empty($row->cr_created_at)
+                            ? \Carbon\Carbon::parse($row->cr_created_at)->diffForHumans()
+                            : null;
+                @endphp
 
               <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition">
                 <td class="px-6 py-4 font-semibold text-slate-900">{{ $row->id }}</td>
@@ -201,12 +206,10 @@
                   @else
                     @php $cname = trim((string) (optional($row->counselor)->name ?? '')); @endphp
 
-                    {{-- Pending + unassigned => Assign link --}}
                     @if (($cname === '' || $cname === '—') && $row->status === 'pending')
                       <a href="{{ route('admin.appointments.assign.form', $row->id) }}"
-                         class="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1 text-[13px] text-indigo-700 ring-1 ring-slate-200
-                                hover:bg-indigo-50 hover:ring-indigo-200 transition"
-                         title="Assign counselor">
+                        class="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1 text-[13px] text-indigo-700 ring-1 ring-slate-200 hover:bg-indigo-50 hover:ring-indigo-200"
+                        title="Assign counselor">
                         <span class="inline-block size-1.5 rounded-full bg-indigo-500"></span>
                         Assign counselor
                       </a>
@@ -216,7 +219,19 @@
                         To be assigned
                       </span>
                     @else
-                      <span class="text-slate-700">{{ $cname }}</span>
+                      <div class="flex flex-col">
+                        <span class="text-slate-700">{{ $cname }}</span>
+
+                        {{-- 🔔 Moved here from Status column --}}
+                        @if($crPending)
+                          <span class="mt-1 inline-flex items-center gap-1.5 rounded-md bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 ring-1 ring-violet-200"
+                                title="Student requested a counselor change for this appointment.">
+                            <span class="inline-block size-1.5 rounded-full bg-violet-500"></span>
+                            Change requested
+                            @if($crTime) <span class="text-violet-500/70">• {{ $crTime }}</span> @endif
+                          </span>
+                        @endif
+                      </div>
                     @endif
                   @endif
                 </td>
@@ -249,6 +264,7 @@
                     <span class="mx-auto">{{ $statusNice }}</span>
                   </span>
                 </td>
+
 
                 {{-- Actions --}}
                 <td class="px-6 py-4 text-right whitespace-nowrap">

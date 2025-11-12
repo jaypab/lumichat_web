@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Appointment;
 use App\Models\CaseNote;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class AppointmentController extends Controller
 {
@@ -48,9 +49,10 @@ class AppointmentController extends Controller
     public function index(Request $r)
     {
         $cid = $this->myCounselorId();
-        if (!$cid) {
-            $empty = new LengthAwarePaginator([], 0, 10, 1, ['path' => url()->current()]);
 
+        // If this user isn’t linked to a counselor record, show an empty list + warning.
+        if (!$cid) {
+            $empty = new \Illuminate\Pagination\LengthAwarePaginator([], 0, 10, 1, ['path' => url()->current()]);
             return view('Counselor_Interface.appointments.index', [
                 'appointments' => $empty,
                 'status'       => $r->query('status', 'all'),
@@ -63,43 +65,69 @@ class AppointmentController extends Controller
             ]);
         }
 
+        // Filters
         $status = $r->query('status', 'all');
         $period = $r->query('period', 'all');
-        $q      = trim((string)$r->query('q', ''));
+        $q      = trim((string) $r->query('q', ''));
+        $now    = now();
 
-        $now = now();
+        // Safely include counselor-reassignment columns only if they exist
+        $hasCrStatus  = \Illuminate\Support\Facades\Schema::hasColumn('tbl_appointments', 'cr_status');
+        $hasCrCreated = \Illuminate\Support\Facades\Schema::hasColumn('tbl_appointments', 'cr_created_at');
 
-        $qrb = DB::table('tbl_appointments as a')
+        $select = [
+            'a.id',
+            'a.scheduled_at',
+            'a.created_at as booked_at',
+            'a.status',
+            \Illuminate\Support\Facades\DB::raw("COALESCE(s.name,'—')  as student_name"),
+            \Illuminate\Support\Facades\DB::raw("COALESCE(s.email,'') as student_email"),
+        ];
+        $select[] = $hasCrStatus  ? 'a.cr_status'     : \Illuminate\Support\Facades\DB::raw('NULL as cr_status');
+        $select[] = $hasCrCreated ? 'a.cr_created_at' : \Illuminate\Support\Facades\DB::raw('NULL as cr_created_at');
+
+        // Base query
+        $qrb = \Illuminate\Support\Facades\DB::table('tbl_appointments as a')
             ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-            ->select([
-                'a.id',
-                'a.scheduled_at',
-                'a.created_at as booked_at',
-                'a.status',
-                DB::raw("COALESCE(s.name,'—') as student_name"),
-                DB::raw("COALESCE(s.email,'') as student_email"),
-            ])
+            ->select($select)
             ->where('a.counselor_id', $cid);
 
-        if ($status !== 'all') $qrb->where('a.status', $status);
-
-        switch ($period) {
-            case 'today':      $qrb->whereDate('a.scheduled_at', $now->toDateString()); break;
-            case 'upcoming':   $qrb->where('a.scheduled_at', '>=', $now); break;
-            case 'this_week':  $qrb->whereBetween('a.scheduled_at', [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()]); break;
-            case 'this_month': $qrb->whereBetween('a.scheduled_at', [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()]); break;
-            case 'past':       $qrb->where('a.scheduled_at', '<', $now); break;
-            default: /* all */ break;
+        // Filter: status
+        if ($status !== 'all') {
+            $qrb->where('a.status', $status);
         }
 
+        // Filter: period
+        switch ($period) {
+            case 'today':
+                $qrb->whereDate('a.scheduled_at', $now->toDateString());
+                break;
+            case 'upcoming':
+                $qrb->where('a.scheduled_at', '>=', $now);
+                break;
+            case 'this_week':
+                $qrb->whereBetween('a.scheduled_at', [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()]);
+                break;
+            case 'this_month':
+                $qrb->whereBetween('a.scheduled_at', [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()]);
+                break;
+            case 'past':
+                $qrb->where('a.scheduled_at', '<', $now);
+                break;
+            default:
+                // all
+                break;
+        }
+
+        // Filter: search (student name/email)
         if ($q !== '') {
             $qrb->where(function ($w) use ($q) {
                 $w->where('s.name', 'like', "%{$q}%")
-                  ->orWhere('s.email', 'like', "%{$q}%");
+                ->orWhere('s.email', 'like', "%{$q}%");
             });
         }
 
-        // future first ascending, then past descending; completed at bottom
+        // Sort: future first (asc), then past (desc); completed at the bottom
         $qrb->orderByRaw("CASE WHEN a.status = 'completed' THEN 1 ELSE 0 END ASC")
             ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN 0 ELSE 1 END", [$now])
             ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN a.scheduled_at END ASC",  [$now])
@@ -107,7 +135,7 @@ class AppointmentController extends Controller
 
         $appointments = $qrb->paginate(10)->withQueryString();
 
-        return view('Counselor_Interface.appointments.index', compact('appointments','status','period','q'));
+        return view('Counselor_Interface.appointments.index', compact('appointments', 'status', 'period', 'q'));
     }
 
     /** Show a single appointment (must belong to this counselor) */

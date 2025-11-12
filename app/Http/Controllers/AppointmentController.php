@@ -463,13 +463,23 @@ class AppointmentController extends Controller
         $now = now();
 
         $query = DB::table('tbl_appointments as a')
-            ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
-            ->select([
-                'a.id','a.student_id','a.counselor_id','a.scheduled_at','a.status',
-                'c.name as counselor_name','c.email as counselor_email','c.phone as counselor_phone',
-                'a.final_note','a.finalized_at',
-            ])
-            ->where('a.student_id', Auth::id());
+        ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
+        // ⬇️ pick latest counselor_change_request per appointment
+        ->leftJoin(DB::raw('
+            (SELECT appointment_id, MAX(id) AS last_id
+            FROM counselor_change_requests
+            GROUP BY appointment_id) last_cr
+        '), 'last_cr.appointment_id', '=', 'a.id')
+        ->leftJoin('counselor_change_requests as cr', 'cr.id', '=', 'last_cr.last_id')
+        ->select([
+            'a.id','a.student_id','a.counselor_id','a.scheduled_at','a.status',
+            'c.name as counselor_name','c.email as counselor_email','c.phone as counselor_phone',
+            'a.final_note','a.finalized_at',
+            // ⬇️ expose to the blade
+            DB::raw('cr.status as cr_status'),
+            DB::raw('cr.created_at as cr_created_at'),
+        ])
+        ->where('a.student_id', Auth::id());
 
         if ($status !== 'all') $query->where('a.status', $status);
 
@@ -673,7 +683,15 @@ class AppointmentController extends Controller
 
         abort_unless($appointment, 404);
 
-        return view('appointment.show', compact('appointment'));
+       $changeRequest = DB::table('counselor_change_requests')
+            ->where('appointment_id', $appointment->id)
+            ->latest('id')
+            ->first();
+
+        return view('appointment.show', [
+            'appointment'   => $appointment,
+            'changeRequest' => $changeRequest,
+        ]);
     }
 
     /* ------------------------------ Helpers ---------------------------- */
@@ -807,4 +825,83 @@ class AppointmentController extends Controller
 
         $u->notify(new SimpleDatabaseNotification($title, $body, $url));
     }
+
+    public function requestCounselorChange(\Illuminate\Http\Request $request, int $id)
+    {
+        $userId = \Auth::id();
+
+        // Load appointment the student owns
+        $ap = \DB::table('tbl_appointments')->where('id',$id)->where('student_id',$userId)->first();
+        abort_unless($ap, 404);
+
+        // Must be future and have a counselor (and >24h away)
+        $start = \Carbon\Carbon::parse($ap->scheduled_at);
+        if (empty($ap->counselor_id) || $start->lte(now()->addHours(24))) {
+            return back()->withErrors(['error' => 'You can request a change only after a counselor is assigned and at least 24 hours before the session.']);
+        }
+
+        // Validate + basic normalization
+        $allowedReasons = ['uncomfortable','language','schedule','conflict','other'];
+
+        $data = $request->validate([
+            'reason_code'            => ['required','in:'.implode(',',$allowedReasons)],
+            'reason_text'            => ['required','string','min:10','max:300'],
+            'preferred_counselor_id' => ['nullable','integer','exists:tbl_counselors,id'],
+        ], [], [
+            'reason_code' => 'reason',
+            'reason_text' => 'additional explanation',
+        ]);
+
+        // --- STRICT SANITIZATION ---
+        $clean = function (string $s): string {
+            $s = strip_tags($s);                     // remove any HTML
+            $s = preg_replace('/https?:\/\/\S+/i','[link removed]', $s);   // strip URLs
+            $s = preg_replace('/[\x00-\x1F\x7F]/u', ' ', $s);              // control chars
+            $s = preg_replace('/\s{2,}/', ' ', $s);                         // collapse spaces
+            return trim($s);
+        };
+
+        $data['reason_text'] = $clean($data['reason_text']);
+
+        // Persist (create or upsert one "requested" per appointment)
+        $existing = \App\Models\CounselorChangeRequest::where('appointment_id',$ap->id)
+            ->where('status','requested')->first();
+
+        if ($existing) {
+            $existing->update([
+                'reason_code'            => $data['reason_code'],
+                'reason_text'            => $data['reason_text'],
+                'preferred_counselor_id' => $data['preferred_counselor_id'] ?? null,
+                'updated_at'             => now(),
+            ]);
+        } else {
+            \App\Models\CounselorChangeRequest::create([
+                'appointment_id'         => $ap->id,
+                'student_id'             => $userId,
+                'current_counselor_id'   => $ap->counselor_id,
+                'preferred_counselor_id' => $data['preferred_counselor_id'] ?? null,
+                'reason_code'            => $data['reason_code'],
+                'reason_text'            => $data['reason_text'],
+                'status'                 => 'requested',
+                'created_at'             => now(),
+                'updated_at'             => now(),
+            ]);
+        }
+
+        // Optional: notify admins
+        try {
+            \App\Support\Notify::admins(
+                'Counselor change request',
+                'Student #'.$userId.' requested a counselor change for appointment #'.$ap->id.'.'
+            );
+        } catch (\Throwable $e) {
+            \Log::warning('Admin notify failed (counselor change request)', ['e'=>$e->getMessage()]);
+        }
+
+        return redirect()
+            ->route('appointment.view', $ap->id)
+            ->with('success', 'Your request was submitted and is now under review. We’ll notify you once the admin decides.');
+    }
+
+
 }

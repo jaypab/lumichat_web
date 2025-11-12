@@ -125,6 +125,10 @@
               $chipCl = "{$s['bg']} {$s['text']} ring-1 {$s['ring']}";
               $dotCl  = $s['dot'];
               $label  = $s['label'];
+              $crPending = isset($row->cr_status) && $row->cr_status === 'requested';
+              $crTime    = !empty($row->cr_created_at)
+                          ? Carbon::parse($row->cr_created_at)->diffForHumans()
+                          : null;
             @endphp
 
             <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition">
@@ -160,6 +164,17 @@
                   <span class="absolute left-3 inline-block size-2 rounded-full {{ $dotCl }}"></span>
                   <span class="mx-auto">{{ $label }}</span>
                 </span>
+
+                @if($crPending)
+                  <div class="mt-1">
+                    <span class="inline-flex items-center gap-1.5 rounded-md bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 ring-1 ring-violet-200"
+                          title="Student requested counselor reassignment for this appointment.">
+                      <span class="inline-block size-1.5 rounded-full bg-violet-500"></span>
+                      Change requested
+                      @if($crTime) <span class="text-violet-500/70">• {{ $crTime }}</span> @endif
+                    </span>
+                  </div>
+                @endif 
               </td>
 
               <td class="px-6 py-4 text-right">

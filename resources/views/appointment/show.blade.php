@@ -4,7 +4,14 @@
 
 @section('content')
 <div class="max-w-3xl mx-auto py-8 px-4">
-
+@if(session('success'))
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      Swal.fire({ icon:'success', title:'Success', text:@json(session('success')), timer:2200, showConfirmButton:false });
+    });
+  </script>
+@endif
+ 
   {{-- Card --}}
   <div id="appointmentCard" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
 
@@ -168,12 +175,197 @@
   Download PDF
 </a>
 
+@php
+  // show the button only when a counselor is already assigned
+  // AND the session is more than 24h away
+  $eligibleForChange = !empty($appointment->counselor_id)
+                       && \Carbon\Carbon::parse($appointment->scheduled_at)->gt(now()->addHours(24));
+@endphp
+
+@if(isset($changeRequest) && $changeRequest)
+  @php
+    $st = $changeRequest->status;
+    $pill = [
+      'requested' => ['class'=>'bg-amber-100 text-amber-800','label'=>'Pending review'],
+      'approved'  => ['class'=>'bg-emerald-100 text-emerald-800','label'=>'Approved'],
+      'declined'  => ['class'=>'bg-rose-100 text-rose-800','label'=>'Declined'],
+      'canceled'  => ['class'=>'bg-slate-100 text-slate-700','label'=>'Canceled'],
+    ][$st] ?? ['class'=>'bg-slate-100 text-slate-700','label'=>ucfirst($st)];
+  @endphp
+
+  <span class="inline-flex items-center h-10 px-3 rounded-lg text-sm font-medium ring-1 ring-slate-200 {{ $pill['class'] }}">
+    {{ $pill['label'] }}
+  </span>
+
+@elseif($eligibleForChange)
+  <button type="button"
+          onclick="crOpen()"
+          class="inline-flex items-center h-10 rounded-lg bg-violet-600 px-4 text-white hover:bg-violet-700">
+    Request different counselor
+  </button>
+@else
+  <button type="button" disabled
+          title="Available after admin assigns a counselor and ≥24h before session."
+          class="inline-flex items-center h-10 rounded-lg bg-violet-600 px-4 text-white opacity-50 cursor-not-allowed">
+    Request different counselor
+  </button>
+@endif
 </div>
+
+<dialog id="crModal" class="rounded-2xl p-0 w-[720px] max-w-[96vw] backdrop:bg-slate-900/60 backdrop:backdrop-blur">
+  <form method="POST" action="{{ route('appointment.request_change', $appointment->id) }}" class="p-5">
+    @csrf
+
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="text-lg font-semibold">Request a different counselor</h3>
+      <button type="button" onclick="crClose()" class="p-1.5 rounded-lg hover:bg-slate-100">
+        ✕
+      </button>
+    </div>
+    <p class="text-sm text-slate-600 mb-4">
+      Your request is private to the admin. The current counselor won’t see your reason text.
+    </p>
+
+    {{-- Reason (required) --}}
+    <label class="block text-xs font-medium text-slate-600 mb-1">Reason <span class="text-rose-600">*</span></label>
+    <select id="crReason" name="reason_code" required
+            class="w-full h-11 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-violet-500 mb-3">
+      <option value="" hidden>Choose a reason</option>
+      <option value="uncomfortable">I feel uncomfortable</option>
+      <option value="language">Language preference</option>
+      <option value="schedule">Schedule mismatch</option>
+      <option value="conflict">Conflict of interest</option>
+      <option value="other">Other</option>
+    </select>
+
+    {{-- Additional explanation (required) --}}
+    <div class="flex items-center justify-between">
+      <label class="block text-xs font-medium text-slate-600">Additional explanation <span class="text-rose-600">*</span></label>
+      <span id="crCount" class="text-[11px] text-slate-500">0/300</span>
+    </div>
+    <textarea id="crText" name="reason_text" rows="4" maxlength="300" required
+              class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-violet-500 mb-2"
+              placeholder="Be specific (e.g., comfort level, language, scheduling, conflict)."></textarea>
+
+    {{-- Preferred counselor (optional) --}}
+    <label class="block text-xs font-medium text-slate-600 mb-1">Preferred counselor (optional)</label>
+    <select name="preferred_counselor_id"
+            class="w-full h-11 bg-white border border-slate-200 rounded-xl px-3 text-sm mb-1">
+      <option value="">No preference</option>
+      {{-- Use real IDs from your tbl_counselors --}}
+      <option value="1">Nelson L. Englatera</option>
+      <option value="2">Juvy C. Magbanua</option>
+      <option value="3">Jason D. Ang</option>
+      <option value="4">Chrizelle Mae Gem A. Costillas</option>
+    </select>
+    <p class="text-[12px] text-slate-500 mb-4">
+      Note: This request will first undergo admin review before any counselor change is made.
+      The admin will check the availability of your selected counselor for your scheduled time.
+      You’ll receive an update once it’s approved — please check your Gmail or the app regularly for notifications.
+    </p>
+
+    <div class="mt-3 flex items-center justify-end gap-2">
+      <button type="button" onclick="crClose()"
+              class="h-10 inline-flex items-center rounded-lg bg-slate-100 px-4 text-slate-700">Cancel</button>
+      <button id="crSubmit" type="submit" disabled
+              class="h-10 inline-flex items-center rounded-lg bg-violet-600 px-4 text-white disabled:opacity-50 disabled:cursor-not-allowed">
+        Submit request
+      </button>
+    </div>
+  </form>
+</dialog>
 
 @endsection
 
 @push('scripts')
 <script>
+  const crDialog = document.getElementById('crModal');
+
+  function openCR() {
+    if (!crDialog.open) {
+      crDialog.showModal();
+      // next frame -> play enter animation
+      requestAnimationFrame(() => crDialog.classList.add('animate-in'));
+    }
+  }
+
+  function closeCR() {
+    // play exit animation then close
+    crDialog.classList.remove('animate-in');
+    crDialog.classList.add('animate-out');
+    setTimeout(() => {
+      crDialog.classList.remove('animate-out');
+      crDialog.close();
+    }, 160);
+  }
+
+  // ESC closes with animation
+  crDialog.addEventListener('cancel', (e) => {
+    e.preventDefault(); // prevent instant close
+    closeCR();
+  });
+
+  // Click outside panel to close
+  crDialog.addEventListener('click', (e) => {
+    const rect = crDialog.querySelector('.panel')?.getBoundingClientRect();
+    if (!rect) return;
+    const inPanel =
+      e.clientX >= rect.left && e.clientX <= rect.right &&
+      e.clientY >= rect.top  && e.clientY <= rect.bottom;
+    if (!inPanel) closeCR();
+  });
+</script>
+
+<script>
+(function () {
+  const reasonSel = document.getElementById('reason_code');
+  const reasonTxt = document.getElementById('reason_text');
+  const submitBtn = document.getElementById('crSubmit');
+  const dialogEl  = document.getElementById('crModal');
+
+  function isValid() {
+    const selOK = !!(reasonSel && reasonSel.value);
+    const txtLen = (reasonTxt?.value || '').trim().length;
+    const txtOK = txtLen >= 10;
+    return selOK && txtOK;
+  }
+
+  function updateState() {
+    if (!submitBtn) return;
+    submitBtn.disabled = !isValid();
+  }
+
+  reasonSel?.addEventListener('change', updateState);
+  reasonTxt?.addEventListener('input', updateState);
+
+  // when opening the dialog ensure initial state is correct
+  window.openCR = function openCR() {
+    dialogEl?.showModal();
+    requestAnimationFrame(() => dialogEl?.classList.add('animate-in'));
+    updateState();
+  };
+
+  window.closeCR = function closeCR() {
+    dialogEl?.classList.remove('animate-in');
+    dialogEl?.classList.add('animate-out');
+    setTimeout(() => {
+      dialogEl?.classList.remove('animate-out');
+      dialogEl?.close();
+    }, 160);
+  };
+
+  // safety: disable during submit to block double-clicks
+  dialogEl?.querySelector('form')?.addEventListener('submit', function () {
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting…';
+    }
+  });
+
+  // initialize once for good measure
+  document.addEventListener('DOMContentLoaded', updateState);
+})();
+
 function confirmStudentCancel(e, form) {
   e.preventDefault();
   Swal.fire({
@@ -221,6 +413,91 @@ function printAppointmentCard() {
   if (!w) return;
   w.document.open(); w.document.write(docHtml); w.document.close();
 }
+function crOpen(){ document.getElementById('crModal').showModal(); }
+function crClose(){ document.getElementById('crModal').close(); }
+
+// tie to your "Request different counselor" button
+// onclick="crOpen()"
+
+(function(){
+  const reason = document.getElementById('crReason');
+  const text   = document.getElementById('crText');
+  const count  = document.getElementById('crCount');
+  const submit = document.getElementById('crSubmit');
+
+  // keep it gentle while typing: remove tags & control chars only
+  const sanitizeWhileTyping = (s) => {
+    s = s.replace(/<[^>]*>/g, '');                // strip tags
+    s = s.replace(/https?:\/\/\S+/gi, '[link removed]'); // redact URLs
+    s = s.replace(/[\x00-\x1F\x7F]/g, ' ');       // control chars -> space
+    s = s.replace(/\s{3,}/g, '  ');               // collapse 3+ spaces to 2, but allow single trailing space
+    return s;
+  };
+
+  const validate = () => {
+    const ok = reason.value && text.value.trim().length >= 10;
+    submit.disabled = !ok;
+    count.textContent = text.value.length + '/300';
+  };
+
+  text.addEventListener('input', () => {
+    const cur = text.value;
+    const clean = sanitizeWhileTyping(cur).slice(0, 300);
+    if (clean !== cur) {
+      const pos = text.selectionStart;
+      text.value = clean;
+      text.setSelectionRange(pos, pos);
+    }
+    validate();
+  });
+
+  reason.addEventListener('change', validate);
+
+  // Final hard cleanup ONLY when submitting
+  const form = document.querySelector('#crModal form');
+  form?.addEventListener('submit', () => {
+    // now we can trim ends and normalize spaces safely
+    let v = text.value.replace(/\s{2,}/g, ' ').trim();
+    text.value = v.slice(0, 300);
+    submit.disabled = true;
+    submit.textContent = 'Submitting…';
+  });
+
+  validate();
+})();
 </script>
+
+<style>
+  /* Backdrop: dark veil + blur */
+  #crModal::backdrop{
+    background: rgba(2, 6, 23, 0.45); /* slate-950/45 */
+    backdrop-filter: blur(4px);
+    animation: lumiBackdropIn .18s ease-out both;
+  }
+  @keyframes lumiBackdropIn { from{opacity:0} to{opacity:1} }
+
+  /* Dialog chrome */
+  #crModal{
+    border: 0;
+    padding: 0;
+    overflow: visible; /* allow rounded corners to render cleanly */
+  }
+
+  /* Panel enter/exit */
+  #crModal .panel{
+    transform: translateY(8px) scale(.98);
+    opacity: 0;
+    transition: transform .18s ease-out, opacity .18s ease-out;
+  }
+  #crModal.animate-in .panel{
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  #crModal.animate-out .panel{
+    transform: translateY(8px) scale(.98);
+    opacity: 0;
+    transition: transform .14s ease-in, opacity .14s ease-in;
+  }
+</style>
 
 @endpush
