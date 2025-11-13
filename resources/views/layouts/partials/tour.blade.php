@@ -416,39 +416,6 @@
       const isFirstTimeUser = !localStorage.getItem(FT_KEY);
       try { localStorage.setItem(FT_KEY,'1'); } catch(_) {}
 
-      /* ---------------- Welcome modal (styled by app.blade SweetAlert theme) ---------------- */
-      (function showWelcomeOnce(){
-        const MODAL_KEY = `lumi_chat_tour_modal_v3_${USER_ID}`;
-        if (localStorage.getItem(MODAL_KEY)==='1' || !window.Swal) return;
-        Swal.fire({
-          title: 'Welcome to LumiCHAT ✨',
-          html: `
-            <div style="text-align:left;line-height:1.55">
-              <div style="display:inline-block;padding:.35rem .6rem;border-radius:.75rem;
-                  background:linear-gradient(90deg,#7c3aed,#6366f1);color:#fff;
-                  font-weight:800;font-size:.78rem;letter-spacing:.3px;">Quick Tour</div>
-              <p style="margin:.65rem 0 0">Short guide to the <b>Chat</b> and your <b>Sidebar</b>.</p>
-              <ul style="margin:.6rem 0 0 1.1rem;padding:0;list-style:disc;color:#64748b">
-                <li><b>Profile</b>: info & password</li>
-                <li><b>Appointment History</b>: view / reschedule / cancel</li>
-                <li><b>Chat History</b>: revisit conversations</li>
-                <li><b>Settings</b>: theme, text size, prefs</li>
-                <li><b>About</b>: how Lumi works & privacy</li>
-              </ul>
-              <p style="margin:.7rem 0 0;color:#64748b">Tip: <b>Enter</b> to send, <b>Shift+Enter</b> for a new line.</p>
-            </div>`,
-          showCancelButton:true,
-          confirmButtonText:'Start tour',
-          cancelButtonText:'Later',
-          width:580,
-          background:'var(--lumi-bg)',
-          customClass:{
-            popup:'lumi-tour-modal', title:'lumi-tour-title',
-            htmlContainer:'lumi-tour-body', confirmButton:'btn-grad', cancelButton:'btn-neutral'
-          }
-        }).then(()=>{ try{ localStorage.setItem(MODAL_KEY,'1'); }catch(_){ }});
-      })();
-
       /* ---------------- Core chat targets ---------------- */
       const newChatBtn = document.querySelector('.nav-pill[data-new-chat="1"]'); // from TOOLS > New Chat
       const chatArea   = $('#chat-messages') || $('#lb-scope') || $('.msg-area') || $('[data-chat-area]');
@@ -1001,9 +968,30 @@
       if (localStorage.getItem(WELCOME_SEEN) === '1') return false;
       const isCounselor = APP_ROLE === 'counselor';
       const title = isCounselor ? `Welcome, Counselor ${FIRST_NAME} ✨` : 'Welcome to LumiCHAT ✨';
-      const body  = isCounselor
-        ? `<div style="text-align:left;line-height:1.45"><p>We’ll give you a quick tour of your dashboard:</p><ul style="margin:.5rem 0 0 1rem;padding:0;list-style:disc;"><li>Quick actions for Availability & Appointments</li><li>Reading KPIs at a glance</li><li>Navigating upcoming sessions</li></ul></div>`
-        : `<div style="text-align:left;line-height:1.45"><p>We’ll give you a quick tour so you know where everything is.</p><ul style="margin:.5rem 0 0 1rem;padding:0;list-style:disc;"><li>Where to start a new chat</li><li>Where your messages appear</li><li>How to tweak settings</li></ul></div>`;
+      const body = isCounselor
+  ? `<div style="text-align:left;line-height:1.45">
+       <p>We’ll walk you through the key parts of your counselor dashboard:</p>
+       <ul style="margin:.55rem 0 0 1rem;padding:0;list-style:disc;">
+         <li>Where to review today’s sessions and pending requests</li>
+         <li>How to update your availability in a few clicks</li>
+         <li>Where to open appointment details and add notes</li>
+       </ul>
+       <p style="margin:.75rem 0 0;color:#64748b;">
+         You can always replay this tour later using the purple <b>?</b> button.
+       </p>
+     </div>`
+  : `<div style="text-align:left;line-height:1.45">
+       <p>LumiCHAT is here when you need to talk. This short tour shows you:</p>
+       <ul style="margin:.55rem 0 0 1rem;padding:0;list-style:disc;">
+         <li><b>New Chat</b> – where to start a fresh conversation</li>
+         <li><b>Chat area</b> – where your messages and Lumi’s replies appear</li>
+         <li><b>Appointments</b> – how to book or review counseling sessions</li>
+         <li><b>Settings</b> – change theme, text size, and preferences</li>
+       </ul>
+       <p style="margin:.75rem 0 0;color:#64748b;">
+         You can replay this tour anytime from the purple <b>?</b> button in the corner.
+       </p>
+     </div>`;
       if (window.Swal){
         const res = await Swal.fire({
           title, html: body, confirmButtonText:'Start tour',

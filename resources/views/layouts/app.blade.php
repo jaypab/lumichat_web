@@ -271,9 +271,6 @@
                        id="nav-appointment-link">
                       <img src="{{ asset('images/icons/appointment.png') }}" alt="" class="sidebar-icon icon-white">
                       <span>{{ $apptLabel }}</span>
-                      <span id="nav-appt-dot"
-                            class="absolute left-6 top-2 block w-2 h-2 rounded-full bg-rose-500 ring-2 ring-rose-100 {{ $apptUnseen ? '' : 'hidden' }}"
-                            title="New appointment updates"></span>
                     </a>
                   </li>
                 @endif
