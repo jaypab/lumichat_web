@@ -1314,12 +1314,11 @@
       chips.forEach(c => c.setAttribute('aria-pressed', c.dataset.level === level ? 'true' : 'false'));
       applyPill(level);
 
-      const fd = new FormData();
-      fd.append('_token', csrf);
-      fd.append('_method', 'PATCH');
-      fd.append('risk_level', level);
-      fd.append('risk_score', String(scoreMap[level] ?? 0));
-      if (note) fd.append('risk_note', note);
+       const fd = new FormData();
+        fd.append('_token', csrf);
+        fd.append('risk_level', level);
+        fd.append('risk_score', String(scoreMap[level] ?? 0));
+        if (note) fd.append('risk_note', note);
 
       try{
         const res = await fetch(endpoint, { method:'POST', body:fd, headers:{'X-Requested-With':'XMLHttpRequest'} });
