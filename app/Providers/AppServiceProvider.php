@@ -24,14 +24,17 @@ use App\Repositories\Eloquent\DashboardRepository;
 use App\Repositories\Contracts\CounselorLogRepositoryInterface;
 use App\Repositories\Eloquent\CounselorLogRepository;
 
+use App\Repositories\Contracts\CourseAnalyticsRepositoryInterface;
+use App\Repositories\Eloquent\CourseAnalyticsRepository;
+
 class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
-    {
-        $this->app->bind(DashboardRepositoryInterface::class, DashboardRepository::class);
-        $this->app->bind(CounselorLogRepositoryInterface::class, CounselorLogRepository::class);
-    }
-
+{
+    $this->app->bind(DashboardRepositoryInterface::class, DashboardRepository::class);
+    $this->app->bind(CounselorLogRepositoryInterface::class, CounselorLogRepository::class);
+    $this->app->bind(CourseAnalyticsRepositoryInterface::class, CourseAnalyticsRepository::class);
+}
     public function boot(): void
     {
         // Force HTTPS in production

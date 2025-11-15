@@ -14,6 +14,7 @@
   $rawItems = data_get($c, 'breakdown', []);
   if ($rawItems instanceof \Illuminate\Support\Collection) $rawItems = $rawItems->toArray();
 
+  // breakdown is already [{label, count}, ...] from case notes (presenting_problem)
   $items = [];
   foreach ($rawItems as $row) {
     $label = (string) (data_get($row,'label') ?? data_get($row,'diagnosis') ?? data_get($row,'diagnosis_result') ?? '—');
@@ -21,7 +22,7 @@
     if ($label !== '—' && $count > 0) $items[] = ['label'=>$label,'count'=>$count];
   }
   usort($items, fn($a,$b)=>$b['count']<=>$a['count']);
-  $totalDx = array_sum(array_column($items,'count'));
+  $totalDx = array_sum(array_column($items,'count')); // actually total case notes / concerns
 
   $palette = [
     'Stress'              => ['bg'=>'bg-amber-50','text'=>'text-amber-700','ring'=>'ring-amber-200','bar'=>'bg-amber-400/70'],
@@ -42,11 +43,11 @@
   ];
   $fallback = ['bg'=>'bg-slate-50','text'=>'text-slate-700','ring'=>'ring-slate-200','bar'=>'bg-slate-400/70'];
 
-   $pill = function(string $label) use ($palette,$fallback){
-      $s = $palette[$label] ?? $fallback;
-      return '<span class="inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium '
-          . $s['bg'].' '.$s['text'].' ring-1 '.$s['ring'].'">'.e($label).'</span>';
-    };
+  $pill = function(string $label) use ($palette,$fallback){
+    $s = $palette[$label] ?? $fallback;
+    return '<span class="inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium '
+        . $s['bg'].' '.$s['text'].' ring-1 '.$s['ring'].'">'.e($label).'</span>';
+  };
 @endphp
 
 @section('content')
@@ -61,15 +62,15 @@
 
     <div class="flex gap-2">
       {{-- Show: Single Course -> PDF --}}
-<a href="{{ route('admin.course-analytics.show.export.pdf', ['course' => $courseId]) }}"
-   target="_blank" rel="noopener"
-   class="inline-flex items-center h-9 px-3 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700">
-  <svg class="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
-  </svg>
-  Download PDF
-</a>
+      <a href="{{ route('admin.course-analytics.show.export.pdf', ['course' => $courseId]) }}"
+         target="_blank" rel="noopener"
+         class="inline-flex items-center h-9 px-3 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700">
+        <svg class="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+        </svg>
+        Download PDF
+      </a>
 
       <a href="{{ route('admin.course-analytics.index') }}"
          class="inline-flex items-center h-9 px-3 rounded-lg text-sm font-medium bg-white border border-slate-200 shadow-sm hover:bg-slate-50">
@@ -82,7 +83,9 @@
   <div id="print-analytics-show" class="space-y-6">
 
     {{-- Print title --}}
-    <h1 class="hidden print:block text-xl font-semibold">Course Summary — {{ $courseLabel }} • {{ $yearLabel }}</h1>
+    <h1 class="hidden print:block text-xl font-semibold">
+      Course Summary — {{ $courseLabel }} • {{ $yearLabel }}
+    </h1>
 
     {{-- Summary card --}}
     <div class="relative bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
@@ -105,17 +108,19 @@
             </div>
           </div>
           <div class="fade-in" style="--delay:0.15s">
-            <div class="kpi-label">Total Diagnoses</div>
+            <div class="kpi-label">Total Case Notes</div>
             <div class="font-medium text-slate-900">
               <span class="countup" data-target="{{ (int)$totalDx }}">0</span>
             </div>
           </div>
         </div>
 
-        {{-- Top diagnoses chips --}}
+        {{-- Top presenting concerns chips --}}
         @if(count($items))
           <div class="mt-4">
-            <div class="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Top diagnoses</div>
+            <div class="text-[11px] uppercase tracking-wide text-slate-500 mb-2">
+              Top presenting concerns
+            </div>
             <div class="flex flex-wrap gap-1.5">
               @foreach(array_slice($items,0,6) as $it)
                 {!! $pill($it['label']) !!}
@@ -143,7 +148,9 @@
     <div class="relative bg-white rounded-2xl shadow-sm border border-slate-200/70">
 
       <div class="p-5">
-        <h3 class="text-base font-semibold text-slate-800 mb-3">Diagnosis Breakdown (summary)</h3>
+        <h3 class="text-base font-semibold text-slate-800 mb-3">
+          Presenting Concerns Breakdown (summary)
+        </h3>
 
         @if(count($items))
           <div role="list" class="space-y-3">
@@ -177,7 +184,9 @@
               <img src="{{ asset('images/icons/nodata.png') }}" class="w-6 h-6 opacity-60" alt="">
             </div>
             <p class="mt-3 text-sm font-medium text-slate-700">No breakdown available</p>
-            <p class="text-xs text-slate-500">This course has no compiled diagnosis data yet.</p>
+            <p class="text-xs text-slate-500">
+              This course has no compiled case-note data yet.
+            </p>
           </div>
         @endif
       </div>

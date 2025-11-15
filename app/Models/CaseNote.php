@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-
+use Illuminate\Support\Facades\Artisan;  
 class CaseNote extends Model
 {
     use SoftDeletes;
@@ -24,4 +24,19 @@ class CaseNote extends Model
     ];
 
     public function appointment() { return $this->belongsTo(\App\Models\Appointment::class, 'appointment_id'); }
+
+    protected static function booted()
+    {
+        // Whenever a case note is created or updated
+        static::saved(function (CaseNote $note) {
+            // Rebuild course analytics from case notes
+            Artisan::call('analytics:rebuild-courses');
+        });
+
+        // Whenever a case note is soft-deleted / force-deleted
+        static::deleted(function (CaseNote $note) {
+            Artisan::call('analytics:rebuild-courses');
+        });
+    }
 }
+
