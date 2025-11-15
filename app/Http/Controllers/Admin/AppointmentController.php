@@ -144,7 +144,18 @@ public function index(Request $r): View
         $row = $this->appointments->findDetailedById($id);
         abort_unless($row, 404);
 
+        // pull extra student metadata (course + year level)
+        $studentMeta = \DB::table('tbl_users')
+            ->where('id', $row->student_id)
+            ->first(['course','year_level']);
+
+        if ($studentMeta) {
+            $row->student_course     = $studentMeta->course;
+            $row->student_year_level = $studentMeta->year_level;
+        }
+
         $latestReport = \DB::table('tbl_diagnosis_reports')
+            ->where('student_id', $row->student_id)
             ->where('student_id', $row->student_id)
             ->where('counselor_id', $row->counselor_id)
             ->orderByDesc('id')
@@ -980,7 +991,7 @@ public function index(Request $r): View
         return true; // nothing available => full-day disabled
     }
 
-    public function handleChangeRequest(Request $r, int $id, string $action): \Illuminate\Http\RedirectResponse
+   public function handleChangeRequest(Request $r, int $id, string $action): \Illuminate\Http\RedirectResponse
     {
         try {
             // 1) Guard invalid action
@@ -990,6 +1001,28 @@ public function index(Request $r): View
                     'title' => 'Invalid',
                     'text'  => 'Unknown action.',
                 ]);
+            }
+
+            // If declining, capture the note (required)
+            $declineNote = null;
+            if ($action === 'decline') {
+                $declineNote = trim((string) $r->input('decline_note', ''));
+
+                if ($declineNote === '') {
+                    return back()->with(self::FLASH_SWAL, [
+                        'icon'  => 'warning',
+                        'title' => 'Note required',
+                        'text'  => 'Please enter a short note explaining why the request is being declined.',
+                    ]);
+                }
+
+                if (mb_strlen($declineNote) > 4000) {
+                    return back()->with(self::FLASH_SWAL, [
+                        'icon'  => 'warning',
+                        'title' => 'Note too long',
+                        'text'  => 'The note is too long. Maximum is 4000 characters.',
+                    ]);
+                }
             }
 
             // 2) Load appointment
@@ -1028,25 +1061,38 @@ public function index(Request $r): View
             $newStatus = $action === 'approve' ? 'approved' : 'declined';
 
             // 4) Atomic update
-            \DB::transaction(function () use ($id, $cr, $newStatus) {
+            \DB::transaction(function () use ($id, $cr, $newStatus, $declineNote) {
                 // lock appointment row so we see the current counselor before we clear it
-                $ap = \DB::table('tbl_appointments')
+                $apLocked = \DB::table('tbl_appointments')
                     ->lockForUpdate()
                     ->where('id', $id)
                     ->first();
 
                 // figure out what the "previous" counselor is
-                $prevId = $cr->previous_counselor_id ?? ($ap?->counselor_id ?? null);
+                $prevId = $cr->previous_counselor_id ?? ($apLocked?->counselor_id ?? null);
 
-                // build update payload safely
+                // base update payload
                 $updateData = [
-                    'status'     => $newStatus,
-                    'updated_at' => now(),
+                    'status'            => $newStatus,
+                    'updated_at'        => now(),
+                    'handled_by_admin_id' => auth()->id(),
+                    'handled_at'        => now(),
                 ];
 
-                // only touch this column if it actually exists in the table
+                // only touch previous_counselor_id if it exists in the table
                 if (\Schema::hasColumn('counselor_change_requests', 'previous_counselor_id')) {
                     $updateData['previous_counselor_id'] = $prevId;
+                }
+
+                // 🔴 IMPORTANT: save the decline note into the actual column name
+                if ($newStatus === 'declined' && $declineNote !== null) {
+                    if (\Schema::hasColumn('counselor_change_requests', 'decision_notes')) {
+                        // this matches your DB screenshot
+                        $updateData['decision_notes'] = $declineNote;
+                    } elseif (\Schema::hasColumn('counselor_change_requests', 'decline_note')) {
+                        // fallback if later mag-rename ka ng column
+                        $updateData['decline_note'] = $declineNote;
+                    }
                 }
 
                 // update the change request
@@ -1069,6 +1115,7 @@ public function index(Request $r): View
             // 5) In-app notifications (soft-fail)
             try {
                 if (class_exists(\App\Support\Notify::class)) {
+
                     if ($newStatus === 'approved') {
                         \App\Support\Notify::student(
                             (int) $ap->student_id,
@@ -1077,17 +1124,25 @@ public function index(Request $r): View
                             route('appointment.view', $id)
                         );
                     } else {
+                        // decline message with optional note
+                        $msg = 'Your counselor change request was declined.';
+                        if ($declineNote) {
+                            $msg .= ' Note from admin: '.$declineNote;
+                        }
+
                         \App\Support\Notify::student(
                             (int) $ap->student_id,
                             'Reassignment declined',
-                            'Your counselor change request was declined.'
+                            $msg,
+                            route('appointment.view', $id)
                         );
                     }
                 }
             } catch (\Throwable $e) {
                 \Log::warning('Notify failed on change-request', [
-                    'id' => $id,
-                    'e'  => $e->getMessage(),
+                    'id'     => $id,
+                    'action' => $action,
+                    'e'      => $e->getMessage(),
                 ]);
             }
 
@@ -1122,4 +1177,5 @@ public function index(Request $r): View
             ]);
         }
     }
+
 }

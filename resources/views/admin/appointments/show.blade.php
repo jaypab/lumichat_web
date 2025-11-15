@@ -131,9 +131,34 @@
             <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-600">Student</h3>
           </header>
           <div class="p-4 space-y-1.5">
-            <div class="font-medium text-slate-900">{{ $appointment->student_name ?? '—' }}</div>
+            <div class="font-medium text-slate-900">
+              {{ $appointment->student_name ?? '—' }}
+            </div>
+
+            @php
+              $yearRaw = $appointment->student_year_level ?? null;
+              $yearLbl = match((string) $yearRaw) {
+                '1' => '1st Year',
+                '2' => '2nd Year',
+                '3' => '3rd Year',
+                '4' => '4th Year',
+                default => $yearRaw, // kung naka-text na sa DB (e.g. "4th Year"), use as-is
+              };
+            @endphp
+
+            @if(!empty($appointment->student_course) || !empty($appointment->student_year_level))
+              <div class="text-sm text-slate-600">
+                {{ $appointment->student_course ?? 'N/A' }}
+                @if(!empty($appointment->student_year_level))
+                  · {{ $yearLbl }}
+                @endif
+              </div>
+            @endif
+
             @if(!empty($appointment->student_email))
-              <div class="text-sm text-slate-600">{{ $appointment->student_email }}</div>
+              <div class="text-sm text-slate-600">
+                {{ $appointment->student_email }}
+              </div>
             @endif
           </div>
         </section>
@@ -202,7 +227,6 @@
                 @if(!empty($appointment->counselor_email))
                   <div class="text-sm text-slate-600">{{ $appointment->counselor_email }}</div>
                 @endif
-                {{-- we removed the duplicate green pill here because it's already in the header --}}
               </div>
             </div>
           @else
@@ -217,6 +241,8 @@
             </div>
           @endif
         </section>
+
+        {{-- Counselor Change Request --}}
         @if(!empty($changeReq))
           <section class="rounded-2xl ring-1 ring-slate-200 bg-white overflow-hidden lg:col-span-2">
             <header class="px-4 py-2.5 bg-slate-50/60 flex items-center justify-between">
@@ -237,26 +263,37 @@
               </div>
 
               <div>
-                  <div class="text-[13px] uppercase tracking-wide text-slate-500">
-                    Preferred Counselor
-                  </div>
-
-                  <div class="font-medium text-slate-900">
-                    {{ $preferredCounselorName ?? 'No preference' }}
-                  </div>
+                <div class="text-[13px] uppercase tracking-wide text-slate-500">
+                  Preferred Counselor
                 </div>
+                <div class="font-medium text-slate-900">
+                  {{ $preferredCounselorName ?? 'No preference' }}
+                </div>
+              </div>
 
               <div class="md:text-right">
                 @if($changeReq->status === 'requested')
-                  <form method="POST" action="{{ route('admin.appointments.change_request.handle', [$appointment->id, 'approve']) }}" class="inline">
+                  {{-- Approve form (with Swal "Are you sure?") --}}
+                  <form method="POST"
+                        action="{{ route('admin.appointments.change_request.handle', [$appointment->id, 'approve']) }}"
+                        class="inline"
+                        data-cr-action="approve">
                     @csrf
-                    <button class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
+                    <button type="button"
+                            class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 js-cr-approve-btn">
                       Approve
                     </button>
                   </form>
-                  <form method="POST" action="{{ route('admin.appointments.change_request.handle', [$appointment->id, 'decline']) }}" class="inline ml-2">
+
+                  {{-- Decline form (with Swal + note) --}}
+                  <form method="POST"
+                        action="{{ route('admin.appointments.change_request.handle', [$appointment->id, 'decline']) }}"
+                        class="inline ml-2"
+                        data-cr-action="decline">
                     @csrf
-                    <button class="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">
+                    <input type="hidden" name="decline_note" value="">
+                    <button type="button"
+                            class="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 js-cr-decline-btn">
                       Decline
                     </button>
                   </form>
@@ -266,20 +303,105 @@
                   </span>
                 @endif
               </div>
+
+              {{-- Show admin note when declined --}}
+              @if($changeReq->status === 'declined' && !empty($changeReq->decision_notes ?? null))
+                <div class="md:col-span-3 mt-2">
+                  <div class="text-[13px] uppercase tracking-wide text-slate-500 mb-1">
+                    Admin Note
+                  </div>
+                  <div class="rounded-xl bg-rose-50 text-rose-800 text-sm px-3 py-2 ring-1 ring-rose-100">
+                    {{ $changeReq->decision_notes }}
+                  </div>
+                </div>
+              @endif
             </div>
           </section>
-          @endif
+        @endif
+
       </div>
     </div>
   </div>
 </div>
 @endsection
 
-
-
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 @if (session('swal'))
   <script>Swal.fire(@json(session('swal')));</script>
 @endif
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // ----- Approve with confirm -----
+  const approveForm = document.querySelector('form[data-cr-action="approve"]');
+  if (approveForm) {
+    const approveBtn = approveForm.querySelector('.js-cr-approve-btn');
+    if (approveBtn) {
+      approveBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        Swal.fire({
+          title: 'Approve change request?',
+          text: 'This will clear the current counselor and move this appointment back to Pending so you can assign a new counselor.',
+          icon: 'question',
+          showCancelButton: true,
+          confirmButtonText: 'Yes, approve',
+          cancelButtonText: 'Cancel',
+          reverseButtons: true,
+          focusCancel: true,
+        }).then((result) => {
+          if (result.isConfirmed) {
+            approveForm.submit();
+          }
+        });
+      });
+    }
+  }
+
+  // ----- Decline with note -----
+  const declineForm = document.querySelector('form[data-cr-action="decline"]');
+  if (declineForm) {
+    const declineBtn  = declineForm.querySelector('.js-cr-decline-btn');
+    const declineNote = declineForm.querySelector('input[name="decline_note"]');
+
+    if (declineBtn && declineNote) {
+      declineBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+
+        Swal.fire({
+          title: 'Decline change request?',
+          text: 'The student will be notified that their request was declined.',
+          icon: 'warning',
+          input: 'textarea',
+          inputLabel: 'Note for the student',
+          inputPlaceholder: 'Briefly explain why this request is being declined...',
+          inputAttributes: {
+            rows: 4,
+          },
+          showCancelButton: true,
+          confirmButtonText: 'Submit',
+          cancelButtonText: 'Cancel',
+          reverseButtons: true,
+          preConfirm: (value) => {
+            if (!value || !value.trim()) {
+              Swal.showValidationMessage('Please add a short note for the student.');
+              return false;
+            }
+            if (value.length > 4000) {
+              Swal.showValidationMessage('Note is too long (max 4000 characters).');
+              return false;
+            }
+            return value.trim();
+          },
+        }).then((result) => {
+          if (result.isConfirmed && result.value) {
+            declineNote.value = result.value;
+            declineForm.submit();
+          }
+        });
+      });
+    }
+  }
+});
+</script>
 @endpush

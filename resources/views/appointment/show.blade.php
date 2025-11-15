@@ -94,20 +94,20 @@
       </div>
     </div>
     
-  {{-- Admin/Counselor note to the student --}}
-  @if(!empty($appointment->note))
-    <div class="mt-6 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
-      <div class="flex items-center gap-2 text-indigo-800 font-medium text-sm">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M12 2a10 10 0 100 20 10 10 0 000-20zM11 6h2v7h-2V6zm0 9h2v2h-2v-2z"/>
-        </svg>
-        Note from Counseling Office
+    {{-- Admin/Counselor note to the student --}}
+    @if(!empty($appointment->note))
+      <div class="mt-6 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
+        <div class="flex items-center gap-2 text-indigo-800 font-medium text-sm">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2a10 10 0 100 20 10 10 0 000-20zM11 6h2v7h-2V6zm0 9h2v2h-2v-2z"/>
+          </svg>
+          Note from Counseling Office
+        </div>
+        <div class="mt-2 text-slate-800 text-sm leading-relaxed">
+          {!! nl2br(e($appointment->note)) !!}
+        </div>
       </div>
-      <div class="mt-2 text-slate-800 text-sm leading-relaxed">
-        {!! nl2br(e($appointment->note)) !!}
-      </div>
-    </div>
-  @endif
+    @endif
 
     @if(!empty($appointment->final_note))
       <div class="mt-6">
@@ -122,6 +122,85 @@
             </div>
           @endif
         </div>
+      </div>
+    @endif
+
+    {{-- Counselor change request status (inside card, under notes) --}}
+    @if(isset($changeRequest) && $changeRequest)
+      @php
+        $st = $changeRequest->status;
+        $pill = [
+          'requested' => ['class'=>'bg-amber-100 text-amber-800','label'=>'Pending review'],
+          'approved'  => ['class'=>'bg-emerald-100 text-emerald-800','label'=>'Approved'],
+          'declined'  => ['class'=>'bg-rose-100 text-rose-800','label'=>'Declined'],
+          'canceled'  => ['class'=>'bg-slate-100 text-slate-700','label'=>'Canceled'],
+        ][$st] ?? ['class'=>'bg-slate-100 text-slate-700','label'=>ucfirst($st)];
+
+        $hasPref   = !empty($changeRequest->preference_counselor_id);
+        $adminNote = trim((string)($changeRequest->decision_notes ?? $changeRequest->decline_note ?? ''));
+        $handledAt = $changeRequest->handled_at
+            ? \Carbon\Carbon::parse($changeRequest->handled_at)->format('M d, Y · g:i A')
+            : null;
+      @endphp
+
+      <div class="mt-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+
+        {{-- TOP ROW: STATUS + PREFERRED + TIMESTAMP --}}
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+
+          {{-- Status pill + preferred counselor --}}
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="inline-flex items-center h-8 px-3 rounded-full text-xs font-medium ring-1 ring-slate-200 {{ $pill['class'] }}">
+              {{ $pill['label'] }}
+            </span>
+
+            <span class="text-xs text-slate-600">
+              Preferred counselor:
+              @if($hasPref)
+                {{ $changeRequest->preferred_counselor_name ?? ('Counselor #'.$changeRequest->preference_counselor_id) }}
+              @else
+                No preference
+              @endif
+            </span>
+          </div>
+
+          {{-- Right-side status message --}}
+          @if($changeRequest->status === 'requested')
+            <span class="text-[11px] text-slate-500">
+              Your request was sent to the admin.
+            </span>
+
+          @elseif($changeRequest->status === 'approved')
+            <div class="flex flex-col sm:items-end text-[11px]">
+              <span class="text-emerald-600">
+                Approved. A new counselor will be assigned.
+              </span>
+              @if($handledAt)
+                <span class="mt-0.5 text-slate-400">Approved at: {{ $handledAt }}</span>
+              @endif
+            </div>
+
+          @elseif($changeRequest->status === 'declined')
+            <div class="flex flex-col sm:items-end text-[11px]">
+              <span class="text-rose-600">Declined by admin.</span>
+              @if($handledAt)
+                <span class="mt-0.5 text-slate-400">Declined at: {{ $handledAt }}</span>
+              @endif
+            </div>
+          @endif
+        </div> {{-- END TOP ROW --}}
+
+        {{-- ADMIN NOTE BOX — FULL WIDTH + BELOW --}}
+        @if($changeRequest->status === 'declined' && $adminNote !== '')
+          <div class="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
+            <div class="flex items-center gap-2 text-[11px] font-semibold tracking-wide text-rose-800 uppercase mb-1">
+              Admin Note
+            </div>
+            <div class="text-[13px] text-rose-900 leading-relaxed">
+              {!! nl2br(e($adminNote)) !!}
+            </div>
+          </div>
+        @endif
       </div>
     @endif
 
@@ -143,96 +222,70 @@
       !$isFuture => 'This appointment has already started/passed.',
       default => 'Cancel not available.',
     };
+
+    $hasCounselor = !empty($appointment->counselor_id);
+    $isFuture24   = \Carbon\Carbon::parse($appointment->scheduled_at)->gt(now()->addHours(24));
+
+    // ONLY confirmed appointments can request counselor change
+    $eligibleForChange = ($appointment->status === 'confirmed')
+                        && $hasCounselor
+                        && $isFuture24;
   @endphp
 
-  <div class="mt-6 flex items-center gap-3">
-    <a id="btn-appt-close"
-       href="{{ route('appointment.history') }}"
-       aria-label="Back to appointment history"
-       class="inline-flex items-center rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600">
-      Close
-    </a>
+  <div class="mt-6">
+    <div class="flex flex-wrap items-center gap-3">
+      <a id="btn-appt-close"
+         href="{{ route('appointment.history') }}"
+         aria-label="Back to appointment history"
+         class="inline-flex items-center rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600">
+        Close
+      </a>
 
-  @if ($canCancel)
-    <form method="POST" action="{{ route('appointment.cancel', $appointment->id) }}" onsubmit="return confirmStudentCancel(event, this)">
-      @csrf
-      @method('PATCH')
-      <button type="submit" class="inline-flex items-center rounded-lg bg-rose-600 px-4 py-2 text-white hover:bg-rose-700">
-        Cancel
-      </button>
-    </form>
-  @else
-    <button type="button" disabled title="{{ $cannotReason }}"
-            class="inline-flex items-center rounded-lg bg-rose-600 px-4 py-2 text-white opacity-50 cursor-not-allowed">
-      Cancel
-    </button>
-  @endif
+      @if ($canCancel)
+        <form method="POST" action="{{ route('appointment.cancel', $appointment->id) }}" onsubmit="return confirmStudentCancel(event, this)">
+          @csrf
+          @method('PATCH')
+          <button type="submit" class="inline-flex items-center rounded-lg bg-rose-600 px-4 py-2 text-white hover:bg-rose-700">
+            Cancel
+          </button>
+        </form>
+      @else
+        <button type="button" disabled title="{{ $cannotReason }}"
+                class="inline-flex items-center rounded-lg bg-rose-600 px-4 py-2 text-white opacity-50 cursor-not-allowed">
+          Cancel
+        </button>
+      @endif
 
-  {{-- Single appointment -> PDF --}}
-  <a href="{{ route('appointment.show.export.pdf', $appointment->id) }}"
-     target="_blank" rel="noopener"
-     class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-white shadow-sm
-            hover:bg-emerald-700 active:scale-[.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-     title="Download appointment as PDF" aria-label="Download appointment as PDF">
-    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/>
-    </svg>
-    Download PDF
-  </a>
+      {{-- Single appointment -> PDF --}}
+      <a href="{{ route('appointment.show.export.pdf', $appointment->id) }}"
+         target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-white shadow-sm
+                hover:bg-emerald-700 active:scale-[.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+         title="Download appointment as PDF" aria-label="Download appointment as PDF">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/>
+        </svg>
+        Download PDF
+      </a>
 
-  @php
-      $hasCounselor = !empty($appointment->counselor_id);
-      $isFuture24   = \Carbon\Carbon::parse($appointment->scheduled_at)->gt(now()->addHours(24));
-
-      // ONLY confirmed appointments can request counselor change
-      $eligibleForChange = ($appointment->status === 'confirmed')
-                          && $hasCounselor
-                          && $isFuture24;
-  @endphp
-
-      @if(isset($changeRequest) && $changeRequest)
-    @php
-      $st = $changeRequest->status;
-      $pill = [
-        'requested' => ['class'=>'bg-amber-100 text-amber-800','label'=>'Pending review'],
-        'approved'  => ['class'=>'bg-emerald-100 text-emerald-800','label'=>'Approved'],
-        'declined'  => ['class'=>'bg-rose-100 text-rose-800','label'=>'Declined'],
-        'canceled'  => ['class'=>'bg-slate-100 text-slate-700','label'=>'Canceled'],
-      ][$st] ?? ['class'=>'bg-slate-100 text-slate-700','label'=>ucfirst($st)];
-
-      $hasPref = !empty($changeRequest->preference_counselor_id);
-    @endphp
-
-    <div class="flex flex-col sm:flex-row sm:items-center gap-2">
-      <span class="inline-flex items-center h-10 px-3 rounded-lg text-sm font-medium ring-1 ring-slate-200 {{ $pill['class'] }}">
-        {{ $pill['label'] }}
-      </span>
-
-      <span class="text-xs text-slate-500">
-       Preferred counselor:
-        @if($hasPref)
-          {{ $changeRequest->preferred_counselor_name ?? ('Counselor #'.$changeRequest->preference_counselor_id) }}
+      {{-- Request different counselor button (only when NO existing change request) --}}
+      @if(!isset($changeRequest) || !$changeRequest)
+        @if($eligibleForChange)
+          <button type="button"
+                  onclick="crOpen()"
+                  class="inline-flex items-center h-10 rounded-lg bg-violet-600 px-4 text-white hover:bg-violet-700">
+            Request different counselor
+          </button>
         @else
-          No preference
+          <button type="button" disabled
+                  title="Available only for confirmed appointments, ≥24h before session, with an assigned counselor."
+                  class="inline-flex items-center h-10 rounded-lg bg-violet-600 px-4 text-white opacity-50 cursor-not-allowed">
+            Request different counselor
+          </button>
         @endif
-      </span>
+      @endif
     </div>
-
-  @elseif($eligibleForChange)
-
-    <button type="button"
-            onclick="crOpen()"
-            class="inline-flex items-center h-10 rounded-lg bg-violet-600 px-4 text-white hover:bg-violet-700">
-      Request different counselor
-    </button>
-  @else
-    <button type="button" disabled
-            title="Available only for confirmed appointments, ≥24h before session, with an assigned counselor."
-            class="inline-flex items-center h-10 rounded-lg bg-violet-600 px-4 text-white opacity-50 cursor-not-allowed">
-      Request different counselor
-    </button>
-  @endif
   </div>
 
   {{-- Change counselor dialog --}}
@@ -279,8 +332,7 @@
           $availablePref = $allCounselors->filter(fn($c) => in_array($c->id, $freeIdsArr, true));
           $busyPref      = $allCounselors->reject(fn($c) => in_array($c->id, $freeIdsArr, true));
 
-          // pre-select if needed (for future use)
-          $preferredId = optional($changeRequest)->preference_counselor_id;
+          $preferredId = optional($changeRequest)->preference_counselor_id ?? null;
         @endphp
 
         <label class="block text-xs font-medium text-slate-600 mb-1">
@@ -481,7 +533,6 @@ function printAppointmentCard() {
       cancelButtonText: 'No, review first',
       reverseButtons: true,
       focusCancel: true,
-      // mount inside the dialog so it appears on top, not behind
       target: '#crModal',
       backdrop: false,
       showClass: { popup: 'swal2-show' },
@@ -500,22 +551,19 @@ function printAppointmentCard() {
 </script>
 
 <style>
-  /* Backdrop: dark veil + blur */
   #crModal::backdrop{
-    background: rgba(2, 6, 23, 0.45); /* slate-950/45 */
+    background: rgba(2, 6, 23, 0.45);
     backdrop-filter: blur(4px);
     animation: lumiBackdropIn .18s ease-out both;
   }
   @keyframes lumiBackdropIn { from{opacity:0} to{opacity:1} }
 
-  /* Dialog chrome */
   #crModal{
     border: 0;
     padding: 0;
     overflow: visible;
   }
 
-  /* Panel enter/exit */
   #crModal .panel{
     transform: translateY(8px) scale(.98);
     opacity: 0;
