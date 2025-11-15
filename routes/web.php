@@ -117,9 +117,8 @@ Route::middleware('auth' , 'tos')->group(function () {
         ->name('appointment.show.export.pdf');
 
      // Student: request a different counselor
-    Route::post('/appointment/{id}/request-counselor-change',
-        [\App\Http\Controllers\CounselorChangeRequestController::class, 'store']
-    )->name('appointment.request_change');
+    Route::post('/appointments/{id}/request-change', [CounselorChangeRequestController::class, 'store'])
+        ->name('appointment.request_change');
 
     // Actions / APIs
     Route::post('/appointment', [AppointmentController::class, 'store'])->name('appointment.store');

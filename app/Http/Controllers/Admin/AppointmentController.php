@@ -139,8 +139,7 @@ public function index(Request $r): View
     return view('admin.appointments.index', compact('appointments', 'status', 'period', 'q'));
 }
 
-    /** Show appointment details + latest report for that pair. */
-    public function show(int $id): View
+  public function show(int $id): View
     {
         $row = $this->appointments->findDetailedById($id);
         abort_unless($row, 404);
@@ -151,43 +150,38 @@ public function index(Request $r): View
             ->orderByDesc('id')
             ->first();
 
-       // NEW: latest counselor-change request (if any)
-        $changeReq = \DB::table('counselor_change_requests')
-            ->where('appointment_id', $row->id)
-            ->orderByDesc('id')
+        // 🔎 Latest counselor-change request + JOIN sa counselors table
+        $changeReq = \DB::table('counselor_change_requests as cr')
+            ->leftJoin('tbl_counselors as pc', 'pc.id', '=', 'cr.preference_counselor_id')
+            ->select(
+                'cr.*',
+                'pc.name as preferred_counselor_name' // direktang resolved name
+            )
+            ->where('cr.appointment_id', $row->id)
+            ->orderByDesc('cr.id')
             ->first();
 
+        // Label na ipapasa sa Blade
         $preferredCounselorName = null;
 
         if ($changeReq) {
-            // accept both column spellings + optional free-text name
-            $prefIdRaw   = $changeReq->preferred_counselor_id ?? $changeReq->preference_counselor_id ?? null;
-            $prefNameRaw = $changeReq->preferred_counselor_name ?? null; // if you store the name directly
-
-            // 1) if we have an ID, try to resolve it
-            if ($prefIdRaw !== null && $prefIdRaw !== '' && (int)$prefIdRaw > 0) {
-                $prefId = (int)$prefIdRaw;
-                $resolved = \DB::table('tbl_counselors')->where('id', $prefId)->value('name');
-
-                if ($resolved) {
-                    $preferredCounselorName = $resolved;               // resolved name
-                } else {
-                    $preferredCounselorName = 'ID #'.$prefId.' (not found)'; // ID saved but counselor row missing
-                }
-            }
-            // 2) if no ID but there’s a stored text name, use it
-            elseif ($prefNameRaw && trim($prefNameRaw) !== '') {
-                $preferredCounselorName = trim($prefNameRaw);
+            if (!empty($changeReq->preferred_counselor_name)) {
+                // galing sa LEFT JOIN sa tbl_counselors
+                $preferredCounselorName = $changeReq->preferred_counselor_name;
+            } elseif (!empty($changeReq->preference_counselor_id)) {
+                // may ID pero walang nahanap na name (edge case)
+                $preferredCounselorName = 'Counselor #'.$changeReq->preference_counselor_id;
             }
         }
 
         return view('admin.appointments.show', [
-            'appointment'             => $row,
-            'latestReport'            => $latestReport,
-            'changeReq'               => $changeReq,
-            'preferredCounselorName'  => $preferredCounselorName,
+            'appointment'            => $row,
+            'latestReport'           => $latestReport,
+            'changeReq'              => $changeReq,
+            'preferredCounselorName' => $preferredCounselorName,
         ]);
     }
+
 
     /** Persist final report for a completed appointment. */
     public function saveReport(Request $r, int $id): RedirectResponse
@@ -582,9 +576,18 @@ public function index(Request $r): View
             ->first();
 
         $blockedCounselorId = null;
-        if ($cr && ($cr->status === 'approved' || $cr->status === 'requested')) {
-            // we only block if we know the previous counselor
-            $blockedCounselorId = (int) ($cr->previous_counselor_id ?? 0) ?: null;
+
+        if ($cr && in_array($cr->status, ['approved','requested'], true)) {
+            // be generous in what we accept (depende sa actual column name mo)
+            $rawPrev =
+                $cr->previous_counselor_id
+                ?? $cr->prev_counselor_id   // just in case ganito pangalan
+                ?? $cr->previous_counselor  // or this
+                ?? null;
+
+            if ($rawPrev !== null && $rawPrev !== '') {
+                $blockedCounselorId = (int) $rawPrev;
+            }
         }
 
         $slotStart = \Carbon\Carbon::parse($appointment->scheduled_at)->second(0);
@@ -597,11 +600,10 @@ public function index(Request $r): View
             $c->available   = $this->appointments->counselorIsFreeAt((int)$c->id, $slotStart) ? 1 : 0;
             $c->busy_reason = $c->available ? null : 'Not available';
 
-            // 🚫 extra UI block: if same as previous counselor, mark as "Not allowed"
             if ($blockedCounselorId && (int)$c->id === (int)$blockedCounselorId) {
-                $c->available   = 0;
-                $c->busy_reason = 'Not allowed (requested change)'; // UI hint
-                $c->__blocked_same = true; // for Blade
+                $c->available      = 0;
+                $c->busy_reason    = 'Last assigned counselor';
+                $c->__blocked_same = true;
             }
         }
 
@@ -978,89 +980,145 @@ public function index(Request $r): View
         return true; // nothing available => full-day disabled
     }
 
-   public function handleChangeRequest(Request $r, int $id, string $action): \Illuminate\Http\RedirectResponse
+    public function handleChangeRequest(Request $r, int $id, string $action): \Illuminate\Http\RedirectResponse
     {
         try {
+            // 1) Guard invalid action
             if (!in_array($action, ['approve','decline'], true)) {
                 return back()->with(self::FLASH_SWAL, [
-                    'icon'=>'warning','title'=>'Invalid','text'=>'Unknown action.'
+                    'icon'  => 'warning',
+                    'title' => 'Invalid',
+                    'text'  => 'Unknown action.',
                 ]);
             }
 
-            $ap = \DB::table('tbl_appointments')->where('id',$id)->first();
+            // 2) Load appointment
+            $ap = \DB::table('tbl_appointments')->where('id', $id)->first();
             if (!$ap) {
-                return back()->with(self::FLASH_SWAL, ['icon'=>'warning','title'=>'Not found','text'=>'Appointment not found.']);
+                return back()->with(self::FLASH_SWAL, [
+                    'icon'  => 'warning',
+                    'title' => 'Not found',
+                    'text'  => 'Appointment not found.',
+                ]);
             }
 
             // Only pending/confirmed can be processed
             if (!in_array($ap->status, ['pending','confirmed'], true)) {
                 return back()->with(self::FLASH_SWAL, [
-                    'icon'=>'warning','title'=>'Not allowed',
-                    'text'=>'You can process change requests only for pending/confirmed appointments.'
+                    'icon'  => 'warning',
+                    'title' => 'Not allowed',
+                    'text'  => 'You can process change requests only for pending/confirmed appointments.',
                 ]);
             }
 
-            // Most recent request
+            // 3) Most recent counselor-change request
             $cr = \DB::table('counselor_change_requests')
-                ->where('appointment_id',$id)
+                ->where('appointment_id', $id)
                 ->orderByDesc('id')
                 ->first();
 
             if (!$cr || $cr->status !== 'requested') {
                 return back()->with(self::FLASH_SWAL, [
-                    'icon'=>'info','title'=>'No pending request','text'=>'Nothing to process.'
+                    'icon'  => 'info',
+                    'title' => 'No pending request',
+                    'text'  => 'Nothing to process.',
                 ]);
             }
 
             $newStatus = $action === 'approve' ? 'approved' : 'declined';
 
+            // 4) Atomic update
             \DB::transaction(function () use ($id, $cr, $newStatus) {
-                \DB::table('counselor_change_requests')
-                    ->where('id',$cr->id)
-                    ->update(['status'=>$newStatus,'updated_at'=>now()]);
+                // lock appointment row so we see the current counselor before we clear it
+                $ap = \DB::table('tbl_appointments')
+                    ->lockForUpdate()
+                    ->where('id', $id)
+                    ->first();
 
+                // figure out what the "previous" counselor is
+                $prevId = $cr->previous_counselor_id ?? ($ap?->counselor_id ?? null);
+
+                // build update payload safely
+                $updateData = [
+                    'status'     => $newStatus,
+                    'updated_at' => now(),
+                ];
+
+                // only touch this column if it actually exists in the table
+                if (\Schema::hasColumn('counselor_change_requests', 'previous_counselor_id')) {
+                    $updateData['previous_counselor_id'] = $prevId;
+                }
+
+                // update the change request
+                \DB::table('counselor_change_requests')
+                    ->where('id', $cr->id)
+                    ->update($updateData);
+
+                // if approved → clear counselor + bump back to pending so Assign Counselor is allowed
                 if ($newStatus === 'approved') {
-                    // Clear counselor and normalize back to pending so “Assign Counselor” is allowed
-                    \DB::table('tbl_appointments')->where('id',$id)->update([
-                        'counselor_id' => null,
-                        'status'       => 'pending',
-                        'updated_at'   => now(),
-                    ]);
+                    \DB::table('tbl_appointments')
+                        ->where('id', $id)
+                        ->update([
+                            'counselor_id' => null,
+                            'status'       => 'pending',
+                            'updated_at'   => now(),
+                        ]);
                 }
             });
 
-            // In-app notifications (optional; guard if Notify exists)
+            // 5) In-app notifications (soft-fail)
             try {
                 if (class_exists(\App\Support\Notify::class)) {
                     if ($newStatus === 'approved') {
-                        \App\Support\Notify::student((int)$ap->student_id,
+                        \App\Support\Notify::student(
+                            (int) $ap->student_id,
                             'Reassignment approved',
                             'Your counselor change request was approved. We will assign a new counselor shortly.',
-                            route('appointment.view',$id)
+                            route('appointment.view', $id)
                         );
                     } else {
-                        \App\Support\Notify::student((int)$ap->student_id,
+                        \App\Support\Notify::student(
+                            (int) $ap->student_id,
                             'Reassignment declined',
                             'Your counselor change request was declined.'
                         );
                     }
                 }
             } catch (\Throwable $e) {
-                \Log::warning('Notify failed on change-request', ['id'=>$id,'e'=>$e->getMessage()]);
+                \Log::warning('Notify failed on change-request', [
+                    'id' => $id,
+                    'e'  => $e->getMessage(),
+                ]);
             }
 
+            // 6) Redirects + Swal
             if ($newStatus === 'approved') {
-                return redirect()->route('admin.appointments.assign.form',$id)
-                    ->with(self::FLASH_SWAL, ['icon'=>'success','title'=>'Approved','text'=>'Request approved. Please assign a new counselor.']);
+                return redirect()
+                    ->route('admin.appointments.assign.form', $id)
+                    ->with(self::FLASH_SWAL, [
+                        'icon'  => 'success',
+                        'title' => 'Approved',
+                        'text'  => 'Request approved. Please assign a new counselor.',
+                    ]);
             }
 
-            return back()->with(self::FLASH_SWAL, ['icon'=>'success','title'=>'Declined','text'=>'Request marked as declined.']);
+            return back()->with(self::FLASH_SWAL, [
+                'icon'  => 'success',
+                'title' => 'Declined',
+                'text'  => 'Request marked as declined.',
+            ]);
 
         } catch (\Throwable $e) {
-            \Log::error('change_request.handle failed', ['id'=>$id,'action'=>$action,'e'=>$e]);
+            \Log::error('change_request.handle failed', [
+                'id'     => $id,
+                'action' => $action,
+                'e'      => $e,
+            ]);
+
             return back()->with(self::FLASH_SWAL, [
-                'icon'=>'error','title'=>'Server error',
-                'text'=>'Something went wrong while processing the request. Check logs.'
+                'icon'  => 'error',
+                'title' => 'Server error',
+                'text'  => 'Something went wrong while processing the request. Check logs.',
             ]);
         }
     }

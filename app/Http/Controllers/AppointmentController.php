@@ -332,125 +332,125 @@ class AppointmentController extends Controller
         return response()->json(['slots'=>$slots]);
     }
 
-    /* --------------------------- Store booking -------------------------- */public function store(Request $request)
-{
-    $request->validate([
-        'date'    => ['required','date_format:Y-m-d'],
-        'time'    => ['required','regex:/^\d{2}:\d{2}$/'],
-        'consent' => ['accepted'],
-    ], [], ['date'=>'date', 'time'=>'time']);
+    /* --------------------------- Store booking -------------------------- */
+    public function store(Request $request)
+    {
+        $request->validate([
+            'date'    => ['required','date_format:Y-m-d'],
+            'time'    => ['required','regex:/^\d{2}:\d{2}$/'],
+            'consent' => ['accepted'],
+        ], [], ['date'=>'date', 'time'=>'time']);
 
-    $studentId = Auth::id();
+        $studentId = Auth::id();
 
-    // First, auto-sweep past actives to no_show so they won't block booking
-    $this->autoSweepNoShowsForStudent($studentId);
+        // First, auto-sweep past actives to no_show so they won't block booking
+        $this->autoSweepNoShowsForStudent($studentId);
 
-    $raw  = Carbon::parse($request->date.' '.$request->time.':00')->second(0);
-    $slot = $this->floorToSlot($raw);
+        $raw  = Carbon::parse($request->date.' '.$request->time.':00')->second(0);
+        $slot = $this->floorToSlot($raw);
 
-    if ($raw->ne($slot)) {
-        return back()->withErrors(['time'=>'Please choose a 60-minute step (e.g., 09:00, 10:00).'])->withInput();
-    }
+        if ($raw->ne($slot)) {
+            return back()->withErrors(['time'=>'Please choose a 60-minute step (e.g., 09:00, 10:00).'])->withInput();
+        }
 
-    $hasActiveAny = DB::table('tbl_appointments')
-        ->where('student_id', $studentId)
-        ->whereIn('status', self::STUDENT_ACTIVE_STATUSES)
-        ->exists();
-    if ($hasActiveAny) {
-        return back()->withErrors([
-            'error' => 'You already have a pending/confirmed appointment. Complete or cancel it before booking another.',
-        ])->withInput();
-    }
+        $hasActiveAny = DB::table('tbl_appointments')
+            ->where('student_id', $studentId)
+            ->whereIn('status', self::STUDENT_ACTIVE_STATUSES)
+            ->exists();
+        if ($hasActiveAny) {
+            return back()->withErrors([
+                'error' => 'You already have a pending/confirmed appointment. Complete or cancel it before booking another.',
+            ])->withInput();
+        }
 
-    $dowIso = $slot->isoWeekday();
-    if ($dowIso < 1 || $dowIso > 5) {
-        return back()->withErrors(['date'=>'Appointments are available Monday to Friday only.'])->withInput();
-    }
-    if ($slot->lte(now())) {
-        return back()->withErrors(['time'=>'Please choose a future time.'])->withInput();
-    }
+        $dowIso = $slot->isoWeekday();
+        if ($dowIso < 1 || $dowIso > 5) {
+            return back()->withErrors(['date'=>'Appointments are available Monday to Friday only.'])->withInput();
+        }
+        if ($slot->lte(now())) {
+            return back()->withErrors(['time'=>'Please choose a future time.'])->withInput();
+        }
 
-    $hasSameDay = DB::table('tbl_appointments')
-        ->where('student_id', $studentId)
-        ->whereDate('scheduled_at', $slot->toDateString())
-        ->whereIn('status', self::BLOCKING_STATUSES)
-        ->exists();
-    if ($hasSameDay) {
-        return back()->withErrors(['date'=>'You already have an appointment on this date.'])->withInput();
-    }
+        $hasSameDay = DB::table('tbl_appointments')
+            ->where('student_id', $studentId)
+            ->whereDate('scheduled_at', $slot->toDateString())
+            ->whereIn('status', self::BLOCKING_STATUSES)
+            ->exists();
+        if ($hasSameDay) {
+            return back()->withErrors(['date'=>'You already have an appointment on this date.'])->withInput();
+        }
 
-    try {
-        $newId = null;
+        try {
+            $newId = null;
 
-        DB::transaction(function () use ($studentId, $slot, &$newId) {
-            $remaining = $this->remainingCapacityAt($slot);
-            if ($remaining <= 0) {
-                throw new \RuntimeException('FULL');
+            DB::transaction(function () use ($studentId, $slot, &$newId) {
+                $remaining = $this->remainingCapacityAt($slot);
+                if ($remaining <= 0) {
+                    throw new \RuntimeException('FULL');
+                }
+
+                // get ID for deep link
+                $newId = DB::table('tbl_appointments')->insertGetId([
+                    'student_id'   => $studentId,
+                    'counselor_id' => null,
+                    'scheduled_at' => $slot,
+                    'status'       => 'pending',
+                    'created_at'   => now(),
+                    'updated_at'   => now(),
+                ]);
+            }, 3);
+
+            // 🔔 notify student (requested)
+            $this->notifyUser(
+                $studentId,
+                'Appointment requested',
+                'We received your booking for ' . $slot->format('M d, Y g:i A') . '. You’ll be notified when it’s approved.',
+                route('appointment.view', $newId)
+            );
+
+            // 🔔 Step A: notify all Admins that assignment is needed
+            try {
+                $whenNice = $slot->format('M d, Y g:i A');
+                // Keep it two-arg to avoid signature mismatches; include the id in the body
+                Notify::admins(
+                    'New appointment pending',
+                    'A new student appointment (ID: '.$newId.') needs counselor assignment for '.$whenNice.'.'
+                );
+            } catch (\Throwable $e) {
+                \Log::warning('Admin notify failed (new pending appt)', [
+                    'appointment_id' => $newId,
+                    'error'          => $e->getMessage(),
+                ]);
             }
 
-            // get ID for deep link
-            $newId = DB::table('tbl_appointments')->insertGetId([
-                'student_id'   => $studentId,
-                'counselor_id' => null,
-                'scheduled_at' => $slot,
-                'status'       => 'pending',
-                'created_at'   => now(),
-                'updated_at'   => now(),
-            ]);
-        }, 3);
-
-        // 🔔 notify student (requested)
-        $this->notifyUser(
-            $studentId,
-            'Appointment requested',
-            'We received your booking for ' . $slot->format('M d, Y g:i A') . '. You’ll be notified when it’s approved.',
-            route('appointment.view', $newId)
-        );
-
-        // 🔔 Step A: notify all Admins that assignment is needed
-        try {
-            $whenNice = $slot->format('M d, Y g:i A');
-            // Keep it two-arg to avoid signature mismatches; include the id in the body
-            Notify::admins(
-                'New appointment pending',
-                'A new student appointment (ID: '.$newId.') needs counselor assignment for '.$whenNice.'.'
-            );
-        } catch (\Throwable $e) {
-            \Log::warning('Admin notify failed (new pending appt)', [
-                'appointment_id' => $newId,
-                'error'          => $e->getMessage(),
-            ]);
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage() === 'FULL') {
+                return back()->withInput()->with('swal', [
+                    'icon'  => 'info',
+                    'title' => 'Time slot unavailable',
+                    'text'  => 'That time just filled up. Please pick another slot.',
+                ]);
+            }
+            throw $e;
         }
 
-    } catch (\RuntimeException $e) {
-        if ($e->getMessage() === 'FULL') {
-            return back()->withInput()->with('swal', [
-                'icon'  => 'info',
-                'title' => 'Time slot unavailable',
-                'text'  => 'That time just filled up. Please pick another slot.',
+        return redirect()
+            ->route('appointment.history')
+            ->with('swal', [
+                'icon'  => 'success',
+                'title' => 'Appointment booked!',
+                'html'  => sprintf(
+                    '<div style="text-align:left">
+                    <div><b>Date:</b> %s</div>
+                    <div><b>Time:</b> %s</div>
+                    <div style="margin-top:.25rem;color:#475569"><em>A counselor has not been assigned yet. You’ll be notified once an admin assigns one.</em></div>
+                    </div>',
+                    e($slot->format('M d, Y')),
+                    e($slot->format('g:i A'))
+                ),
+                'confirmButtonText' => 'OK',
             ]);
-        }
-        throw $e;
     }
-
-    return redirect()
-        ->route('appointment.history')
-        ->with('swal', [
-            'icon'  => 'success',
-            'title' => 'Appointment booked!',
-            'html'  => sprintf(
-                '<div style="text-align:left">
-                <div><b>Date:</b> %s</div>
-                <div><b>Time:</b> %s</div>
-                <div style="margin-top:.25rem;color:#475569"><em>A counselor has not been assigned yet. You’ll be notified once an admin assigns one.</em></div>
-                </div>',
-                e($slot->format('M d, Y')),
-                e($slot->format('g:i A'))
-            ),
-            'confirmButtonText' => 'OK',
-        ]);
-}
-
 
     /* ----------------------------- History ----------------------------- */
     public function history(Request $request)
@@ -665,32 +665,57 @@ class AppointmentController extends Controller
         return $pdf->stream($filename);
     }
 
-    public function show($id)
+    public function show(int $id)
     {
         $userId = Auth::id();
 
+        // 1) Load appointment (owned by this student) + assigned counselor info
         $appointment = DB::table('tbl_appointments as a')
             ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
-            ->select(
+            ->select([
                 'a.*',
                 'c.name  as counselor_name',
                 'c.email as counselor_email',
-                'c.phone as counselor_phone'
-            )
+                'c.phone as counselor_phone',
+            ])
             ->where('a.id', $id)
             ->where('a.student_id', $userId)
             ->first();
 
+        // 404 kung hindi niya appointment
         abort_unless($appointment, 404);
 
-       $changeRequest = DB::table('counselor_change_requests')
-            ->where('appointment_id', $appointment->id)
-            ->latest('id')
+        // 2) Latest counselor change request (if any) + preferred counselor name
+        $changeRequest = DB::table('counselor_change_requests as cr')
+            ->leftJoin('tbl_counselors as pc', 'pc.id', '=', 'cr.preference_counselor_id')
+            ->select([
+                'cr.*',
+                // same property names na ginagamit sa blade:
+                'cr.preference_counselor_id',
+                'pc.name as preferred_counselor_name',
+            ])
+            ->where('cr.appointment_id', $appointment->id)
+            ->orderByDesc('cr.id')
             ->first();
 
+        // 3) Build counselor list for the "Request different counselor" modal
+        //    (same slot as this appointment)
+        $slotStart = Carbon::parse($appointment->scheduled_at)->second(0);
+
+        $counselors = DB::table('tbl_counselors')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'phone']);
+
+        // IDs ng counselors na free sa exact slot na ito
+        $freeIds = $this->counselorsFreeAt($slotStart);   // returns array<int>
+
+        // 4) Render student-side show view
         return view('appointment.show', [
             'appointment'   => $appointment,
-            'changeRequest' => $changeRequest,
+            'changeRequest' => $changeRequest,   // may ->status, ->preference_counselor_id, ->preferred_counselor_name
+            'counselors'    => $counselors,
+            'freeIds'       => $freeIds,
         ]);
     }
 
@@ -826,82 +851,102 @@ class AppointmentController extends Controller
         $u->notify(new SimpleDatabaseNotification($title, $body, $url));
     }
 
-    public function requestCounselorChange(\Illuminate\Http\Request $request, int $id)
+   public function requestCounselorChange(Request $request, int $id)
     {
-        $userId = \Auth::id();
+        $userId = Auth::id();
 
         // Load appointment the student owns
-        $ap = \DB::table('tbl_appointments')->where('id',$id)->where('student_id',$userId)->first();
+        $ap = DB::table('tbl_appointments')
+            ->where('id', $id)
+            ->where('student_id', $userId)
+            ->first();
+
         abort_unless($ap, 404);
 
         // Must be future and have a counselor (and >24h away)
-        $start = \Carbon\Carbon::parse($ap->scheduled_at);
+        $start = Carbon::parse($ap->scheduled_at);
         if (empty($ap->counselor_id) || $start->lte(now()->addHours(24))) {
-            return back()->withErrors(['error' => 'You can request a change only after a counselor is assigned and at least 24 hours before the session.']);
+            return back()->withErrors([
+                'error' => 'You can request a change only after a counselor is assigned and at least 24 hours before the session.',
+            ]);
         }
 
-        // Validate + basic normalization
-        $allowedReasons = ['uncomfortable','language','schedule','conflict','other'];
+        // Allowed reason codes
+        $allowedReasons = ['uncomfortable', 'language', 'schedule', 'conflict', 'other'];
 
+        // Validate base fields
         $data = $request->validate([
-            'reason_code'            => ['required','in:'.implode(',',$allowedReasons)],
-            'reason_text'            => ['required','string','min:10','max:300'],
-            'preferred_counselor_id' => ['nullable','integer','exists:tbl_counselors,id'],
+            'reason_code'             => ['required', 'in:' . implode(',', $allowedReasons)],
+            'reason_text'             => ['required', 'string', 'min:10', 'max:300'],
+            'preference_counselor_id' => ['nullable', 'integer', 'exists:tbl_counselors,id'],
         ], [], [
             'reason_code' => 'reason',
             'reason_text' => 'additional explanation',
         ]);
 
-        // --- STRICT SANITIZATION ---
+        // --- STRICT SANITIZATION (reason text only) ---
         $clean = function (string $s): string {
-            $s = strip_tags($s);                     // remove any HTML
-            $s = preg_replace('/https?:\/\/\S+/i','[link removed]', $s);   // strip URLs
-            $s = preg_replace('/[\x00-\x1F\x7F]/u', ' ', $s);              // control chars
-            $s = preg_replace('/\s{2,}/', ' ', $s);                         // collapse spaces
+            $s = strip_tags($s);                                        // remove HTML
+            $s = preg_replace('/https?:\/\/\S+/i', '[link removed]', $s); // strip URLs
+            $s = preg_replace('/[\x00-\x1F\x7F]/u', ' ', $s);           // control chars
+            $s = preg_replace('/\s{2,}/', ' ', $s);                     // collapse spaces
             return trim($s);
         };
-
         $data['reason_text'] = $clean($data['reason_text']);
 
-        // Persist (create or upsert one "requested" per appointment)
-        $existing = \App\Models\CounselorChangeRequest::where('appointment_id',$ap->id)
-            ->where('status','requested')->first();
+        // --- HANDLE PREFERRED COUNSELOR EXPLICITLY ---
+        $prefId = $request->input('preference_counselor_id');
+
+        if ($prefId === null || $prefId === '') {
+            $prefId = null; // No preference
+        } else {
+            $prefId = (int) $prefId;
+
+            // Double-check it really exists; if not, drop to null
+            $exists = DB::table('tbl_counselors')->where('id', $prefId)->exists();
+            if (!$exists) {
+                $prefId = null;
+            }
+        }
+
+        // Check if there is already a "requested" change for this appointment
+        $existing = DB::table('counselor_change_requests')
+            ->where('appointment_id', $ap->id)
+            ->where('status', 'requested')
+            ->first();
+
+        $payload = [
+            'appointment_id'          => $ap->id,
+            'requested_by_student_id' => $userId,              // actual column
+            'current_counselor_id'    => $ap->counselor_id,
+            'reason_code'             => $data['reason_code'],
+            'reason_text'             => $data['reason_text'],
+            'preference_counselor_id' => $prefId,              // <<– DITO NAPUPUNTA
+            'status'                  => 'requested',
+            'updated_at'              => now(),
+        ];
 
         if ($existing) {
-            $existing->update([
-                'reason_code'            => $data['reason_code'],
-                'reason_text'            => $data['reason_text'],
-                'preferred_counselor_id' => $data['preferred_counselor_id'] ?? null,
-                'updated_at'             => now(),
-            ]);
+            DB::table('counselor_change_requests')
+                ->where('id', $existing->id)
+                ->update($payload);
         } else {
-            \App\Models\CounselorChangeRequest::create([
-                'appointment_id'         => $ap->id,
-                'student_id'             => $userId,
-                'current_counselor_id'   => $ap->counselor_id,
-                'preferred_counselor_id' => $data['preferred_counselor_id'] ?? null,
-                'reason_code'            => $data['reason_code'],
-                'reason_text'            => $data['reason_text'],
-                'status'                 => 'requested',
-                'created_at'             => now(),
-                'updated_at'             => now(),
-            ]);
+            $payload['created_at'] = now();
+            DB::table('counselor_change_requests')->insert($payload);
         }
 
         // Optional: notify admins
         try {
-            \App\Support\Notify::admins(
+            Notify::admins(
                 'Counselor change request',
-                'Student #'.$userId.' requested a counselor change for appointment #'.$ap->id.'.'
+                'Student #' . $userId . ' requested a counselor change for appointment #' . $ap->id . '.'
             );
         } catch (\Throwable $e) {
-            \Log::warning('Admin notify failed (counselor change request)', ['e'=>$e->getMessage()]);
+            \Log::warning('Admin notify failed (counselor change request)', ['e' => $e->getMessage()]);
         }
 
         return redirect()
             ->route('appointment.view', $ap->id)
             ->with('success', 'Your request was submitted and is now under review. We’ll notify you once the admin decides.');
     }
-
-
 }

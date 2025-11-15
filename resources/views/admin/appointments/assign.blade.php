@@ -149,7 +149,7 @@
                       <option value="{{ $c->id }}" disabled>
                         {{ $c->name }}@if($c->email) — {{ $c->email }} @endif
                         @if(!empty($c->__blocked_same))
-                          (Not allowed — requested change)
+                          (Last assigned counselor — not selectable)
                         @elseif(!empty($c->busy_reason))
                           ({{ $c->busy_reason }})
                         @else

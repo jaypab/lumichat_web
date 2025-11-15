@@ -20,29 +20,37 @@ class CounselorSeeder extends Seeder
 
         $counselors = [
             [
-                'full_name' => 'Jason Ang',
-                'email'     => 'lorenzmanillasaldivar@gmail.com',
-                'password'  => 'Counselor123', // CHANGE in production
-                'phone'     => '09991234567',
+                'full_name' => 'Nelson L. Englatera',
+                'email'     => 'nelson.englatera@example.com',   // TODO: replace with real email
+                'password'  => 'Counselor123',                   // CHANGE in production
+                'phone'     => '09990000001',
             ],
             [
-                'full_name' => 'Sally',
-                'email'     => 'labininaycloyd5@gmail.com',
-                'password'  => 'Counselor123', // CHANGE in production
-                'phone'     => '09987654321',
+                'full_name' => 'Juvy C. Magbanua',
+                'email'     => 'juvy.magbanua@example.com',      // TODO: replace with real email
+                'password'  => 'Counselor123',
+                'phone'     => '09990000002',
             ],
-
             [
-                'full_name' => 'Juan Dela Cruz',
-                'email'     => 'dummycounselor35@gmail.com',
-                'password'  => '@Password12345', // CHANGE in production
-                'phone'     => '09987654525',
+                'full_name' => 'Jason D. Ang',
+                'email'     => 'jason.ang@example.com',          // TODO: replace with real email
+                'password'  => 'Counselor123',
+                'phone'     => '09990000003',
+            ],
+            [
+                'full_name' => 'Chrizzelle Mae Gem A. Costillas',
+                'email'     => 'chrizzelle.costillas@example.com', // TODO: replace with real email
+                'password'  => 'Counselor123',
+                'phone'     => '09990000004',
             ],
         ];
 
         foreach ($counselors as $c) {
             // 1) Ensure counselor exists in tbl_counselors
-            $counselorId = DB::table('tbl_counselors')->where('email', $c['email'])->value('id');
+            $counselorId = DB::table('tbl_counselors')
+                ->where('email', $c['email'])
+                ->value('id');
+
             if (!$counselorId) {
                 $payload = [
                     'name'       => $c['full_name'],
@@ -51,16 +59,22 @@ class CounselorSeeder extends Seeder
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
+
                 if (Schema::hasColumn('tbl_counselors', 'phone')) {
                     $payload['phone'] = $c['phone'];
                 }
+
                 $counselorId = DB::table('tbl_counselors')->insertGetId($payload);
             }
 
-            // 2) Ensure user exists in tbl_users (role=counselor)
-            $userId = DB::table('tbl_users')->where('email', $c['email'])->value('id');
+            // 2) Ensure user exists in tbl_users (role = counselor)
+            $userId = DB::table('tbl_users')
+                ->where('email', $c['email'])
+                ->value('id');
+
             if (!$userId) {
                 DB::table('tbl_users')->insert([
+                    // if you prefer full name in users table, change to: 'name' => $c['full_name'],
                     'name'       => explode(' ', $c['full_name'])[0],
                     'email'      => $c['email'],
                     'password'   => Hash::make($c['password']),
@@ -69,8 +83,8 @@ class CounselorSeeder extends Seeder
                     'updated_at' => $now,
                 ]);
             } else {
-                // Ensure existing user is tagged as counselor
                 $role = DB::table('tbl_users')->where('id', $userId)->value('role');
+
                 if ($role !== 'counselor') {
                     DB::table('tbl_users')->where('id', $userId)->update([
                         'role'       => 'counselor',

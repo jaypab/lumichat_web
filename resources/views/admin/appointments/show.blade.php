@@ -237,11 +237,14 @@
               </div>
 
               <div>
-                <div class="text-[13px] uppercase tracking-wide text-slate-500">Preferred Counselor</div>
-              <div class="font-medium text-slate-900">
-                  {{ $preferredCounselorName ?: '—' }}
+                  <div class="text-[13px] uppercase tracking-wide text-slate-500">
+                    Preferred Counselor
+                  </div>
+
+                  <div class="font-medium text-slate-900">
+                    {{ $preferredCounselorName ?? 'No preference' }}
+                  </div>
                 </div>
-              </div>
 
               <div class="md:text-right">
                 @if($changeReq->status === 'requested')
