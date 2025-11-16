@@ -454,95 +454,98 @@ class ChatController extends Controller
             ]);
         }
 
-        // ===== 5) Flow control (fix long-vent bypass + loops) =====
-        $botReplies = [];
-        $rasaUrl    = $this->rasaWebhookUrl();
+            // ===== 5) Flow control (fix long-vent bypass + loops) =====
+            $botReplies = [];
+            $rasaUrl    = $this->rasaWebhookUrl();
 
-        // Track emotional vent turns separately so non-mental topics don’t consume them
-        $ventKey   = 'vent_turns_for_session_'.$sessionId;
-        $ventTurns = (int) session($ventKey, 0);
+            // Track emotional vent turns separately so non-mental topics don’t consume them
+            $ventKey   = 'vent_turns_for_session_'.$sessionId;
+            $ventTurns = (int) session($ventKey, 0);
 
-        $lastIntent = $this->lastBotIntent($sessionId);
+            $lastIntent = $this->lastBotIntent($sessionId);
 
-        // Appointment confirm via "yes" after an offer
-        $askedForAppt =
-            ($flags['wants_appointment'] ?? false)
-            || (($flags['yes'] ?? false) && $lastIntent === 'offer_appointment')
-            || $this->confirmedAfterOffer($analysisText, $sessionId);
+            // Appointment confirm via "yes" after an offer
+            $askedForAppt =
+                ($flags['wants_appointment'] ?? false)
+                || (($flags['yes'] ?? false) && $lastIntent === 'offer_appointment')
+                || $this->confirmedAfterOffer($analysisText, $sessionId);
 
-        // Self-threat overrides to HIGH unless they’re explicitly just booking
-        if ($selfThreat && !$askedForAppt) {
-            $msgRisk = 'high';
-        }
+            // Self-threat overrides to HIGH unless they’re explicitly just booking
+            if ($selfThreat && !$askedForAppt) {
+                $msgRisk = 'high';
+            }
 
-        // Bypass decision: protects long vents from skipping to Rasa
-        $bypass           = $this->shouldBypassVenting_EN($norm, $msgRisk, $flags);
-        $inEmotionalRange = ($msgRisk !== 'low') || !empty($labels);
+            // Bypass decision: protects long vents from skipping to Rasa
+            $bypass           = $this->shouldBypassVenting_EN($norm, $msgRisk, $flags);
+            $inEmotionalRange = ($msgRisk !== 'low') || !empty($labels);
 
-        // Use ventTurns so non-mental messages don’t eat the 3-turn window
-        $inVentWindow     = $inEmotionalRange && ($ventTurns < 3) && !$bypass;
+            // Use ventTurns so non-mental messages don’t eat the 3-turn window
+            $inVentWindow = $inEmotionalRange && ($ventTurns < 3) && !$bypass;
 
-        // -------- Context safeguard for non-mental tagging --------
-        // If the student is already in an emotional conversation (venting started,
-        // or session risk elevated), NEVER downgrade follow-up messages to non-mental
-        // just because this one line has no explicit emotion keyword.
-        if (
-            $ventTurns > 0
-            || ($session->risk_level && $session->risk_level !== 'low')
-            || $sessionUserMsgCount > 1   // multiple emotional turns already
-        ) {
-            $nonMental = false;
-        }
+            // ---- 👇 MOVE THIS UP, BEFORE USING $sessionUserMsgCount ----
+            // Session-level stats for smarter context
+            $sessionEmotionCounts = $this->emotionsAsCounts($session->emotions ?? []);
+            $sessionUserMsgCount  = Chat::where('chat_session_id', $sessionId)
+                ->where('sender', 'user')
+                ->count();
 
-        // Coping throttle (anti-spam)
-        $copingThrottleKey = 'coping_last_offer_'.$sessionId;
-        $copingCooldownSec = 300;
-        $nowEpoch          = time();
-        $canOfferCoping    = !session()->has($copingThrottleKey)
-            || ($nowEpoch - (int) session($copingThrottleKey, 0) >= $copingCooldownSec);
+            // -------- Context safeguard for non-mental tagging --------
+            // If the student is already in an emotional conversation (venting started,
+            // or session risk elevated), NEVER downgrade follow-up messages to non-mental
+            // just because this one line has no explicit emotion keyword.
+            if (
+                $ventTurns > 0
+                || ($session->risk_level && $session->risk_level !== 'low')
+                || $sessionUserMsgCount > 1   // multiple emotional turns already
+            ) {
+                $nonMental = false;
+            }
 
-        // High-level message type (for Rasa + analytics)
-        $messageType = 'other';
+            // ❌ REMOVE your earlier duplicate safeguard block above this comment.
+            //     Only this one should remain.
 
-        if ($unreadable) {
-            $messageType = 'unreadable';
-        } elseif ($nonMental) {
-            $messageType = 'non_mental';
-        } elseif ($selfThreat || $msgRisk === 'high') {
-            $messageType = 'crisis';
-        } elseif ($askedForAppt) {
-            $messageType = 'appointment_request';
-        } elseif ($flags['wants_coping'] ?? false) {
-            $messageType = 'coping_request';
-        } elseif ($inVentWindow && !$nonMental) {
-            // Even if this specific line has no explicit emotion word,
-            // treat it as part of the ongoing emotional vent.
-            $messageType = 'emotional_vent';
-        } elseif ($flags['is_question'] ?? false) {
-            $messageType = 'question';
-        }
+            // Coping throttle (anti-spam)
+            $copingThrottleKey = 'coping_last_offer_'.$sessionId;
+            $copingCooldownSec = 300;
+            $nowEpoch          = time();
+            $canOfferCoping    = !session()->has($copingThrottleKey)
+                || ($nowEpoch - (int) session($copingThrottleKey, 0) >= $copingCooldownSec);
 
-        // Session-level stats for smarter context
-        $sessionEmotionCounts = $this->emotionsAsCounts($session->emotions ?? []);
-        $sessionUserMsgCount  = Chat::where('chat_session_id', $sessionId)
-            ->where('sender', 'user')
-            ->count();
+            // High-level message type (for Rasa + analytics)
+            $messageType = 'other';
 
-        // Conversation stage for policies / smarter replies
-        $conversationStage = 'opening';
-        if ($sessionUserMsgCount <= 1) {
+            if ($unreadable) {
+                $messageType = 'unreadable';
+            } elseif ($nonMental) {
+                $messageType = 'non_mental';
+            } elseif ($selfThreat || $msgRisk === 'high') {
+                $messageType = 'crisis';
+            } elseif ($askedForAppt) {
+                $messageType = 'appointment_request';
+            } elseif ($flags['wants_coping'] ?? false) {
+                $messageType = 'coping_request';
+            } elseif ($inVentWindow && !$nonMental) {
+                $messageType = 'emotional_vent';
+            } elseif ($flags['is_question'] ?? false) {
+                $messageType = 'question';
+            }
+
+            // Conversation stage for policies / smarter replies
             $conversationStage = 'opening';
-        } elseif ($msgRisk === 'high' || ($session->risk_level === 'high')) {
-            $conversationStage = 'crisis';
-        } elseif ($askedForAppt) {
-            $conversationStage = 'appointment_flow';
-        } elseif ($flags['wants_coping'] ?? false) {
-            $conversationStage = 'coping';
-        } elseif ($inVentWindow && !$nonMental) {
-            $conversationStage = 'venting';
-        } elseif ($nonMental) {
-            $conversationStage = 'out_of_scope';
-        }
+            if ($sessionUserMsgCount <= 1) {
+                $conversationStage = 'opening';
+            } elseif ($msgRisk === 'high' || ($session->risk_level === 'high')) {
+                $conversationStage = 'crisis';
+            } elseif ($askedForAppt) {
+                $conversationStage = 'appointment_flow';
+            } elseif ($flags['wants_coping'] ?? false) {
+                $conversationStage = 'coping';
+            } elseif ($inVentWindow && !$nonMental) {
+                $conversationStage = 'venting';
+            } elseif ($nonMental) {
+                $conversationStage = 'out_of_scope';
+            }
+
 
         // Build metadata (rich for Rasa policies)
         $metadata = [
