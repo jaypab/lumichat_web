@@ -685,14 +685,21 @@ class ChatController extends Controller
             // ✅ Coping request or "Yes, show tips"
             session([$copingThrottleKey => $nowEpoch]);
             $callRasa    = true;
-        } else {
+                } else {
             // Normal path (including questions, appointments, or risk/high cases): call Rasa
             $callRasa    = true;
             $rasaMessage = $text;
         }
 
+        // 🔒 SAFETY: if we’ve tagged this as clearly non-mental,
+        //            never call Rasa for this turn.
+        if ($nonMental && !$unreadable) {
+            $callRasa = false;
+        }
+
         // ===== 6.a) If needed, call Rasa now and append replies =====
         if ($callRasa) {
+
             $timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
             $verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
 
@@ -1229,7 +1236,7 @@ class ChatController extends Controller
             'feel like dying','feel lik dyin','i am worthless','worthles','i am a burden','burdn',
             'empty inside','i\'m empty','numb all the time','tired of everything','done with everything',
             'overwhelmed','overwhelm','burnout','panic','anxiety','depressed','depressd','depresed',
-            'i am not okay','im not ok','not okey'
+            'i am not okay','im not ok','not okey', 'not okay','i am not okey', 'not ok'
         ];
         foreach ($moderate as $p) if (preg_match('/\b'.$this->flex($p).'\b/u',$t)) return ['level'=>'moderate','hits'=>[$p]];
 
