@@ -481,6 +481,13 @@ class ChatController extends Controller
 
         // Use ventTurns so non-mental messages don’t eat the 3-turn window
         $inVentWindow     = $inEmotionalRange && ($ventTurns < 3) && !$bypass;
+          // -------- Context safeguard for non-mental tagging --------
+        // If the student is already in an emotional conversation (venting started
+        // or session risk already elevated), NEVER mark follow-up messages
+        // as non-mental just because this one has no emotion word.
+        if ($ventTurns > 0 || ($session->risk_level && $session->risk_level !== 'low')) {
+            $nonMental = false;
+        }
 
         // Coping throttle (anti-spam)
         $copingThrottleKey = 'coping_last_offer_'.$sessionId;
@@ -1398,96 +1405,93 @@ private function labelEmotions(string $raw): array
         return false;
     }
 
-    /** Detect clearly non–mental-health topics (games, homework, general info, etc.). */
-    private function isNonMentalTopic(string $norm, array $labels, array $riskStruct, array $flags): bool
-    {
-        $risk = $riskStruct['level'] ?? 'low';
+/** Detect clearly non–mental-health topics (games, homework, general info, etc.). */
+private function isNonMentalTopic(string $norm, array $labels, array $riskStruct, array $flags): bool
+{
+    $risk = $riskStruct['level'] ?? 'low';
 
-        // 0) YES/NO/DONE replies are always contextual → NEVER treat as non-mental.
-        if (($flags['yes'] ?? false) || ($flags['no'] ?? false) || ($flags['done'] ?? false)) {
+    // 0) YES/NO/DONE replies are always contextual → NEVER treat as non-mental.
+    if (($flags['yes'] ?? false) || ($flags['no'] ?? false) || ($flags['done'] ?? false)) {
+        return false;
+    }
+
+    // 1) If there is ANY emotional or risk signal → treat as mental-health-related
+    if ($risk !== 'low') return false;
+    if (!empty($labels)) return false;
+    if ($flags['wants_appointment'] ?? false) return false;
+    if ($flags['wants_coping'] ?? false) return false;
+
+    // 1.a) GREETINGS: "hi", "hello", etc. should NOT be treated as non-mental.
+    if ($this->hasAnyWord($norm, [
+        'hi','hello','hey','helo','hii',
+        'good morning','good afternoon','good evening',
+    ])) {
+        if (mb_strlen($norm) <= 40 && !($flags['is_question'] ?? false)) {
             return false;
-        }
-
-        // 1) If there is ANY emotional or risk signal → treat as mental-health-related
-        if ($risk !== 'low') return false;
-        if (!empty($labels)) return false;
-        if ($flags['wants_appointment'] ?? false) return false;
-        if ($flags['wants_coping'] ?? false) return false;
-
-        // 1.a) GREETINGS: "hi", "hello", "hey", etc. should NOT be treated as non-mental.
-        //     This is exactly what was blocking your greeting.
-        if ($this->hasAnyWord($norm, [
-            'hi','hello','hey','helo','hii',
-            'good morning','good afternoon','good evening'
-        ])) {
-            // short, non-question greeting → let Rasa / venting handle it
-            if (mb_strlen($norm) <= 40 && !($flags['is_question'] ?? false)) {
-                return false;
-            }
-        }
-
-        // If the text already obviously talks about problems / struggle, don't treat as non-MH
-        if ($this->hasAnyWord($norm, [
-            'stress','stressed','anxiety','anxious','depress','sad','overwhelmed',
-            'lonely','tired','burnout','panic','problem','problems','struggle','struggling',
-            'suicide','selfharm','self-harm',
-            // disappointment and "feel" = clearly emotional
-            'disappoint','disappointed','dissapointed','dissappointed','disapointed',
-            'feel','feeling','feels',
-        ])) {
-            return false;
-        }
-
-        // Keywords that usually indicate general / non-mental-health / factual topics
-        $nonMentalKeywords = [
-            // games / entertainment
-            'game','games','gaming','steam','valorant','dota','gta','minecraft','roblox', 'music', 'answer',
-            'ml','mobile','legends','cod','call of duty',
-            'movie','movies','film','kdrama','anime','series','netflix','tiktok','youtube',
-
-            // food, recipes
-            'food','recipe','cook','cooking','restaurant','milk tea','coffee shop',
-
-            // school / academic but not emotional
-            'math','algebra','calculus','physics','chemistry','biology','science',
-            'assignment','homework','module','report','thesis','definition','define',
-            'meaning','meaning of','explain','explanation','what is','who is','where is',
-
-            // tech / coding
-            'programming','coding','code','javascript','python','php','laravel',
-            'html','css','react','website','computer',
-
-            // random factual / how-to
-            'capital','history of','tutorial','how to make','steps to','requirements',
-        ];
-
-        // Normal non-mental topics (e.g., "I want to learn to code")
-        if ($this->hasAnyWord($norm, $nonMentalKeywords)) {
-            return true;
-        }
-
-        // Fallback 1: no alphabetic tokens at all (e.g., "12345", "😅😅😅")
-        $tokens = $this->tokens($norm);
-        if (empty($tokens)) {
-            // no emotional signal + no mental-health words + unreadable → treat as out-of-scope
-            return true;
-        }
-
-        // Fallback 2: very short / random text with no obvious meaning
-        // e.g., "wasdwada", "asd", "qwe qwe"
-        if (count($tokens) <= 3 && mb_strlen($norm) <= 40) {
-            // If it doesn't even mention basic help/feelings words, treat as non-mental
-            if (!$this->hasAnyWord($norm, [
-                'help','support','counselor','counselling','counseling',
-                'problem','problems','sad','anxious','anxiety','depress','stress','worried',
-                // treat disappointment + "feel" as mental
-                'disappoint','disappointed','dissapointed','dissappointed','disapointed',
-                'feel','feeling','feels',
-            ])) {
-                return true;
-            }
         }
     }
+
+    // 2) If it already talks about problems / struggle / thoughts, keep as mental.
+    if ($this->hasAnyWord($norm, [
+        'stress','stressed','anxiety','anxious','depress','depressed','sad',
+        'overwhelmed','lonely','tired','burnout','panic',
+        'problem','problems','struggle','struggling',
+        'suicide','selfharm','self-harm',
+        'feel','feeling','feels',
+        // NEW: mind/thoughts/overthinking counts as mental too
+        'mind','thought','thoughts','overthink','overthinking','in my head',
+    ])) {
+        return false;
+    }
+
+    // 3) Keywords that usually indicate general / non-mental-health / factual topics
+    $nonMentalKeywords = [
+        // games / entertainment
+        'game','games','gaming','steam','valorant','dota','gta','minecraft','roblox',
+        'ml','mobile','legends','cod','call of duty','music','movie','movies','film',
+        'kdrama','anime','series','netflix','tiktok','youtube','answer',
+
+        // food, recipes
+        'food','recipe','cook','cooking','restaurant','milk tea','coffee shop',
+
+        // school / academic but not emotional
+        'math','algebra','calculus','physics','chemistry','biology','science',
+        'assignment','homework','module','report','thesis','definition','define',
+        'meaning','meaning of','explain','explanation','what is','who is','where is',
+
+        // tech / coding
+        'programming','coding','code','javascript','python','php','laravel',
+        'html','css','react','website','computer',
+
+        // random factual / how-to
+        'capital','history of','tutorial','how to make','steps to','requirements',
+    ];
+
+    if ($this->hasAnyWord($norm, $nonMentalKeywords)) {
+        return true;
+    }
+
+    // 4) Fallback 1: no alphabetic tokens at all (e.g., "12345", emojis)
+    $tokens = $this->tokens($norm);
+    if (empty($tokens)) {
+        return true;
+    }
+
+    // 5) Fallback 2: very short / random text with no obvious meaning
+    if (count($tokens) <= 3 && mb_strlen($norm) <= 40) {
+        if (!$this->hasAnyWord($norm, [
+            'help','support','counselor','counselling','counseling',
+            'problem','problems','sad','anxious','anxiety','depress','stress','worried',
+            'disappoint','disappointed','dissapointed','dissappointed','disapointed',
+            'feel','feeling','feels','mind','thought','thoughts',
+        ])) {
+            return true;
+        }
+    }
+
+    // Default: treat as mental-health-related (safer).
+    return false;
+}
 
  /** Detects when the input is basically not understandable (random chars, no clear words). */
 private function isUnreadableInput(string $norm): bool
