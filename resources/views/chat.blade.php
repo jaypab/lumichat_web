@@ -1,12 +1,11 @@
 {{-- resources/views/chat.blade.php --}}
 @extends('layouts.app')
-@section('tab_title', 'Lumi - Chat Interface')   {{-- browser tab text --}}
+@section('tab_title', 'Lumi - Chat Interface')
 @section('page_title', 'Chat')
 
 @section('content')
 <meta name="csrf-token" content="{{ csrf_token() }}">
 
-{{-- tiny CSS just for typing dots --}}
 <style>
   @keyframes lumiBounceDots {0%,80%,100%{transform:translateY(0);opacity:.55}40%{transform:translateY(-4px);opacity:1}}
   .typing-dots{display:inline-flex;gap:6px;align-items:center}
@@ -16,99 +15,27 @@
 </style>
 
 <style>
-  /* ---------- Lumi quick-reply buttons: delightful + accessible ---------- */
   .lumi-qr{
     --qr-bg: rgba(99,102,241,.06);
     --qr-brd: rgba(99,102,241,.35);
     --qr-txt: inherit;
     --qr-sd: 0 0 #0000;
-    font-size:12px;
-    padding:8px 12px;                 /* a bit more touch target */
-    border-radius:12px;
-    border:1px solid var(--qr-brd);
-    background: var(--qr-bg);
-    color: var(--qr-txt);
-    display:inline-flex;
-    align-items:center;
-    gap:.4rem;
-    line-height:1;
-    cursor:pointer;
-    -webkit-tap-highlight-color: transparent;
-    transition:
-      background .18s ease,
-      border-color .18s ease,
-      transform .12s ease,
-      box-shadow .18s ease,
-      color .18s ease;
+    font-size:12px; padding:8px 12px; border-radius:12px; border:1px solid var(--qr-brd);
+    background: var(--qr-bg); color: var(--qr-txt); display:inline-flex; align-items:center; gap:.4rem;
+    line-height:1; cursor:pointer; -webkit-tap-highlight-color: transparent;
+    transition: background .18s ease, border-color .18s ease, transform .12s ease, box-shadow .18s ease, color .18s ease;
     box-shadow: var(--qr-sd);
   }
-
-  /* hover: subtle lift + tint */
-  .lumi-qr:hover{
-    background: rgba(99,102,241,.14);
-    border-color: rgba(99,102,241,.55);
-    transform: translateY(-1px);
-    box-shadow: 0 6px 18px rgba(79,70,229,.18);
-  }
-
-  /* press */
-  .lumi-qr:active{
-    transform: translateY(0);
-    box-shadow: 0 2px 8px rgba(79,70,229,.18);
-  }
-
-  /* keyboard focus (WCAG AA) */
-  .lumi-qr:focus-visible{
-    outline: none;
-    box-shadow:
-      0 0 0 3px rgba(255,255,255,.9),
-      0 0 0 5px rgba(79,70,229,.55);
-    transform: translateY(-1px);
-  }
-
-  /* primary variant */
-  .lumi-qr--primary{
-    --qr-bg: #4f46e5;
-    --qr-brd: #4f46e5;
-    --qr-txt: #fff;
-    background: linear-gradient(180deg,#645cff 0%,#4f46e5 100%);
-    color:#fff;
-    border-color:#4f46e5;
-    box-shadow: 0 3px 10px rgba(79,70,229,.22);
-  }
-  .lumi-qr--primary:hover{
-    filter: brightness(.98);
-    box-shadow: 0 10px 22px rgba(79,70,229,.28);
-  }
-  .lumi-qr--primary:active{
-    filter: brightness(.96);
-    box-shadow: 0 4px 12px rgba(79,70,229,.24);
-  }
-
-  /* link-style anchors rendered as pills */
+  .lumi-qr:hover{ background: rgba(99,102,241,.14); border-color: rgba(99,102,241,.55); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(79,70,229,.18); }
+  .lumi-qr:active{ transform: translateY(0); box-shadow: 0 2px 8px rgba(79,70,229,.18); }
+  .lumi-qr:focus-visible{ outline: none; box-shadow: 0 0 0 3px rgba(255,255,255,.9), 0 0 0 5px rgba(79,70,229,.55); transform: translateY(-1px); }
+  .lumi-qr--primary{ --qr-bg:#4f46e5; --qr-brd:#4f46e5; --qr-txt:#fff; background: linear-gradient(180deg,#645cff 0%,#4f46e5 100%); color:#fff; border-color:#4f46e5; box-shadow: 0 3px 10px rgba(79,70,229,.22); }
+  .lumi-qr--primary:hover{ filter: brightness(.98); box-shadow: 0 10px 22px rgba(79,70,229,.28); }
+  .lumi-qr--primary:active{ filter: brightness(.96); box-shadow: 0 4px 12px rgba(79,70,229,.24); }
   .lumi-qr--link{ text-decoration:none; }
-
-  /* disabled */
-  .lumi-qr:disabled, .lumi-qr[disabled]{
-    opacity:.6; cursor:default; transform:none; box-shadow:none;
-  }
-
-  /* dark mode tune (Tailwind sets .dark on <html>) */
-  .dark .lumi-qr{
-    --qr-bg: rgba(99,102,241,.10);
-    --qr-brd: rgba(99,102,241,.45);
-    --qr-txt: #e5e7eb;
-    background: var(--qr-bg);
-    color: var(--qr-txt);
-    border-color: var(--qr-brd);
-  }
-  .dark .lumi-qr:hover{
-    background: rgba(99,102,241,.18);
-    border-color: rgba(99,102,241,.65);
-    box-shadow: 0 8px 20px rgba(79,70,229,.30);
-  }
-
-  /* respect reduced motion */
+  .lumi-qr:disabled, .lumi-qr[disabled]{ opacity:.6; cursor:default; transform:none; box-shadow:none; }
+  .dark .lumi-qr{ --qr-bg: rgba(99,102,241,.10); --qr-brd: rgba(99,102,241,.45); --qr-txt:#e5e7eb; background:var(--qr-bg); color:var(--qr-txt); border-color:var(--qr-brd); }
+  .dark .lumi-qr:hover{ background: rgba(99,102,241,.18); border-color: rgba(99,102,241,.65); box-shadow: 0 8px 20px rgba(79,70,229,.30); }
   @media (prefers-reduced-motion: reduce){
     .lumi-qr{ transition: background .18s ease, border-color .18s ease, box-shadow .18s ease; }
     .lumi-qr:hover, .lumi-qr:active, .lumi-qr:focus-visible{ transform:none; }
@@ -120,21 +47,32 @@
 
     {{-- ===================== Chat Panel ===================== --}}
     <div id="chat-wrapper"
-     class="card-shell rounded-2xl overflow-hidden flex flex-col w-full"
-     style="height:80vh"
-     data-thread-id="{{ $thread->id ?? ('draft-'.\Illuminate\Support\Str::uuid()) }}"
-     data-user-name="{{ e(auth()->user()?->first_name ?? auth()->user()?->preferred_name ?? auth()->user()?->name ?? 'there') }}">
-
+         class="card-shell rounded-2xl overflow-hidden flex flex-col w-full"
+         style="height:80vh"
+         data-thread-id="{{ $thread->id ?? ('draft-'.\Illuminate\Support\Str::uuid()) }}"
+         data-user-name="{{ e(auth()->user()?->first_name ?? auth()->user()?->preferred_name ?? auth()->user()?->name ?? 'there') }}"
+         {{-- NEW: pass lock state from controller --}}
+         data-locked="{{ !empty($isLocked) ? '1' : '0' }}">
 
       {{-- ===================== Header ===================== --}}
-      <div class="flex items-center gap-3 bg-gradient-to-r from-indigo-600 to-purple-600
-                  text-white px-5 py-3 shadow">
+      <div class="flex items-center gap-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-5 py-3 shadow">
         <img src="{{ asset('images/chatbot.png') }}" class="w-6 h-6" alt="Bot">
         <div class="min-w-0">
           <strong class="text-lg leading-tight">LumiCHAT Assistant</strong>
           <div class="text-xs text-white/80 hidden sm:block">Friendly support that respects your privacy</div>
         </div>
       </div>
+
+      {{-- NEW: Slim banner if locked --}}
+      @if(!empty($isLocked))
+        <div class="bg-amber-50 text-amber-800 text-sm px-4 py-2 border-b border-amber-200">
+          This conversation is closed. Start a new chat to continue.
+          <a class="underline font-medium ml-2"
+             href="{{ \Illuminate\Support\Facades\Route::has('chat.new') ? route('chat.new') : url('/chat/new') }}">
+            Start new chat
+          </a>
+        </div>
+      @endif
 
       {{-- ===================== Messages ===================== --}}
       <div class="flex-1 min-h-0 flex flex-col">
@@ -144,8 +82,6 @@
           @foreach ($chats as $chat)
             @php
               $mine = $chat->sender !== 'bot';
-
-              // sanitize bot HTML (allow only http(s) links + <br>)
               $msg = $mine ? $chat->message : strip_tags($chat->message, '<a><br>');
               if (!$mine) {
                 $msg = preg_replace_callback(
@@ -159,19 +95,10 @@
                   $msg
                 );
               }
-
-              // HARD inline bubble styles (protect against global overrides)
-              $base = 'display:inline-block !important;box-sizing:border-box !important;'.
-                      'width:auto !important;max-width:min(520px,46ch) !important;'.
-                      'min-height:0 !important;padding:6px 10px !important;margin:0 !important;'.
-                      'border-radius:16px !important;white-space:pre-wrap !important;'.
-                      'word-break:normal !important;overflow-wrap:anywhere !important;'.
-                      'font-size:15px !important;line-height:22px !important;text-align:left !important;';
+              $base = 'display:inline-block !important;box-sizing:border-box !important;width:auto !important;max-width:min(520px,46ch) !important;min-height:0 !important;padding:6px 10px !important;margin:0 !important;border-radius:16px !important;white-space:pre-wrap !important;word-break:normal !important;overflow-wrap:anywhere !important;font-size:15px !important;line-height:22px !important;text-align:left !important;';
               $bot  = $base.'background:#f3f4f6 !important;color:#111827 !important;align-self:flex-start !important;';
               $user = $base.'background:#4f46e5 !important;color:#ffffff !important;align-self:flex-end !important;margin-left:auto !important;';
-
-              $timeStyle = 'font-size:10px;color:#9ca3af;margin-top:4px;'
-                         . ($mine ? 'text-align:right;align-self:flex-end;' : 'text-align:left;align-self:flex-start;');
+              $timeStyle = 'font-size:10px;color:#9ca3af;margin-top:4px;'.($mine ? 'text-align:right;align-self:flex-end;' : 'text-align:left;align-self:flex-start;');
             @endphp
 
             <div class="msg-row flex flex-col w-full min-w-0">
@@ -230,7 +157,6 @@
 
 @push('scripts')
 <script>
-/* ========= Inline fallback (runs only if resources/js/chat.js is not active) ========= */
 (function(){
   if (window.LUMI_CHAT_JS_ACTIVE) return;
   window.LUMI_CHAT_JS_ACTIVE = true;
@@ -243,6 +169,7 @@
     const counter  = $('#char-counter');
     const sendBtn  = $('#sendBtn');
     const idemEl   = $('#idem');
+    const wrap     = document.getElementById('chat-wrapper');
 
     const STORE_URL = @json(route('chat.store'));
     const MAXLEN    = 2000;
@@ -250,7 +177,34 @@
                       ? route('appointment.index')
                       : url('/appointment/book'));
 
-    /* --------- Visual styles --------- */
+    // ==== NEW: Composer hard-disable helper when locked ====
+    function disableComposer(reason, newChatUrl){
+      const input = document.querySelector('#chat-message');
+      const sendBtn = document.querySelector('#sendBtn');
+      if (input){ input.disabled = true; input.placeholder = 'This conversation is closed.'; }
+      if (sendBtn){ sendBtn.disabled = true; }
+      if (form){ form.classList.add('opacity-60','pointer-events-none'); }
+      const barId = 'lumi-closed-bar';
+      if (!document.getElementById(barId)){
+        const bar = document.createElement('div');
+        bar.id = barId;
+        bar.className = 'px-4 py-3 border-t bg-white/90 backdrop-blur sticky bottom-0';
+        bar.innerHTML = `
+          <div class="text-sm text-gray-700">
+            This conversation is closed. <a class="text-indigo-600 underline" href="${newChatUrl}">Start new chat</a>
+          </div>`;
+        document.querySelector('#chat-wrapper')?.appendChild(bar);
+      }
+    }
+
+    // Honor server lock on load
+    if (wrap?.dataset.locked === '1') {
+      const newUrl = @json(\Illuminate\Support\Facades\Route::has('chat.new') ? route('chat.new') : url('/chat/new'));
+      disableComposer('declined_referral', newUrl);
+    }
+
+    // ==== (rest of your JS unchanged below) ====
+
     const TYPING_TWEAKS = [
       'display:inline-flex!important','align-items:center!important','justify-content:center!important',
       'padding:6px 8px!important','min-width:36px!important','min-height:22px!important',
@@ -271,7 +225,6 @@
       return `${BASE}background:${dark ? '#1f2937' : '#f3f4f6'}!important;color:${dark ? '#f8fafc' : '#111827'}!important;align-self:flex-start!important;border-radius:16px!important;`;
     };
 
-    /* --------- Helpers / sanitizers --------- */
     const INVISIBLE_RE = /[\u200B\u200C\u200D\u2060\uFEFF]/g;
     const URL_RE = /(https?:\/\/[^\s<>"']+)/gi;
     const sanitizeClient = raw => (raw || '').replace(INVISIBLE_RE,'').replace(/\s+/g,' ').trim();
@@ -300,7 +253,6 @@
     }
     const renderBotContent = s => /[<>]/.test(s) ? sanitizeBotHtml(s) : sanitizeBotHtml(linkify(s));
 
-    /* --------- Composer counter --------- */
     function updateCounter(){
       let v = input.value || '';
       if (v.length > MAXLEN){ v = v.slice(0, MAXLEN); input.value = v; }
@@ -322,7 +274,6 @@
       updateCounter();
     });
 
-    /* --------- Bubble helpers --------- */
     function appendUserBubble(text, time=''){
       messages.insertAdjacentHTML('beforeend', `
         <div class="msg-row flex flex-col w-full min-w-0">
@@ -337,7 +288,7 @@
     function appendBotBubbleShell(time=''){
       messages.insertAdjacentHTML('beforeend', `
         <div class="msg-row flex flex-col w-full min-w-0">
-          <div class="bubble bubble-ai is-typing" data-sender="bot" style="${botStyle()}${TYPING_TWEAKS}">
+          <div class="bubble bubble-ai is-typing" data-sender="bot" style="${botStyle()}display:inline-flex!important;align-items:center!important;justify-content:center!important;padding:6px 8px!important;min-width:36px!important;min-height:22px!important;width:auto!important;height:auto!important;border-radius:14px!important">
             <span class="typing-dots" aria-hidden="true" style="color:#6b7280">
               <span class="dot"></span><span class="dot"></span><span class="dot"></span>
             </span>
@@ -348,52 +299,85 @@
       return messages.lastElementChild.querySelector('.bubble-ai');
     }
 
-    function typewriter(bubble, finalHTML, speed=24, minDotsMs=650){
-      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-      return new Promise((resolve)=>{
-        const finish = () => {
-          bubble.style.cssText = botStyle();
-          bubble.innerHTML = finalHTML;
-          messages.scrollTop = messages.scrollHeight;
-          resolve();
-        };
-        if (reduced){ finish(); return; }
-        const start = performance.now();
-        const waitDots = () => {
-          if (performance.now() - start < minDotsMs) return requestAnimationFrame(waitDots);
-          const tmp = document.createElement('div'); tmp.innerHTML = finalHTML;
-          const plain = tmp.textContent || tmp.innerText || '';
-          bubble.classList.remove('is-typing');
-          bubble.textContent = '';
-          let i = 0;
-          (function tick(){
-            bubble.textContent = plain.slice(0, i+1);
-            i++; messages.scrollTop = messages.scrollHeight;
-            if (i < plain.length) setTimeout(tick, speed);
-            else finish();
-          })();
-        };
-        requestAnimationFrame(waitDots);
-      });
+   function typewriter(bubble, finalHTML, speed = 20, minDotsMs = 380, plainOverride = null){
+  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+
+  return new Promise((resolve) => {
+    const finish = () => {
+      bubble.style.cssText = botStyle();
+      bubble.innerHTML = finalHTML;
+      messages.scrollTop = messages.scrollHeight;
+      resolve();
+    };
+
+    if (reduced) {  // Accessibility: no animation
+      finish();
+      return;
     }
 
-    /* --------- Send queue --------- */
+    // Compute plain text length once
+    const tmp = document.createElement('div');
+    tmp.innerHTML = finalHTML;
+    const plain = (plainOverride ?? tmp.textContent ?? tmp.innerText ?? '') || '';
+    const len   = plain.length;
+
+    // For very long messages, just show after short dots – no per-character typing
+    if (len > 350) {
+      const start = performance.now();
+      const waitDots = () => {
+        if (performance.now() - start < 220) {
+          requestAnimationFrame(waitDots);
+          return;
+        }
+        finish();   // instant render
+      };
+      requestAnimationFrame(waitDots);
+      return;
+    }
+
+    // Medium length: faster typing + shorter dots
+    if (len > 200) {
+      speed     = 10;   // faster per character
+      minDotsMs = 260;  // shorter “thinking” phase
+    }
+
+    const start = performance.now();
+    const waitDots = () => {
+      if (performance.now() - start < minDotsMs) {
+        requestAnimationFrame(waitDots);
+        return;
+      }
+
+      bubble.classList.remove('is-typing');
+      bubble.textContent = '';
+      let i = 0;
+
+      (function tick(){
+        bubble.textContent = plain.slice(0, i + 1);
+        i++;
+        messages.scrollTop = messages.scrollHeight;
+        if (i < plain.length) {
+          setTimeout(tick, speed);
+        } else {
+          finish();
+        }
+      })();
+    };
+
+    requestAnimationFrame(waitDots);
+  });
+}
+
+
     let Q = Promise.resolve();
     const runQ = (task) => (Q = Q.then(task).catch(()=>{}));
+    const now12h = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
 
-    /* --------- Time helper --------- */
-    const now12h = () =>
-      new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
-
-    /* --------- Outage message (single-line only) --------- */
     async function showOutageNotice(kind){
-      const msg = (kind === 'http')
-        ? 'LumiChat temporarily unavailable.'
-        : 'Sorry, I’m having trouble right now.';
+      const msg = (kind === 'http') ? 'LumiChat temporarily unavailable.' : 'Sorry, I’m having trouble right now.';
       await runQ(() => appendBotBubble(msg, ''));
     }
 
-    /* --------- Actions / send --------- */
     let _pendingDisplayText = null;
 
     function sendAction(displayText, payloadText){
@@ -427,29 +411,27 @@
         if (!res.ok){ await showOutageNotice('http'); return; }
         const data = await res.json();
 
-        // If backend flagged Rasa down, honor the kind (optional)
-        if (data?.rasa_unavailable === true) {
-          await showOutageNotice(data?.outage_kind === 'http' ? 'http' : 'net');
-          return;
+        // NEW: if backend locked the thread, disable immediately
+        if (data?.locked) {
+          const url = data?.new_chat_url || @json(url('/chat/new'));
+          disableComposer(data.lock_reason || 'locked', url);
         }
 
         let replies = data?.bot_reply;
         if (!Array.isArray(replies)) replies = [replies];
-
         for (const r of (replies || [])){
           await runQ(() => appendBotBubble(r, data?.time_human || ''));
-          await runQ(() => new Promise(done => setTimeout(done, 220)));
+          await runQ(() => new Promise(done => setTimeout(done, 60)));
         }
       } catch {
         _pendingDisplayText = null;
         await showOutageNotice('net');
       } finally {
-        if (sendBtn) sendBtn.disabled = false;
-        input?.focus();
+        if (sendBtn) sendBtn.disabled = true === (wrap?.dataset.locked === '1') ? true : false;
+        if (wrap?.dataset.locked !== '1') { sendBtn.disabled = false; input?.focus(); }
       }
     }
 
-    /* --------- Buttons / quick actions --------- */
     function renderButtons(buttons, bubble){
       if (!Array.isArray(buttons) || !buttons.length) return;
       const wrap = document.createElement('div');
@@ -489,21 +471,17 @@
 
     function addQuickActions(bubble){
       if (bubble.querySelector('[data-qa="qr"]')) return;
-
       const raw = (bubble.textContent || '').trim();
       const plain = raw.toLowerCase();
-
       const asksForTips =
         /share\s+coping\s+tips/i.test(raw) ||
         (plain.includes('coping') && /want(\s+them)?\s*now\??/.test(plain));
-
       const mentionsReferral =
         /book\s+(a\s*)?counselor|appointment\s+page|open\s+the\s+appointment|schedule\s+an?\s*appointment/i.test(plain);
 
       const box = document.createElement('div');
       box.setAttribute('data-qa','qr');
       box.style.cssText = 'margin-top:8px;display:flex;flex-wrap:wrap;gap:8px';
-
       const pill = 'lumi-qr';
       const pillPrimary = 'lumi-qr lumi-qr--primary';
 
@@ -531,42 +509,46 @@
       } else {
         return;
       }
-
       bubble.appendChild(box);
     }
 
-    async function appendBotBubble(payload, time=''){
-      const bubble = appendBotBubbleShell(time);
-      await new Promise(r => setTimeout(r, 300 + Math.floor(Math.random()*420)));
+async function appendBotBubble(payload, time = ''){
+  const bubble = appendBotBubbleShell(time);
 
-      const obj  = (payload && typeof payload === 'object') ? payload : { text: payload };
-      const text = obj.text ?? obj.bot_reply ?? obj.message ?? '';
-      const html = renderBotContent(text || '');
+  // shorter base delay
+  await new Promise(r => setTimeout(r, 100 + Math.floor(Math.random() * 180)));
 
-      await typewriter(bubble, html, 24, 650);
+  const obj  = (payload && typeof payload === 'object') ? payload : { text: payload };
+  const text = obj.text ?? obj.bot_reply ?? obj.message ?? '';
+  const html = renderBotContent(text || '');
 
-      const hasRasaButtons = Array.isArray(obj.buttons) && obj.buttons.length > 0;
-      if (hasRasaButtons) {
-        renderButtons(obj.buttons, bubble);
-      } else {
-        addQuickActions(bubble);
-      }
+  // Compute length once and pass through so typewriter can decide behavior
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  const plain = tmp.textContent || tmp.innerText || '';
+  const len   = plain.length;
 
-      if (obj?.id) {
-        bubble.setAttribute('data-msg-id', String(obj.id));
-        try {
-          sessionStorage.setItem(
-            `lumi_btn_${obj.id}`,
-            JSON.stringify(hasRasaButtons ? obj.buttons : [])
-          );
-        } catch (_) {}
-      }
+  await typewriter(bubble, html, 20, 380, plain);
 
-      if (obj?.custom?.open_url) window.open(obj.custom.open_url, '_blank');
-      messages.scrollTop = messages.scrollHeight;
-    }
+  const hasRasaButtons = Array.isArray(obj.buttons) && obj.buttons.length > 0;
+  if (hasRasaButtons) {
+    renderButtons(obj.buttons, bubble);
+  } else {
+    addQuickActions(bubble);
+  }
 
-    /* --------- Send on Enter / submit --------- */
+  if (obj?.id) {
+    bubble.setAttribute('data-msg-id', String(obj.id));
+    try {
+      sessionStorage.setItem(`lumi_btn_${obj.id}`, JSON.stringify(hasRasaButtons ? obj.buttons : []));
+    } catch (_) {}
+  }
+
+  if (obj?.custom?.open_url) window.open(obj.custom.open_url, '_blank');
+  messages.scrollTop = messages.scrollHeight;
+}
+
+
     input.addEventListener('keydown', (e) => {
       if (e.isComposing) return;
       if (e.key === 'Enter' && !e.shiftKey){
@@ -587,7 +569,6 @@
       });
     }
 
-    /* --------- Init / rehydrate --------- */
     input.dispatchEvent(new Event('input'));
     updateCounter();
     messages && (messages.scrollTop = messages.scrollHeight);
@@ -603,10 +584,7 @@
             if (raw != null) {
               try {
                 const btns = JSON.parse(raw);
-                if (Array.isArray(btns) && btns.length) {
-                  renderButtons(btns, bubble);
-                  return;
-                }
+                if (Array.isArray(btns) && btns.length) { renderButtons(btns, bubble); return; }
               } catch(_) {}
             }
           }
@@ -615,10 +593,8 @@
       } catch(_) {}
     })();
 
-    // One-time auto welcome (per thread, 60 min)
     try {
       const hasMessages = !!messages.querySelector('.msg-row');
-      const wrap = document.getElementById('chat-wrapper');
       const threadId = wrap?.dataset.threadId || location.pathname;
       const KEY = `lumi_welcome_${threadId}`;
       const now = Date.now();
@@ -627,7 +603,6 @@
       const elapsedMin = (now - last) / 60000;
       if (!hasMessages && (!last || elapsedMin >= 60)){
         sessionStorage.setItem(KEY, JSON.stringify({ ts: now }));
-        const wrap = document.getElementById('chat-wrapper');
         const uname = (wrap?.dataset.userName || 'there').trim();
         runQ(() => appendBotBubble(`Hi ${uname}! I’m Lumi — how can I help you today?`, ""));
       }
