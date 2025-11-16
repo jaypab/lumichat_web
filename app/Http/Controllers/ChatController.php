@@ -481,11 +481,16 @@ class ChatController extends Controller
 
         // Use ventTurns so non-mental messages don’t eat the 3-turn window
         $inVentWindow     = $inEmotionalRange && ($ventTurns < 3) && !$bypass;
-          // -------- Context safeguard for non-mental tagging --------
-        // If the student is already in an emotional conversation (venting started
-        // or session risk already elevated), NEVER mark follow-up messages
-        // as non-mental just because this one has no emotion word.
-        if ($ventTurns > 0 || ($session->risk_level && $session->risk_level !== 'low')) {
+
+        // -------- Context safeguard for non-mental tagging --------
+        // If the student is already in an emotional conversation (venting started,
+        // or session risk elevated), NEVER downgrade follow-up messages to non-mental
+        // just because this one line has no explicit emotion keyword.
+        if (
+            $ventTurns > 0
+            || ($session->risk_level && $session->risk_level !== 'low')
+            || $sessionUserMsgCount > 1   // multiple emotional turns already
+        ) {
             $nonMental = false;
         }
 
@@ -509,7 +514,9 @@ class ChatController extends Controller
             $messageType = 'appointment_request';
         } elseif ($flags['wants_coping'] ?? false) {
             $messageType = 'coping_request';
-        } elseif ($inVentWindow && !empty($labels)) {
+        } elseif ($inVentWindow && !$nonMental) {
+            // Even if this specific line has no explicit emotion word,
+            // treat it as part of the ongoing emotional vent.
             $messageType = 'emotional_vent';
         } elseif ($flags['is_question'] ?? false) {
             $messageType = 'question';
@@ -1199,63 +1206,108 @@ class ChatController extends Controller
         return ['level'=>'low','hits'=>[]];
     }
 
- /** Broad emotion tagging (with misspellings & synonyms). */
-private function labelEmotions(string $raw): array
-{
-    $t      = $this->nluNormalize($raw);
-    $labels = [];
+    /** Broad emotion tagging (with misspellings, synonyms, and key phrases). */
+    private function labelEmotions(string $raw): array
+    {
+        $t      = $this->nluNormalize($raw);
+        $labels = [];
 
-    $map = [
-        'sad' => [
-            'sad','down','blue','low','tearful','cry','crying','grief','heartbroken',
-            'depressed','depressd','depresed','deprssd','deprsd',
-            // disappointment also feels like sadness
-            'disappoint','disappointed','dissapointed','dissappointed','disapointed',
-        ],
-        'disappointed' => [
-            // explicit disappointed label so empathicPrompt("disappointed") can fire
-            'disappoint','disappointed','dissapointed','dissappointed','disapointed',
-            'let down','letdown',
-        ],
-        'anxious' => [
-            'anxious','anxiety','anxety','anxios','panicky','panic','afraid','scared',
-            'nervous','on edge','worried',
-        ],
-        'stressed' => [
-            'stress','stressed','pressure','overwhelm','overwhelmed','burnout','burn out',
-        ],
-        'tired' => [
-            'tired','exhausted','fatigued','fatigue','drained','worn out','burned out',
-        ],
-        'angry' => [
-            'angry','mad','furious','rage','irritated','annoyed','frustrated',
-        ],
-        'lonely' => [
-            'lonely','alone','isolated','left out','no one understands',
-        ],
-        'hopeless' => [
-            'hopeless','pointless','no hope','give up','giving up','worthless',
-        ],
-        'not_ok' => [
-            'not ok','not okay','not fine','not okey','i am not okay','i\'m not ok',
-        ],
-        'overwhelmed' => [
-            'overwhelmed','can\'t cope','cannot cope','too much',
-        ],
-        'guilty' => ['guilty','guilt'],
-        'ashamed' => ['ashamed','shame','embarrassed'],
-        'confused' => ['confused','lost','unsure','uncertain'],
-        'bored' => ['bored','boredom','meh','indifferent'],
-    ];
+        $map = [
+            'sad' => [
+                'sad','down','blue','low','tearful','cry','crying','cried','grief','heartbroken',
+                'broken','brokenhearted','hurt inside',
+                'depressed','depressd','depresed','deprssd','deprsd',
+                'empty inside','numb inside','numb',
+                // disappointment often feels like sadness
+                'disappoint','disappointed','dissapointed','dissappointed','disapointed',
+            ],
 
-    foreach ($map as $label => $terms) {
-        if ($this->hasAnyWord($t, $terms)) {
-            $labels[] = $label;
+            'disappointed' => [
+                'disappoint','disappointed','dissapointed','dissappointed','disapointed',
+                'let down','letdown','let me down',
+            ],
+
+            'anxious' => [
+                'anxious','anxiety','anxety','anxios',
+                'panicky','panic','panicking',
+                'afraid','scared','terrified','fearful','worried','worrying',
+                'nervous','on edge','uneasy',
+            ],
+
+            'stressed' => [
+                'stress','stressed','stressing',
+                'pressure','pressured','under pressure',
+                'overwhelm','overwhelmed','too much',
+                'burnout','burn out','burned out',
+            ],
+
+            'tired' => [
+                'tired','tiring','exhausted','exhausting','fatigued','fatigue',
+                'drained','draining','worn out','wornout',
+                'no energy','low energy','so tired','very tired',
+            ],
+
+            'angry' => [
+                'angry','mad','furious','rage','raging',
+                'irritated','annoyed','annoying','pissed','pissed off',
+                'frustrated','frustrating','fed up','sick of this','sick of it',
+            ],
+
+            'lonely' => [
+                'lonely','alone','isolated','left out','leftout',
+                'no one understands','nobody understands','no one cares','nobody cares',
+            ],
+
+            'hopeless' => [
+                'hopeless','no hope','pointless','meaningless',
+                'no reason to live','nothing to live for','give up','giving up',
+                'worthless','useless',
+            ],
+
+            'not_ok' => [
+                'not ok','not okay','not fine','not okey',
+                'i am not okay','im not ok','i\'m not ok','i\'m not okay','im not okay',
+                'i am not fine','im not fine','i\'m not fine',
+            ],
+
+            'overwhelmed' => [
+                'overwhelmed','cant cope','can\'t cope','cannot cope',
+                'too much','too many things','everything piling up',
+            ],
+
+            'guilty' => [
+                'guilty','guilt','my fault','all my fault','blame myself','blaming myself',
+            ],
+
+            'ashamed' => [
+                'ashamed','shame','embarrassed','embarrassing','humiliated',
+            ],
+
+            'confused' => [
+                'confused','confusing','lost','dont know what to do','don\'t know what to do',
+                'unsure','uncertain','mixed up',
+            ],
+
+            'bored' => [
+                'bored','boredom','meh','nothing to do','tired of this routine',
+            ],
+
+            // Extra label for "thinking too much" / spiralling
+            'overthinking' => [
+                'overthink','overthinking','can\'t stop thinking','cant stop thinking',
+                'thoughts won\'t stop','thoughts wont stop','in my head a lot','in my head too much',
+            ],
+        ];
+
+        foreach ($map as $label => $terms) {
+            if ($this->hasAnyWord($t, $terms)) {
+                $labels[] = $label;
+            }
         }
+
+        return array_values(array_unique($labels));
     }
 
-    return array_values(array_unique($labels));
-}
 
     /** Intent classification (English only) with typo coverage + question guard. */
     private function classifyIntents(string $raw): array
