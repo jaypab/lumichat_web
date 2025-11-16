@@ -365,14 +365,30 @@ public function store(Request $request)
         if (!$userMsg) throw $e;
     }
 
-    // ===== 3.b) Topic summary / emotion counts (only for mental-health content) =====
+        // ===== 3.b) Topic summary / emotion counts (only for mental-health content) =====
     if (!$nonMental) {
-        $count = Chat::where('chat_session_id', $sessionId)->where('sender', 'user')->count();
-        if ($count === 1) {
-            preg_match('/\b(sad|depress|help|anxious|angry|lonely|stress|tired|happy|excited|not okay)\b/i', $analysisText, $m);
-            $summary = $m[0] ?? \Illuminate\Support\Str::limit($analysisText, 40, '…');
-            $session->update(['topic_summary' => ucfirst($summary)]);
+        // how many user messages are in this session so far
+        $sessionUserMsgCount = Chat::where('chat_session_id', $sessionId)
+            ->where('sender', 'user')
+            ->count();
+
+        // build a ChatGPT-style title from the latest message + heuristics
+        $newTitle = $this->buildSessionTitle(
+            $norm,
+            $analysisText,
+            $labels,
+            $intents['flags'] ?? [],
+            $riskStruct,
+            $sessionUserMsgCount,
+            $session->topic_summary ?? null,
+        );
+
+        if ($newTitle !== '' && $newTitle !== $session->topic_summary) {
+            $session->topic_summary = $newTitle;
+            $session->save();
         }
+
+        // emotion counters (unchanged logic, just kept under same if)
         try {
             if (!empty($labels)) {
                 $current = $this->emotionsAsCounts($session->emotions ?? []);
@@ -1666,5 +1682,121 @@ private function isUnreadableInput(string $norm): bool
     // If it passed all checks above, treat it as readable.
     return false;
 }
+    /**
+     * Build a ChatGPT-style session title from the latest message.
+     *
+     * Examples it can generate:
+     *  - "Feeling overwhelmed about school"
+     *  - "Anxious about exams"
+     *  - "Relationship stress with friends"
+     *  - "Question about family expectations"
+     *  - "Crisis thoughts about self-harm"
+     */
+    private function buildSessionTitle(
+        string $norm,
+        string $analysisText,
+        array $labels,
+        array $flags,
+        array $riskStruct,
+        int $msgCount,
+        ?string $currentTitle = null
+    ): string {
+        $risk = $riskStruct['level'] ?? 'low';
+
+        // If we already have a decent title and the conversation is long,
+        // stop aggressively renaming it.
+        if (
+            $currentTitle
+            && $msgCount > 6
+            && !str_starts_with($currentTitle, 'Starting conversation')
+        ) {
+            return $currentTitle;
+        }
+
+        // Primary emotion (if any)
+        $primary = strtolower($labels[0] ?? '');
+        $moodPhrases = [
+            'sad'          => 'Feeling sad',
+            'anxious'      => 'Feeling anxious',
+            'stressed'     => 'Feeling stressed',
+            'tired'        => 'Exhausted and tired',
+            'angry'        => 'Feeling angry',
+            'lonely'       => 'Feeling lonely',
+            'hopeless'     => 'Hopeless and overwhelmed',
+            'overwhelmed'  => 'Feeling overwhelmed',
+            'not_ok'       => 'Not feeling okay',
+            'guilty'       => 'Feeling guilty',
+            'ashamed'      => 'Struggling with shame',
+            'confused'     => 'Feeling confused',
+            'disappointed' => 'Disappointed',
+            'bored'        => 'Feeling stuck and bored',
+            'overthinking' => 'Overthinking a lot',
+        ];
+
+        $prefix = '';
+
+        // Crisis always wins
+        if ($risk === 'high') {
+            $prefix = 'Crisis thoughts';
+        } elseif ($primary && isset($moodPhrases[$primary])) {
+            $prefix = $moodPhrases[$primary];
+        } elseif ($flags['is_question'] ?? false) {
+            $prefix = 'Question';
+        } else {
+            $prefix = 'Conversation';
+        }
+
+        // High-level topic domain (school, family, relationships, self, future, etc.)
+        $topicSuffix = '';
+
+        if ($this->hasAnyWord($norm, [
+            'school','class','classes','subject','subjects','assignment','assignments',
+            'homework','module','modules','quiz','exam','exams','test','projects',
+            'grades','grade','teacher','professor','course','courses',
+        ])) {
+            $topicSuffix = 'about school';
+        } elseif ($this->hasAnyWord($norm, [
+            'friend','friends','bestfriend','best friend','bff','classmate','classmates',
+            'crush','partner','boyfriend','girlfriend','relationship','relationships',
+            'breakup','break up','ex','trust','betray','betrayed',
+        ])) {
+            $topicSuffix = 'about relationships';
+        } elseif ($this->hasAnyWord($norm, [
+            'family','parents','mother','father','mama','papa','mom','dad',
+            'lola','lolo','siblings','brother','sister',
+            'home','house',
+        ])) {
+            $topicSuffix = 'about family';
+        } elseif ($this->hasAnyWord($norm, [
+            'future','career','job','work','working','income','money',
+            'choice','decisions','decision','path','course shift','shift course',
+        ])) {
+            $topicSuffix = 'about the future';
+        } elseif ($this->hasAnyWord($norm, [
+            'myself','self','identity','who i am','purpose','meaning',
+            'worth','worthless','useless','burden',
+        ])) {
+            $topicSuffix = 'about yourself';
+        }
+
+        // Combine mood + topic
+        $title = $prefix;
+        if ($topicSuffix !== '') {
+            // e.g. "Feeling overwhelmed about school"
+            $title = trim($prefix . ' ' . $topicSuffix);
+        } elseif ($flags['is_question'] ?? false) {
+            // For questions with no clear topic, show a short snippet.
+            $snippet = \Illuminate\Support\Str::limit($analysisText, 40, '…');
+            $title   = 'Question: ' . $snippet;
+        }
+
+        // Fallback if somehow we got nothing useful
+        if ($title === '' || mb_strlen($title) < 4) {
+            $title = \Illuminate\Support\Str::limit($analysisText, 40, '…');
+        }
+
+        // Capitalize first letter just to be safe
+        return ucfirst($title);
+    }
 
 }
