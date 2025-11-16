@@ -1521,13 +1521,14 @@ private function isNonMentalTopic(string $norm, array $labels, array $riskStruct
     }
 
     // 2) If it already talks about problems / struggle / thoughts, keep as mental.
+    //    (Better to over-classify as mental than to push a struggling student away.)
     if ($this->hasAnyWord($norm, [
         'stress','stressed','anxiety','anxious','depress','depressed','sad',
         'overwhelmed','lonely','tired','burnout','panic',
         'problem','problems','struggle','struggling',
         'suicide','selfharm','self-harm',
         'feel','feeling','feels',
-        // NEW: mind/thoughts/overthinking counts as mental too
+        // mind/thoughts/overthinking counts as mental too
         'mind','thought','thoughts','overthink','overthinking','in my head',
     ])) {
         return false;
@@ -1535,25 +1536,121 @@ private function isNonMentalTopic(string $norm, array $labels, array $riskStruct
 
     // 3) Keywords that usually indicate general / non-mental-health / factual topics
     $nonMentalKeywords = [
-        // games / entertainment
-        'game','games','gaming','steam','valorant','dota','gta','minecraft','roblox',
-        'ml','mobile','legends','cod','call of duty','music','movie','movies','film',
-        'kdrama','anime','series','netflix','tiktok','youtube','answer',
 
-        // food, recipes
-        'food','recipe','cook','cooking','restaurant','milk tea','coffee shop',
+        // ===== Games / entertainment / pop culture =====
+        'game','games','gaming','gamer','steam','valorant','dota','gta',
+        'minecraft','roblox','ml','mobile legends','mlbb','league of legends',
+        'lol','wild rift','cod','call of duty','pubg','genshin','honkai',
+        'fortnite','ps4','ps5','playstation','xbox','nintendo','switch',
+        'console','rank','mmr','matchmaking','skin','skins','battle pass',
+        'music','song','songs','album','playlist','lyrics',
+        'movie','movies','film','films','cinema','series','episode','episodes',
+        'kdrama','anime','manga','netflix','disney','spotify','tiktok','youtube',
+        'idol','kpop','bts','blackpink','twice','enhypen','newjeans',
+        'celebrity','celeb','actor','actress','influencer','streamer','vlogger',
 
-        // school / academic but not emotional
-        'math','algebra','calculus','physics','chemistry','biology','science',
-        'assignment','homework','module','report','thesis','definition','define',
-        'meaning','meaning of','explain','explanation','what is','who is','where is',
+        // ===== Social media / chat apps / platforms =====
+        'facebook','fb','messenger','instagram','ig','snapchat','snap',
+        'twitter','x','threads','telegram','discord','gc','group chat',
+        'comment','comments','like','likes','share','shares','views','followers',
+        'subscribers','subs','retweet','hashtag','hashtagg','filter','filters',
 
-        // tech / coding
-        'programming','coding','code','javascript','python','php','laravel',
-        'html','css','react','website','computer',
+        // ===== Food, recipes, places to eat =====
+        'food','foods','recipe','recipes','cook','cooking','bake','baking',
+        'restaurant','restaurants','cafe','cafes','milk tea','milktea','coffee shop',
+        'fastfood','fast food','jollibee','mcdonalds','kfc','pizza','burger',
+        'fries','ramen','sushi','buffet','menu','order','delivery','grab','foodpanda',
 
-        // random factual / how-to
-        'capital','history of','tutorial','how to make','steps to','requirements',
+        // ===== School / academic – mostly factual / homework =====
+        'math','algebra','geometry','trigonometry','calculus','statistics',
+        'physics','chemistry','biology','science','botany','zoology',
+        'history','economics','accounting','marketing','management','business',
+        'english','grammar','vocabulary','spelling','filipino','filipino subject',
+        'mapeh','pe','religion','values','civics',
+        'assignment','assignments','homework','hw','module','modules',
+        'activity','activities','seatwork','project','projects','output','outputs',
+        'quiz','quizzes','test','tests','exam','exams','midterm','finals',
+        'prelim','periodical',' reviewer','reviewer','answer key','answer keys',
+        'multiple choice','true or false','identification',
+        'score','scores','grade','grades','rubric','rubic','point system',
+        'definition','define','meaning','meaning of','explain','explanation',
+        'summarize','summary','outline','diagram','graph','table',
+        'thesis','research','capstone','chapter 1','chapter 2','chapter 3',
+        'hypothesis','statement of the problem','related literature',
+
+        // ===== Tech / coding / computer support =====
+        'programming','coding','code','source code','script','scripting',
+        'algorithm','pseudocode','flowchart','debug','debugging','bug','bugs',
+        'error','errors','exception','stack trace',
+        'javascript','typescript','node','nodejs','php','laravel','symfony',
+        'django','flask','python','java','csharp','c#','cpp','c++','ruby','rails',
+        'html','css','react','vue','angular','svelte','tailwind','bootstrap',
+        'mysql','postgres','database','sql','query','queries','migration','seeder',
+        'api','rest api','endpoint','request','response','json','jwt',
+        'github','gitlab','bitbucket','git','branch','merge','commit','pull request',
+        'vscode','visual studio','eclipse','intellij','pycharm','ide',
+        'server','hosting','hostinger','domain','dns','nginx','apache','iis',
+        'wifi','router','modem','internet','signal','lag','ping','ms','fps',
+        'laptop','pc','desktop','computer','monitor','keyboard','mouse',
+        'android','iphone','ios','windows','macos','linux','ubuntu','update',
+        'install','installation','download','setup','config','configuration',
+
+        // ===== Shopping / money / finance =====
+        'shopping','shop','shops','mall','malls','grocery','groceries',
+        'cart','checkout','order','orders','parcel','package','tracking',
+        'sale','discount','promo','voucher','free shipping',
+        'shopee','lazada','zalora','amazon','aliexpress',
+        'price','prices','cost','budget','cheap','expensive',
+        'wallet','allowance','sweldo','salary','income','expense','expenses',
+        'money','peso','dollar','php','usd',
+        'loan','loans','interest','installment','credit card','debit card',
+        'bank','savings','investment','investments','stock','stocks',
+        'crypto','bitcoin','ethereum',
+
+        // ===== Travel / locations / itineraries =====
+        'travel','trip','trips','tour','tourist','vacation','staycation',
+        'itinerary','hotel','resort','hostel','airbnb',
+        'plane','flight','flights','airport','terminal','ticket','tickets',
+        'visa','passport','luggage','baggage','check in','boarding',
+        'beach','mountain','island','city','province',
+        'boracay','palawan','siargao','baguio','cebu','davao','manila',
+
+        // ===== Sports / physical hobbies (mostly neutral) =====
+        'basketball','volleyball','football','soccer','futsal',
+        'badminton','tennis','table tennis','pingpong','ping pong',
+        'swimming','run','running','jogging','gym','workout','exercise',
+        'league','tournament','match','practice','training','coach','team',
+
+        // ===== Creative hobbies / tools =====
+        'drawing','draw','art','painting','sketch','sketching',
+        'design','logo','poster','layout','editing',
+        'photoshop','illustrator','canva','figma','premiere','after effects',
+        'capcut','filter','preset',
+        'camera','dslr','mirrorless','lens','tripod','gimbal',
+        'tiktok edit','video edit','thumbnail',
+
+        // ===== Beauty / fashion / lifestyle =====
+        'makeup','lipstick','mascara','eyeliner','foundation','concealer',
+        'skincare','skin care','serum','moisturizer','sunscreen',
+        'outfit','ootd','clothes','clothing','tshirt','shirt','pants','jeans',
+        'shoes','sneakers','bag','bags','accessories','necklace','bracelet',
+        'haircut','hairstyle','salon','nail','nails','manicure','pedicure',
+
+        // ===== Physical health (general info, not emotions) =====
+        'fever','cough','cold','flu','sore throat','headache','migraine',
+        'stomachache','stomach pain','diarrhea','vomit','vomiting',
+        'covid','vaccine','vaccination','allergy','allergies','rash',
+        'medicine','medication','tablet','capsule','syrup','dosage',
+        'doctor','clinic','hospital','appointment with doctor',
+        'bp','blood pressure','cholesterol','glucose',
+
+        // ===== Random factual / how-to topics =====
+        'capital','history of','invention','inventor','discover','discovery',
+        'tutorial','guide','step by step','steps to','how to make',
+        'recipe for','requirements','qualifications','eligibility',
+        'job hiring','resume','cv','cover letter','interview questions',
+        'scholarship','scholarships','grant','grants',
+        'law','legal','crime','case','court','constitution',
     ];
 
     if ($this->hasAnyWord($norm, $nonMentalKeywords)) {
@@ -1581,6 +1678,7 @@ private function isNonMentalTopic(string $norm, array $labels, array $riskStruct
     // Default: treat as mental-health-related (safer).
     return false;
 }
+
 
  /** Detects when the input is basically not understandable (random chars, no clear words). */
 private function isUnreadableInput(string $norm): bool
