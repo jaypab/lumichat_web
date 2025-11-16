@@ -242,132 +242,131 @@ class ChatController extends Controller
     /* =========================================================================
      | Store a user message, call Rasa, risk/booking/crisis logic
      * =========================================================================*/
+public function store(Request $request)
+{
+    // ===== 0) Basic name pieces =====
+    $name  = $this->preferredName();
+    $first = preg_split('/\s+/', $name, 2)[0] ?? $name;
 
-    public function store(Request $request)
-    {
-        // ===== 0) Basic name pieces =====
-        $name  = $this->preferredName();
-        $first = preg_split('/\s+/', $name, 2)[0] ?? $name;
+    // ===== 1) Validate input (+ idempotency) =====
+    $request->validate([
+        'message'      => ['required', 'string', 'max:2000', function ($attr, $val, $fail) {
+            $s = is_string($val) ? preg_replace('/\s+/u', ' ', $val) : '';
+            $s = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $s ?? '');
+            if (trim($s) === '') return $fail('Message cannot be empty.');
+            if ($s !== strip_tags($s)) return $fail('HTML is not allowed in messages.');
+        }],
+        'display_text' => ['nullable', 'string', 'max:2000'],
+    ]);
 
-        // ===== 1) Validate input (+ idempotency) =====
-        $request->validate([
-            'message'      => ['required', 'string', 'max:2000', function ($attr, $val, $fail) {
-                $s = is_string($val) ? preg_replace('/\s+/u', ' ', $val) : '';
-                $s = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $s ?? '');
-                if (trim($s) === '') return $fail('Message cannot be empty.');
-                if ($s !== strip_tags($s)) return $fail('HTML is not allowed in messages.');
-            }],
-            'display_text' => ['nullable', 'string', 'max:2000'],
+    // Normalize text / display_text (balanced parens)
+    $rawInput   = (string) $request->input('message', '');
+    $cleanInput = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawInput);
+    $text       = trim(preg_replace('/\s+/u', ' ', $cleanInput));  // payload sent to Rasa
+
+    $rawDisplay   = (string) $request->input('display_text', '');
+    $cleanDisplay = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawDisplay);
+    $display      = trim(preg_replace('/\s+/u', ' ', $cleanDisplay)); // nice label for UI
+
+    // ✅ This is what we will SAVE + show in history
+    $storedText   = $display !== '' ? $display : $text;
+
+    // Prefer “human” text for heuristics
+    $analysisText = $display !== '' ? $display : $text;
+
+    // Idempotency
+    $idem = (string) $request->input('_idem', '');
+    if (!\Illuminate\Support\Str::isUuid($idem)) {
+        $idem = (string) \Illuminate\Support\Str::uuid();
+    }
+
+    $userId    = \Illuminate\Support\Facades\Auth::id();
+    $sessionId = (int) session('chat_session_id');
+
+    // ===== 2) Ensure session exists =====
+    $session     = null;
+    $justCreated = false;
+
+    if ($sessionId) {
+        $session = ChatSession::where('id', $sessionId)
+            ->where('user_id', $userId)
+            ->first();
+    }
+
+    if (!$session) {
+        // No active session yet → create a brand new one
+        $session = ChatSession::create([
+            'user_id'       => $userId,
+            'topic_summary' => 'Starting conversation...',
+            'is_anonymous'  => 0,
+            'risk_level'    => 'low',
         ]);
+        session(['chat_session_id' => $session->id]);
+        $justCreated = true;
+    }
 
-        // Normalize text / display_text (balanced parens)
-        $rawInput   = (string) $request->input('message', '');
-        $cleanInput = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawInput);
-        $text       = trim(preg_replace('/\s+/u', ' ', $cleanInput));  // <-- payload sent to Rasa
+    // Once we actually have a real session, we are no longer in "fresh" waiting mode.
+    session()->forget('start_fresh');
 
-        $rawDisplay   = (string) $request->input('display_text', '');
-        $cleanDisplay = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $rawDisplay);
-        $display      = trim(preg_replace('/\s+/u', ' ', $cleanDisplay)); // <-- nice label for UI
+    $sessionId = (int) $session->id;
 
-        // ✅ This is what we will SAVE + show in history
-        $storedText   = $display !== '' ? $display : $text;
+    // ===== 2.a) Seed a persistent greeting for this fresh session =====
+    if ($justCreated) {
+        $welcomeText = "Hi {$first}! I’m Lumi — how can I help you today?";
 
-        // Prefer “human” text for heuristics
-        $analysisText = $display !== '' ? $display : $text;
+        // Avoid duplicates if something runs twice accidentally
+        $alreadyHasBot = Chat::where('chat_session_id', $sessionId)
+            ->where('sender', 'bot')
+            ->exists();
 
-        // Idempotency
-        $idem = (string) $request->input('_idem', '');
-        if (!\Illuminate\Support\Str::isUuid($idem)) {
-            $idem = (string) \Illuminate\Support\Str::uuid();
-        }
-
-        $userId    = \Illuminate\Support\Facades\Auth::id();
-        $sessionId = (int) session('chat_session_id');
-
-        // ===== 2) Ensure session exists =====
-        $session     = null;
-        $justCreated = false;
-
-        if ($sessionId) {
-            $session = ChatSession::where('id', $sessionId)
-                ->where('user_id', $userId)
-                ->first();
-        }
-
-        if (!$session) {
-            // No active session yet → create a brand new one
-            $session = ChatSession::create([
-                'user_id'       => $userId,
-                'topic_summary' => 'Starting conversation...',
-                'is_anonymous'  => 0,
-                'risk_level'    => 'low',
+        if (!$alreadyHasBot) {
+            Chat::create([
+                'user_id'         => $userId,
+                'chat_session_id' => $sessionId,
+                'sender'          => 'bot',
+                'message'         => \Illuminate\Support\Facades\Crypt::encryptString($welcomeText),
+                'sent_at'         => now()->subSecond(),
             ]);
-            session(['chat_session_id' => $session->id]);
-            $justCreated = true;
         }
+    }
 
-        // Once we actually have a real session, we are no longer in "fresh" waiting mode.
-        session()->forget('start_fresh');
+    // ===== 3) ENGLISH-ONLY ANALYSIS (typo-tolerant) =====
+    $norm       = $this->nluNormalize($analysisText);
+    $lang       = 'en';
+    $intents    = $this->classifyIntents($norm);
+    $flags      = $intents['flags'];
+    $scores     = $intents['score'];
+    $labels     = $this->labelEmotions($norm);
+    $riskStruct = $this->assessRisk($norm);
+    $msgRisk    = $riskStruct['level'] ?? 'low';
+    $selfThreat = ($msgRisk === 'high');
 
-        $sessionId = (int) $session->id;
+    // Detect if the message is basically not understandable (gibberish, symbols, etc.)
+    $unreadable = $this->isUnreadableInput($norm);
 
-        // ===== 2.a) Seed a persistent greeting for this fresh session =====
-        if ($justCreated) {
-            $welcomeText = "Hi {$first}! I’m Lumi — how can I help you today?";
+    // Detect clearly non–mental-health topics,
+    // but ONLY if the input is *not* unreadable.
+    $nonMental = !$unreadable && $this->isNonMentalTopic($norm, $labels, $riskStruct, $flags);
 
-            // Avoid duplicates if something runs twice accidentally
-            $alreadyHasBot = Chat::where('chat_session_id', $sessionId)
-                ->where('sender', 'bot')
-                ->exists();
+    // ===== 3.a) Save user message (idempotent) =====
+    try {
+        $userMsg = Chat::firstOrCreate(
+            ['idempotency_key' => $idem],
+            [
+                'user_id'         => $userId,
+                'chat_session_id' => $sessionId,
+                'sender'          => 'user',
+                'message'         => \Illuminate\Support\Facades\Crypt::encryptString($storedText),
+                'sent_at'         => now(),
+            ]
+        );
+    } catch (\Illuminate\Database\QueryException $e) {
+        $userMsg = Chat::where('idempotency_key', $idem)->first();
+        if (!$userMsg) throw $e;
+    }
 
-            if (!$alreadyHasBot) {
-                Chat::create([
-                    'user_id'         => $userId,
-                    'chat_session_id' => $sessionId,
-                    'sender'          => 'bot',
-                    'message'         => \Illuminate\Support\Facades\Crypt::encryptString($welcomeText),
-                    'sent_at'         => now()->subSecond(),
-                ]);
-            }
-        }
-
-        // ===== 3) ENGLISH-ONLY ANALYSIS (typo-tolerant) =====
-        $norm       = $this->nluNormalize($analysisText);
-        $lang       = 'en';
-        $intents    = $this->classifyIntents($norm);
-        $flags      = $intents['flags'];
-        $scores     = $intents['score'];
-        $labels     = $this->labelEmotions($norm);
-        $riskStruct = $this->assessRisk($norm);
-        $msgRisk    = $riskStruct['level'] ?? 'low';
-        $selfThreat = ($msgRisk === 'high');
-
-        // Detect if the message is basically not understandable (gibberish, symbols, etc.)
-        $unreadable = $this->isUnreadableInput($norm);
-
-        // Detect clearly non–mental-health topics,
-        // but ONLY if the input is *not* unreadable.
-        $nonMental = !$unreadable && $this->isNonMentalTopic($norm, $labels, $riskStruct, $flags);
-
-        // ===== 3.a) Save user message (idempotent) =====
-        try {
-            $userMsg = Chat::firstOrCreate(
-                ['idempotency_key' => $idem],
-                [
-                    'user_id'         => $userId,
-                    'chat_session_id' => $sessionId,
-                    'sender'          => 'user',
-                    // ✅ Save the *label* or normal text, NOT the payload
-                    'message'         => \Illuminate\Support\Facades\Crypt::encryptString($storedText),
-                    'sent_at'         => now(),
-                ]
-            );
-        } catch (\Illuminate\Database\QueryException $e) {
-            $userMsg = Chat::where('idempotency_key', $idem)->first();
-            if (!$userMsg) throw $e;
-        }
-
-        // ===== 3.b) Topic summary / emotion counts =====
+    // ===== 3.b) Topic summary / emotion counts (only for mental-health content) =====
+    if (!$nonMental) {
         $count = Chat::where('chat_session_id', $sessionId)->where('sender', 'user')->count();
         if ($count === 1) {
             preg_match('/\b(sad|depress|help|anxious|angry|lonely|stress|tired|happy|excited|not okay)\b/i', $analysisText, $m);
@@ -384,470 +383,410 @@ class ChatController extends Controller
                 }
             }
         } catch (\Throwable $e) {}
+    }
 
-        // ===== 4) Decline-referral (SOFT RESET – no lock, keep chat open) =====
-        $declinedReferral = (function (string $s): bool {
-            $t = trim(mb_strtolower($s));
-            if (preg_match('~^/deny\s*(\{.*\})?~i', $t, $m)) {
-                if (!empty($m[1])) {
-                    try {
-                        $j = json_decode($m[1], true, 512, JSON_THROW_ON_ERROR);
-                        if (isset($j['confirm_topic']) && strtolower($j['confirm_topic']) === 'referral') {
-                            return true;
-                        }
-                    } catch (\Throwable $e) {}
-                }
-                return true;
-            }
-            return (bool) preg_match('/\b(not now|no thanks|maybe later|pass for now)\b/u', $t);
-        })($analysisText);
-
-        if ($declinedReferral) {
-            $ventKey = 'vent_turns_for_session_' . $sessionId;
-            session([$ventKey => 0]);
-            session()->forget('crisis_prompted_for_session_' . $sessionId);
-
-            $closing1 = Chat::create([
-                'user_id'         => $userId,
-                'chat_session_id' => $sessionId,
-                'sender'          => 'bot',
-                'message'         => \Illuminate\Support\Facades\Crypt::encryptString(
-                    "No problem. Thank you for sharing with me today."
-                ),
-                'sent_at'         => now(),
-            ]);
-
-            $closing2 = Chat::create([
-                'user_id'         => $userId,
-                'chat_session_id' => $sessionId,
-                'sender'          => 'bot',
-                'message'         => \Illuminate\Support\Facades\Crypt::encryptString(
-                    "If you ever feel like talking again, you can just send another message and we’ll start from there."
-                ),
-                'sent_at'         => now(),
-            ]);
-
-            return response()->json([
-                'user_message' => [
-                    'text'       => $storedText, // ✅ show label, not payload
-                    'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
-                    'sent_at'    => now()->toIso8601String(),
-                ],
-                'bot_reply' => [
-                    [
-                        'id'         => $closing1->id,
-                        'text'       => "No problem. Thank you for sharing with me today.",
-                        'buttons'    => [],
-                        'time_human' => $closing1->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
-                        'sent_at'    => $closing1->sent_at->toIso8601String(),
-                    ],
-                    [
-                        'id'         => $closing2->id,
-                        'text'       => "If you ever feel like talking again, you can just send another message and we’ll start from there.",
-                        'buttons'    => [],
-                        'time_human' => $closing2->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
-                        'sent_at'    => $closing2->sent_at->toIso8601String(),
-                    ],
-                ],
-                'locked'     => false,
-                'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
-            ]);
-        }
-
-            // ===== 5) Flow control (fix long-vent bypass + loops) =====
-            $botReplies = [];
-            $rasaUrl    = $this->rasaWebhookUrl();
-
-            // Track emotional vent turns separately so non-mental topics don’t consume them
-            $ventKey   = 'vent_turns_for_session_'.$sessionId;
-            $ventTurns = (int) session($ventKey, 0);
-
-            $lastIntent = $this->lastBotIntent($sessionId);
-
-            // Appointment confirm via "yes" after an offer
-            $askedForAppt =
-                ($flags['wants_appointment'] ?? false)
-                || (($flags['yes'] ?? false) && $lastIntent === 'offer_appointment')
-                || $this->confirmedAfterOffer($analysisText, $sessionId);
-
-            // Self-threat overrides to HIGH unless they’re explicitly just booking
-            if ($selfThreat && !$askedForAppt) {
-                $msgRisk = 'high';
-            }
-
-            // Bypass decision: protects long vents from skipping to Rasa
-            $bypass           = $this->shouldBypassVenting_EN($norm, $msgRisk, $flags);
-            $inEmotionalRange = ($msgRisk !== 'low') || !empty($labels);
-
-            // Use ventTurns so non-mental messages don’t eat the 3-turn window
-            $inVentWindow = $inEmotionalRange && ($ventTurns < 3) && !$bypass;
-
-            // ---- 👇 MOVE THIS UP, BEFORE USING $sessionUserMsgCount ----
-            // Session-level stats for smarter context
-            $sessionEmotionCounts = $this->emotionsAsCounts($session->emotions ?? []);
-            $sessionUserMsgCount  = Chat::where('chat_session_id', $sessionId)
-                ->where('sender', 'user')
-                ->count();
-
-            // Detect “strong” non-mental topics for THIS message (coding, games, etc.)
-            $strongNonMental = $this->hasAnyWord($norm, [
-                // games / entertainment
-                'game','games','gaming','steam','valorant','dota','gta','minecraft','roblox',
-                'ml','mobile','legends','cod','call of duty','music','movie','movies','film',
-                'kdrama','anime','series','netflix','tiktok','youtube','answer',
-
-                // food, recipes
-                'food','recipe','cook','cooking','restaurant','milk tea','coffee shop',
-
-                // school / academic but not emotional
-                'math','algebra','calculus','physics','chemistry','biology','science',
-                'assignment','homework','module','report','thesis','definition','define',
-                'meaning','meaning of','explain','explanation','what is','who is','where is',
-
-                // tech / coding
-                'programming','coding','code','javascript','python','php','laravel',
-                'html','css','react','website','computer',
-
-                // random factual / how-to
-                'capital','history of','tutorial','how to make','steps to','requirements',
-            ]);
-
-            // -------- Context safeguard for non-mental tagging --------
-            // Only downgrade nonMental → mental when topic is NOT strongly non-mental.
-            // This keeps obvious things like "can you help me do coding" as non-mental.
-            if (
-                $nonMental
-                && !$strongNonMental
-                && (
-                    $ventTurns > 0
-                    || ($session->risk_level && $session->risk_level !== 'low')
-                    || $sessionUserMsgCount > 1   // multiple emotional turns already
-                )
-            ) {
-                $nonMental = false;
-            }
-
-
-            // ❌ REMOVE your earlier duplicate safeguard block above this comment.
-            //     Only this one should remain.
-
-            // Coping throttle (anti-spam)
-            $copingThrottleKey = 'coping_last_offer_'.$sessionId;
-            $copingCooldownSec = 300;
-            $nowEpoch          = time();
-            $canOfferCoping    = !session()->has($copingThrottleKey)
-                || ($nowEpoch - (int) session($copingThrottleKey, 0) >= $copingCooldownSec);
-
-            // High-level message type (for Rasa + analytics)
-            $messageType = 'other';
-
-            if ($unreadable) {
-                $messageType = 'unreadable';
-            } elseif ($nonMental) {
-                $messageType = 'non_mental';
-            } elseif ($selfThreat || $msgRisk === 'high') {
-                $messageType = 'crisis';
-            } elseif ($askedForAppt) {
-                $messageType = 'appointment_request';
-            } elseif ($flags['wants_coping'] ?? false) {
-                $messageType = 'coping_request';
-            } elseif ($inVentWindow && !$nonMental) {
-                $messageType = 'emotional_vent';
-            } elseif ($flags['is_question'] ?? false) {
-                $messageType = 'question';
-            }
-
-            // Conversation stage for policies / smarter replies
-            $conversationStage = 'opening';
-            if ($sessionUserMsgCount <= 1) {
-                $conversationStage = 'opening';
-            } elseif ($msgRisk === 'high' || ($session->risk_level === 'high')) {
-                $conversationStage = 'crisis';
-            } elseif ($askedForAppt) {
-                $conversationStage = 'appointment_flow';
-            } elseif ($flags['wants_coping'] ?? false) {
-                $conversationStage = 'coping';
-            } elseif ($inVentWindow && !$nonMental) {
-                $conversationStage = 'venting';
-            } elseif ($nonMental) {
-                $conversationStage = 'out_of_scope';
-            }
-
-
-        // Build metadata (rich for Rasa policies)
-        $metadata = [
-            'lumichat' => [
-                'session_id' => $sessionId,
-                'lang'       => 'en',              // controller is EN-only NLU
-                'risk'       => $msgRisk,         // message-level risk
-                'app'        => 'lumichat-web',
-
-                // Current message analysis
-                'message'    => [
-                    'type'        => $messageType,
-                    'risk'        => $msgRisk,
-                    'self_threat' => $selfThreat,
-                    'labels'      => $labels,        // emotion labels for this message
-                    'flags'       => $flags,         // wants_appointment, wants_coping, is_question, refused_to_share, yes/no, done
-                    'scores'      => $scores,        // length + confidence-ish
-                ],
-
-                // Session-wide context for smarter flows
-                'session'    => [
-                    'stage'             => $conversationStage,   // opening / venting / coping / appointment_flow / crisis / out_of_scope
-                    'overall_risk'      => $session->risk_level ?: 'low',
-                    'topic_summary'     => $session->topic_summary,
-                    'emotion_counts'    => $sessionEmotionCounts, // map: label => count
-                    'user_message_count'=> $sessionUserMsgCount,
-                    'vent_turns'        => $ventTurns,
-                    'in_vent_window'    => $inVentWindow,
-                    'non_mental_topic'  => $nonMental,
-                    'asked_for_appt'    => $askedForAppt,
-                ],
-
-                // For Rasa policies that want last bot intent tag
-                'analysis'   => [
-                    'emotions'        => $labels,
-                    'intents'         => $flags,
-                    'scores'          => $scores,
-                    'last_bot_intent' => $lastIntent,
-                ],
-            ],
-
-            'user' => [
-                'id'    => auth()->id(),
-                'name'  => $name,
-                'first' => $first,
-            ],
-        ];
-
-        // ===== 6) Branching + deciding if we call Rasa =====
-        $callRasa    = false;
-        $rasaMessage = $text; // default: send the actual user message
-
-        if ($flags['done'] ?? false) {
-            // Reset vent counter so next time they talk, stage 1 again
-            $ventKey = 'vent_turns_for_session_'.$sessionId;
-            session([$ventKey => 0]);
-
-            // 1) Closing / appreciation line
-            $botReplies[] = [
-                'text'    => "Thank you for sharing with me today, {USER_FIRST}. If you ever want to talk again or try more coping tools, you can just send another message and we’ll continue from there.",
-                'buttons' => [],
-            ];
-
-            // 2) Optional counselor booking offer
-            $botReplies[] = [
-                'text'    => "And if at any point you’d like to talk to a school counselor in person, you can book an appointment here:",
-                'buttons' => [
-                    ['title' => 'Book counselor', 'payload' => '{APPOINTMENT_LINK}'],
-                ],
-            ];
-        } elseif ($unreadable) {
-            // 🔹 Default response for unclear / not understandable input
-            $botReplies[] = [
-                'text'    => "I’m not sure I understood that, {USER_FIRST}. Could you say it in a simpler or clearer way so I can support you better?",
-                'buttons' => [],
-            ];
-        } elseif ($nonMental) {
-            // Separate response for topics outside LumiCHAT’s scope
-            $botReplies[] = [
-                'text'    => "I might not be the best fit for that topic, {USER_FIRST}. LumiCHAT is focused on supporting your mental health and well-being—things like stress, emotions, and what you’re going through. If this situation is affecting how you feel, you can tell me more about that and we can talk about it.",
-                'buttons' => [],
-            ];
-        } elseif (($flags['refused_to_share'] ?? false)) {
-            $supportLine = "It’s completely okay if you’re not ready to share right now, {USER_FIRST}. You’re not alone here, and there’s no pressure.";
-            $ctaReply    = "If it would help to talk later, you’re always welcome to come back. You can also book time with a school counselor here: {APPOINTMENT_LINK}";
-
-            $botReplies[] = ['text' => $supportLine, 'buttons' => []];
-            $botReplies[] = [
-                'text'    => $ctaReply,
-                'buttons' => [
-                    ['title' => 'Book counselor', 'payload' => '{APPOINTMENT_LINK}'],
-                    ['title' => 'Not now',        'payload' => '/deny{"confirm_topic":"referral"}'],
-                ],
-            ];
-        } elseif ($inVentWindow && !$askedForAppt && $msgRisk !== 'high') {
-            // Stage is based on emotional vent turns, not total user messages
-            $stage     = max(1, min(3, $ventTurns + 1));
-            $replyText = $this->empathicPrompt($first, $labels, $stage);
-            $botReplies[] = ['text' => $replyText, 'buttons' => []];
-
-            // Mark that we’ve used one venting turn for this session
-            session([$ventKey => $ventTurns + 1]);
-        } elseif (
-            (
-                ($flags['wants_coping'] ?? false)
-                || (($flags['yes'] ?? false) && $lastIntent === 'offer_coping')
-            )
-            && $canOfferCoping
-        ) {
-            // ✅ Coping request or "Yes, show tips"
-            session([$copingThrottleKey => $nowEpoch]);
-            $callRasa    = true;
-                } else {
-            // Normal path (including questions, appointments, or risk/high cases): call Rasa
-            $callRasa    = true;
-            $rasaMessage = $text;
-        }
-
-        // 🔒 SAFETY: if we’ve tagged this as clearly non-mental,
-        //            never call Rasa for this turn.
-        if ($nonMental && !$unreadable) {
-            $callRasa = false;
-        }
-
-        // ===== 6.a) If needed, call Rasa now and append replies =====
-        if ($callRasa) {
-
-            $timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
-            $verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
-
-            try {
-                $r = Http::timeout($timeout)
-                    ->withOptions(['verify' => $verify])
-                    ->withHeaders(['Accept' => 'application/json'])
-                    ->post($rasaUrl, [
-                        'sender'   => 'u_' . $userId . '_s_' . $sessionId,
-                        'message'  => $rasaMessage,
-                        'metadata' => $metadata,
-                    ]);
-
-                if ($r->ok()) {
-                    $payload = $r->json() ?? [];
-                    foreach ($payload as $piece) {
-                        if (is_array($piece)) {
-                            $txt = isset($piece['text']) ? (string) $piece['text'] : '';
-                            $btn = (isset($piece['buttons']) && is_array($piece['buttons'])) ? $piece['buttons'] : [];
-                            if ($txt !== '' || !empty($btn)) {
-                                $botReplies[] = ['text' => $txt, 'buttons' => $btn];
-                            }
-                        } else {
-                            $txt = trim((string) $piece);
-                            if ($txt !== '') {
-                                $botReplies[] = ['text' => $txt, 'buttons' => []];
-                            }
-                        }
+    // ===== 4) Decline-referral (SOFT RESET – no lock, keep chat open) =====
+    $declinedReferral = (function (string $s): bool {
+        $t = trim(mb_strtolower($s));
+        if (preg_match('~^/deny\s*(\{.*\})?~i', $t, $m)) {
+            if (!empty($m[1])) {
+                try {
+                    $j = json_decode($m[1], true, 512, JSON_THROW_ON_ERROR);
+                    if (isset($j['confirm_topic']) && strtolower($j['confirm_topic']) === 'referral') {
+                        return true;
                     }
-                }
-            } catch (\Throwable $e) {
-                $botReplies = [[
-                    'text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more?"
-                ]];
+                } catch (\Throwable $e) {}
             }
-
-            if (empty($botReplies)) {
-                $botReplies = [[
-                    'text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more?"
-                ]];
-            }
+            return true;
         }
+        return (bool) preg_match('/\b(not now|no thanks|maybe later|pass for now)\b/u', $t);
+    })($analysisText);
 
-        // ===== 7) Risk elevation logging =====
-        $current = $session->risk_level ?: 'low';
-        $order   = ['low' => 0, 'moderate' => 1, 'high' => 2];
-        $new     = ($order[$msgRisk] > $order[$current]) ? $msgRisk : $current;
-        if ($new !== $current && !$nonMental) {
-            $session->update(['risk_level' => $new]);
-        }
+    if ($declinedReferral) {
+        $ventKey = 'vent_turns_for_session_' . $sessionId;
+        session([$ventKey => 0]);
+        session()->forget('crisis_prompted_for_session_' . $sessionId);
 
-        // Only log risk events for mental-health-related messages
-        if (!$nonMental) {
-            $this->logActivity('risk_detected', "Risk level: {$msgRisk}", $sessionId, [
-                'risk_level'      => $msgRisk,
-                'message_preview' => Str::limit($text, 120),
-            ]);
-        }
+        $closing1 = Chat::create([
+            'user_id'         => $userId,
+            'chat_session_id' => $sessionId,
+            'sender'          => 'bot',
+            'message'         => \Illuminate\Support\Facades\Crypt::encryptString(
+                "No problem. Thank you for sharing with me today."
+            ),
+            'sent_at'         => now(),
+        ]);
 
-        $crisisAlreadyShown = session('crisis_prompted_for_session_' . $sessionId, false);
+        $closing2 = Chat::create([
+            'user_id'         => $userId,
+            'chat_session_id' => $sessionId,
+            'sender'          => 'bot',
+            'message'         => \Illuminate\Support\Facades\Crypt::encryptString(
+                "If you ever feel like talking again, you can just send another message and we’ll start from there."
+            ),
+            'sent_at'         => now(),
+        ]);
 
-        if (!$crisisAlreadyShown && $msgRisk === 'high') {
-            session(['crisis_prompted_for_session_' . $sessionId => true]);
-            $this->logActivity('crisis_prompt', 'Crisis context sent to Rasa', $sessionId, null);
-        }
-
-        // ===== 7.5) Appointment CTA injection (only if not already present) =====
-        $askedForAppt = $askedForAppt || $this->confirmedAfterOffer($analysisText, $sessionId);
-        $hasApptPlaceholder = false;
-        foreach ($botReplies as $rpl) {
-            if (is_array($rpl) && isset($rpl['text']) && is_string($rpl['text']) && str_contains($rpl['text'], '{APPOINTMENT_LINK}')) {
-                $hasApptPlaceholder = true; break;
-            }
-        }
-
-        // ===== 8) Build appointment link + save bot replies (with name personalization) =====
-        $link = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
-            ? \Illuminate\Support\Facades\URL::signedRoute('features.enable_appointment')
-            : (\Illuminate\Support\Facades\Route::has('appointment.index') ? route('appointment.index') : url('/appointment'));
-
-        $ctaHtml = '<a href="' . e($link) . '">Book an appointment</a>';
-
-        $botPayload = [];
-        foreach ($botReplies as $replyObj) {
-            $replyText = (string) ($replyObj['text'] ?? '');
-            $replyBtns = (isset($replyObj['buttons']) && is_array($replyObj['buttons'])) ? $replyObj['buttons'] : [];
-
-            // English only + inline link replace
-            if (str_contains($replyText, '{APPOINTMENT_LINK}')) {
-                $replyText = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $replyText);
-            }
-
-            // personalization
-            $safeName  = e($name);
-            $safeFirst = e($first);
-            $replyText = str_replace(
-                ['{USER_NAME}', '{USER_FIRST}', '{USER}', '{NAME}'],
-                [$safeName,     $safeFirst,     $safeFirst, $safeName],
-                $replyText
-            );
-
-            // buttons: turn payload "{APPOINTMENT_LINK}" into url $link
-            $normalizedBtns = [];
-            foreach ($replyBtns as $b) {
-                $title   = (string)($b['title'] ?? 'Open');
-                $payload = $b['payload'] ?? null;
-                $url     = $b['url'] ?? null;
-
-                if (is_string($payload) && trim($payload) === '{APPOINTMENT_LINK}') {
-                    $normalizedBtns[] = ['title' => $title, 'url' => $link];
-                } else {
-                    $one = ['title' => $title];
-                    if ($url)     $one['url'] = $url;
-                    if ($payload) $one['payload'] = $payload;
-                    $normalizedBtns[] = $one;
-                }
-            }
-
-            // save bot message (encrypted)
-            $bot = Chat::create([
-                'user_id'         => $userId,
-                'chat_session_id' => $sessionId,
-                'sender'          => 'bot',
-                'message'         => Crypt::encryptString($replyText),
-                'sent_at'         => now(),
-            ]);
-
-            // respond with id + buttons so the UI can render & rehydrate
-            $botPayload[] = [
-                'id'         => $bot->id,
-                'text'       => $replyText,
-                'buttons'    => $normalizedBtns,
-                'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
-                'sent_at'    => $bot->sent_at->toIso8601String(),
-            ];
-        }
-
-        // ===== Final JSON =====
         return response()->json([
             'user_message' => [
-                'text'       => $storedText, // ✅ label / plain text
+                'text'       => $storedText,
                 'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
                 'sent_at'    => now()->toIso8601String(),
             ],
-            'bot_reply'  => $botPayload,
+            'bot_reply' => [
+                [
+                    'id'         => $closing1->id,
+                    'text'       => "No problem. Thank you for sharing with me today.",
+                    'buttons'    => [],
+                    'time_human' => $closing1->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+                    'sent_at'    => $closing1->sent_at->toIso8601String(),
+                ],
+                [
+                    'id'         => $closing2->id,
+                    'text'       => "If you ever feel like talking again, you can just send another message and we’ll start from there.",
+                    'buttons'    => [],
+                    'time_human' => $closing2->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+                    'sent_at'    => $closing2->sent_at->toIso8601String(),
+                ],
+            ],
+            'locked'     => false,
             'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
         ]);
     }
+
+    // ===== 4.b) HARD SHORT-CIRCUIT FOR NON-MENTAL TOPICS =====
+    if ($nonMental && !$unreadable) {
+        $replyText = "I might not be the best fit for that topic, {$first}. "
+            . "LumiCHAT is focused on supporting your mental health and well-being—things like stress, emotions, "
+            . "and what you’re going through. If this situation is affecting how you feel, you can tell me more "
+            . "about that and we can talk about it.";
+
+        $bot = Chat::create([
+            'user_id'         => $userId,
+            'chat_session_id' => $sessionId,
+            'sender'          => 'bot',
+            'message'         => Crypt::encryptString($replyText),
+            'sent_at'         => now(),
+        ]);
+
+        return response()->json([
+            'user_message' => [
+                'text'       => $storedText,
+                'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+                'sent_at'    => now()->toIso8601String(),
+            ],
+            'bot_reply' => [[
+                'id'         => $bot->id,
+                'text'       => $replyText,
+                'buttons'    => [],
+                'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+                'sent_at'    => $bot->sent_at->toIso8601String(),
+            ]],
+            'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+        ]);
+    }
+
+    // ===== 5) Flow control (venting, coping, Rasa) – ONLY MENTAL CONTENT REACHES HERE =====
+    $botReplies = [];
+    $rasaUrl    = $this->rasaWebhookUrl();
+
+    $ventKey   = 'vent_turns_for_session_'.$sessionId;
+    $ventTurns = (int) session($ventKey, 0);
+
+    $lastIntent = $this->lastBotIntent($sessionId);
+
+    $askedForAppt =
+        ($flags['wants_appointment'] ?? false)
+        || (($flags['yes'] ?? false) && $lastIntent === 'offer_appointment')
+        || $this->confirmedAfterOffer($analysisText, $sessionId);
+
+    if ($selfThreat && !$askedForAppt) {
+        $msgRisk = 'high';
+    }
+
+    $bypass           = $this->shouldBypassVenting_EN($norm, $msgRisk, $flags);
+    $inEmotionalRange = ($msgRisk !== 'low') || !empty($labels);
+    $inVentWindow     = $inEmotionalRange && ($ventTurns < 3) && !$bypass;
+
+    // Session-level stats for smarter context
+    $sessionEmotionCounts = $this->emotionsAsCounts($session->emotions ?? []);
+    $sessionUserMsgCount  = Chat::where('chat_session_id', $sessionId)
+        ->where('sender', 'user')
+        ->count();
+
+    // Coping throttle (anti-spam)
+    $copingThrottleKey = 'coping_last_offer_'.$sessionId;
+    $copingCooldownSec = 300;
+    $nowEpoch          = time();
+    $canOfferCoping    = !session()->has($copingThrottleKey)
+        || ($nowEpoch - (int) session($copingThrottleKey, 0) >= $copingCooldownSec);
+
+    // High-level message type (for Rasa + analytics)
+    $messageType = 'other';
+
+    if ($unreadable) {
+        $messageType = 'unreadable';
+    } elseif ($selfThreat || $msgRisk === 'high') {
+        $messageType = 'crisis';
+    } elseif ($askedForAppt) {
+        $messageType = 'appointment_request';
+    } elseif ($flags['wants_coping'] ?? false) {
+        $messageType = 'coping_request';
+    } elseif ($inVentWindow) {
+        $messageType = 'emotional_vent';
+    } elseif ($flags['is_question'] ?? false) {
+        $messageType = 'question';
+    }
+
+    // Conversation stage for policies / smarter replies
+    $conversationStage = 'opening';
+    if ($sessionUserMsgCount <= 1) {
+        $conversationStage = 'opening';
+    } elseif ($msgRisk === 'high' || ($session->risk_level === 'high')) {
+        $conversationStage = 'crisis';
+    } elseif ($askedForAppt) {
+        $conversationStage = 'appointment_flow';
+    } elseif ($flags['wants_coping'] ?? false) {
+        $conversationStage = 'coping';
+    } elseif ($inVentWindow) {
+        $conversationStage = 'venting';
+    }
+
+    // Build metadata (rich for Rasa policies)
+    $metadata = [
+        'lumichat' => [
+            'session_id' => $sessionId,
+            'lang'       => 'en',
+            'risk'       => $msgRisk,
+            'app'        => 'lumichat-web',
+            'message'    => [
+                'type'        => $messageType,
+                'risk'        => $msgRisk,
+                'self_threat' => $selfThreat,
+                'labels'      => $labels,
+                'flags'       => $flags,
+                'scores'      => $scores,
+            ],
+            'session'    => [
+                'stage'              => $conversationStage,
+                'overall_risk'       => $session->risk_level ?: 'low',
+                'topic_summary'      => $session->topic_summary,
+                'emotion_counts'     => $sessionEmotionCounts,
+                'user_message_count' => $sessionUserMsgCount,
+                'vent_turns'         => $ventTurns,
+                'in_vent_window'     => $inVentWindow,
+                'non_mental_topic'   => false,   // only mental messages reach here
+                'asked_for_appt'     => $askedForAppt,
+            ],
+            'analysis'   => [
+                'emotions'        => $labels,
+                'intents'         => $flags,
+                'scores'          => $scores,
+                'last_bot_intent' => $lastIntent,
+            ],
+        ],
+        'user' => [
+            'id'    => auth()->id(),
+            'name'  => $name,
+            'first' => $first,
+        ],
+    ];
+
+    // ===== 6) Branching + deciding if we call Rasa =====
+    $callRasa    = false;
+    $rasaMessage = $text;
+
+    if ($flags['done'] ?? false) {
+        $ventKey = 'vent_turns_for_session_'.$sessionId;
+        session([$ventKey => 0]);
+
+        $botReplies[] = [
+            'text'    => "Thank you for sharing with me today, {USER_FIRST}. If you ever want to talk again or try more coping tools, you can just send another message and we’ll continue from there.",
+            'buttons' => [],
+        ];
+        $botReplies[] = [
+            'text'    => "And if at any point you’d like to talk to a school counselor in person, you can book an appointment here:",
+            'buttons' => [
+                ['title' => 'Book counselor', 'payload' => '{APPOINTMENT_LINK}'],
+            ],
+        ];
+    } elseif ($unreadable) {
+        $botReplies[] = [
+            'text'    => "I’m not sure I understood that, {USER_FIRST}. Could you say it in a simpler or clearer way so I can support you better?",
+            'buttons' => [],
+        ];
+    } elseif (($flags['refused_to_share'] ?? false)) {
+        $supportLine = "It’s completely okay if you’re not ready to share right now, {USER_FIRST}. You’re not alone here, and there’s no pressure.";
+        $ctaReply    = "If it would help to talk later, you’re always welcome to come back. You can also book time with a school counselor here: {APPOINTMENT_LINK}";
+
+        $botReplies[] = ['text' => $supportLine, 'buttons' => []];
+        $botReplies[] = [
+            'text'    => $ctaReply,
+            'buttons' => [
+                ['title' => 'Book counselor', 'payload' => '{APPOINTMENT_LINK}'],
+                ['title' => 'Not now',        'payload' => '/deny{"confirm_topic":"referral"}'],
+            ],
+        ];
+    } elseif ($inVentWindow && !$askedForAppt && $msgRisk !== 'high') {
+        $stage     = max(1, min(3, $ventTurns + 1));
+        $replyText = $this->empathicPrompt($first, $labels, $stage);
+        $botReplies[] = ['text' => $replyText, 'buttons' => []];
+        session([$ventKey => $ventTurns + 1]);
+    } elseif (
+        (
+            ($flags['wants_coping'] ?? false)
+            || (($flags['yes'] ?? false) && $lastIntent === 'offer_coping')
+        )
+        && $canOfferCoping
+    ) {
+        session([$copingThrottleKey => $nowEpoch]);
+        $callRasa = true;
+    } else {
+        $callRasa = true;
+    }
+
+    // ===== 6.a) If needed, call Rasa now and append replies =====
+    if ($callRasa) {
+        $timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
+        $verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
+
+        try {
+            $r = Http::timeout($timeout)
+                ->withOptions(['verify' => $verify])
+                ->withHeaders(['Accept' => 'application/json'])
+                ->post($rasaUrl, [
+                    'sender'   => 'u_' . $userId . '_s_' . $sessionId,
+                    'message'  => $rasaMessage,
+                    'metadata' => $metadata,
+                ]);
+
+            if ($r->ok()) {
+                $payload = $r->json() ?? [];
+                foreach ($payload as $piece) {
+                    if (is_array($piece)) {
+                        $txt = isset($piece['text']) ? (string) $piece['text'] : '';
+                        $btn = (isset($piece['buttons']) && is_array($piece['buttons'])) ? $piece['buttons'] : [];
+                        if ($txt !== '' || !empty($btn)) {
+                            $botReplies[] = ['text' => $txt, 'buttons' => $btn];
+                        }
+                    } else {
+                        $txt = trim((string) $piece);
+                        if ($txt !== '') {
+                            $botReplies[] = ['text' => $txt, 'buttons' => []];
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            $botReplies = [[
+                'text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more?"
+            ]];
+        }
+
+        if (empty($botReplies)) {
+            $botReplies = [[
+                'text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more?"
+            ]];
+        }
+    }
+
+    // ===== 7) Risk elevation logging (only for mental messages) =====
+    $current = $session->risk_level ?: 'low';
+    $order   = ['low' => 0, 'moderate' => 1, 'high' => 2];
+    $new     = ($order[$msgRisk] > $order[$current]) ? $msgRisk : $current;
+    if ($new !== $current) {
+        $session->update(['risk_level' => $new]);
+    }
+
+    $this->logActivity('risk_detected', "Risk level: {$msgRisk}", $sessionId, [
+        'risk_level'      => $msgRisk,
+        'message_preview' => Str::limit($text, 120),
+    ]);
+
+    $crisisAlreadyShown = session('crisis_prompted_for_session_' . $sessionId, false);
+    if (!$crisisAlreadyShown && $msgRisk === 'high') {
+        session(['crisis_prompted_for_session_' . $sessionId => true]);
+        $this->logActivity('crisis_prompt', 'Crisis context sent to Rasa', $sessionId, null);
+    }
+
+    // ===== 7.5) Appointment CTA injection (only if not already present) =====
+    $askedForAppt = $askedForAppt || $this->confirmedAfterOffer($analysisText, $sessionId);
+    $hasApptPlaceholder = false;
+    foreach ($botReplies as $rpl) {
+        if (is_array($rpl) && isset($rpl['text']) && is_string($rpl['text']) && str_contains($rpl['text'], '{APPOINTMENT_LINK}')) {
+            $hasApptPlaceholder = true; break;
+        }
+    }
+
+    // ===== 8) Build appointment link + save bot replies (with name personalization) =====
+    $link = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
+        ? \Illuminate\Support\Facades\URL::signedRoute('features.enable_appointment')
+        : (\Illuminate\Support\Facades\Route::has('appointment.index') ? route('appointment.index') : url('/appointment'));
+
+    $ctaHtml = '<a href="' . e($link) . '">Book an appointment</a>';
+
+    $botPayload = [];
+    foreach ($botReplies as $replyObj) {
+        $replyText = (string) ($replyObj['text'] ?? '');
+        $replyBtns = (isset($replyObj['buttons']) && is_array($replyObj['buttons'])) ? $replyObj['buttons'] : [];
+
+        if (str_contains($replyText, '{APPOINTMENT_LINK}')) {
+            $replyText = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $replyText);
+        }
+
+        $safeName  = e($name);
+        $safeFirst = e($first);
+        $replyText = str_replace(
+            ['{USER_NAME}', '{USER_FIRST}', '{USER}', '{NAME}'],
+            [$safeName,     $safeFirst,     $safeFirst, $safeName],
+            $replyText
+        );
+
+        $normalizedBtns = [];
+        foreach ($replyBtns as $b) {
+            $title   = (string)($b['title'] ?? 'Open');
+            $payload = $b['payload'] ?? null;
+            $url     = $b['url'] ?? null;
+
+            if (is_string($payload) && trim($payload) === '{APPOINTMENT_LINK}') {
+                $normalizedBtns[] = ['title' => $title, 'url' => $link];
+            } else {
+                $one = ['title' => $title];
+                if ($url)     $one['url'] = $url;
+                if ($payload) $one['payload'] = $payload;
+                $normalizedBtns[] = $one;
+            }
+        }
+
+        $bot = Chat::create([
+            'user_id'         => $userId,
+            'chat_session_id' => $sessionId,
+            'sender'          => 'bot',
+            'message'         => Crypt::encryptString($replyText),
+            'sent_at'         => now(),
+        ]);
+
+        $botPayload[] = [
+            'id'         => $bot->id,
+            'text'       => $replyText,
+            'buttons'    => $normalizedBtns,
+            'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => $bot->sent_at->toIso8601String(),
+        ];
+    }
+
+    // ===== Final JSON =====
+    return response()->json([
+        'user_message' => [
+            'text'       => $storedText,
+            'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => now()->toIso8601String(),
+        ],
+        'bot_reply'  => $botPayload,
+        'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+    ]);
+}
+
 
     // Normalize any stored shape (null | list | map) into a simple label=>count map.
     private function emotionsAsCounts(null|array|string $value): array
