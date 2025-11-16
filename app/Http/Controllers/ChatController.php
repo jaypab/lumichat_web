@@ -489,17 +489,44 @@ class ChatController extends Controller
                 ->where('sender', 'user')
                 ->count();
 
+            // Detect “strong” non-mental topics for THIS message (coding, games, etc.)
+            $strongNonMental = $this->hasAnyWord($norm, [
+                // games / entertainment
+                'game','games','gaming','steam','valorant','dota','gta','minecraft','roblox',
+                'ml','mobile','legends','cod','call of duty','music','movie','movies','film',
+                'kdrama','anime','series','netflix','tiktok','youtube','answer',
+
+                // food, recipes
+                'food','recipe','cook','cooking','restaurant','milk tea','coffee shop',
+
+                // school / academic but not emotional
+                'math','algebra','calculus','physics','chemistry','biology','science',
+                'assignment','homework','module','report','thesis','definition','define',
+                'meaning','meaning of','explain','explanation','what is','who is','where is',
+
+                // tech / coding
+                'programming','coding','code','javascript','python','php','laravel',
+                'html','css','react','website','computer',
+
+                // random factual / how-to
+                'capital','history of','tutorial','how to make','steps to','requirements',
+            ]);
+
             // -------- Context safeguard for non-mental tagging --------
-            // If the student is already in an emotional conversation (venting started,
-            // or session risk elevated), NEVER downgrade follow-up messages to non-mental
-            // just because this one line has no explicit emotion keyword.
+            // Only downgrade nonMental → mental when topic is NOT strongly non-mental.
+            // This keeps obvious things like "can you help me do coding" as non-mental.
             if (
-                $ventTurns > 0
-                || ($session->risk_level && $session->risk_level !== 'low')
-                || $sessionUserMsgCount > 1   // multiple emotional turns already
+                $nonMental
+                && !$strongNonMental
+                && (
+                    $ventTurns > 0
+                    || ($session->risk_level && $session->risk_level !== 'low')
+                    || $sessionUserMsgCount > 1   // multiple emotional turns already
+                )
             ) {
                 $nonMental = false;
             }
+
 
             // ❌ REMOVE your earlier duplicate safeguard block above this comment.
             //     Only this one should remain.
