@@ -1791,5 +1791,84 @@ private function isUnreadableInput(string $norm): bool
         // Capitalize first letter just to be safe
         return ucfirst($title);
     }
+/** Count how many distinct non-mental keywords appear in the text (with typo tolerance). */
+private function countKeywordHits(string $text, array $terms): int
+{
+    $tokens = $this->tokens($text);
+    if (empty($tokens)) return 0;
+
+    $tokens = array_map('mb_strtolower', $tokens);
+    $hits   = 0;
+    $seen   = [];
+
+    foreach ($terms as $term) {
+        $term = mb_strtolower($term);
+        if (isset($seen[$term])) continue;
+
+        $len = mb_strlen($term);
+        foreach ($tokens as $tok) {
+            if ($tok === $term) {
+                $hits++;
+                $seen[$term] = true;
+                break;
+            }
+
+            if ($len <= 10 && abs($len - mb_strlen($tok)) <= 1) {
+                if (levenshtein($tok, $term) <= 1) {
+                    $hits++;
+                    $seen[$term] = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    return $hits;
+}
+/** Heuristic: does this look like the student is opening up / talking about themselves? */
+private function looksLikeSelfDisclosure(string $norm): bool
+{
+    $norm = trim($norm);
+
+    // First-person pronouns (EN + a bit of Filipino)
+    $hasPronoun = (bool) preg_match(
+        '/\b(i|im|i\'m|ive|i\'ve|me|my|mine|myself|ako|ko|akin)\b/u',
+        $norm
+    );
+
+    if (!$hasPronoun) {
+        return false;
+    }
+
+    // Words that usually appear when someone is talking about what they’re going through
+    if ($this->hasAnyWord($norm, [
+        'feel','feeling','felt',
+        'struggle','struggling','struggles',
+        'hard','harder','difficult',
+        'tired','exhausted','drained',
+        'lost','empty','numb',
+        'worried','scared','anxious','stressed','sad','lonely','hopeless','confused',
+        'bother','bothering','hurt','hurting',
+        'overthink','overthinking',
+        'cant','cannot',
+    ])) {
+        return true;
+    }
+
+    // Phrases like "I don't know what's happening", "I don't know what to do"
+    if (preg_match(
+        '/\bi\s*(don\'?t|do\s*not)\s*know\s*(what(?:\'?s)?|whats|how|why|where)\b/u',
+        $norm
+    )) {
+        return true;
+    }
+
+    // Phrases like "lately", "recently", "these days" often signal personal context
+    if (preg_match('/\b(lately|recently|these days)\b/u', $norm)) {
+        return true;
+    }
+
+    return false;
+}
 
 }
