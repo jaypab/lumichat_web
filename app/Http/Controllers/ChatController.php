@@ -1465,7 +1465,7 @@ private function isNonMentalTopic(string $norm, array $labels, array $riskStruct
     if ($flags['wants_appointment'] ?? false) return false;
     if ($flags['wants_coping'] ?? false) return false;
 
-    // 1.a) GREETINGS: "hi", "hello", etc. should NOT be treated as non-mental.
+    // 1.a) GREETINGS: "hi", "hello", etc. should NOT be treated as non-mental
     if ($this->hasAnyWord($norm, [
         'hi','hello','hey','helo','hii',
         'good morning','good afternoon','good evening',
@@ -1475,17 +1475,26 @@ private function isNonMentalTopic(string $norm, array $labels, array $riskStruct
         }
     }
 
-    // 2) If it already talks about problems / struggle / thoughts, keep as mental.
+    // 2) If it already talks about problems / struggle / thoughts / hard time → keep as mental.
     //    (Better to over-classify as mental than to push a struggling student away.)
     if ($this->hasAnyWord($norm, [
         'stress','stressed','anxiety','anxious','depress','depressed','sad',
         'overwhelmed','lonely','tired','burnout','panic',
-        'problem','problems','struggle','struggling',
-        'suicide','selfharm','self-harm',
-        'feel','feeling','feels',
-        // mind/thoughts/overthinking counts as mental too
+        'problem','problems','struggle','struggling','struggles',
+        'worry','worried','scared','scary','afraid',
+        'hurt','hurting','pain','painful',
+        'feel','feeling','feels','felt',
         'mind','thought','thoughts','overthink','overthinking','in my head',
+        'empty','numb','lost','drained','hard','difficult',
+        'okay','not ok','not okay','not fine','not okey',
+        'wrong','weird','off',
     ])) {
+        return false;
+    }
+
+    // 2.b) Self-disclosure / "opening up" gets treated as mental even if there are school/game words.
+    $selfDisclosure = $this->looksLikeSelfDisclosure($norm);
+    if ($selfDisclosure) {
         return false;
     }
 
@@ -1504,35 +1513,14 @@ private function isNonMentalTopic(string $norm, array $labels, array $riskStruct
         'idol','kpop','bts','blackpink','twice','enhypen','newjeans',
         'celebrity','celeb','actor','actress','influencer','streamer','vlogger',
 
-        // ===== Social media / chat apps / platforms =====
-        'facebook','fb','messenger','instagram','ig','snapchat','snap',
-        'twitter','x','threads','telegram','discord','gc','group chat',
-        'comment','comments','like','likes','share','shares','views','followers',
-        'subscribers','subs','retweet','hashtag','hashtagg','filter','filters',
-
+       
         // ===== Food, recipes, places to eat =====
         'food','foods','recipe','recipes','cook','cooking','bake','baking',
         'restaurant','restaurants','cafe','cafes','milk tea','milktea','coffee shop',
         'fastfood','fast food','jollibee','mcdonalds','kfc','pizza','burger',
         'fries','ramen','sushi','buffet','menu','order','delivery','grab','foodpanda',
 
-        // ===== School / academic – mostly factual / homework =====
-        'math','algebra','geometry','trigonometry','calculus','statistics',
-        'physics','chemistry','biology','science','botany','zoology',
-        'history','economics','accounting','marketing','management','business',
-        'english','grammar','vocabulary','spelling','filipino','filipino subject',
-        'mapeh','pe','religion','values','civics',
-        'assignment','assignments','homework','hw','module','modules',
-        'activity','activities','seatwork','project','projects','output','outputs',
-        'quiz','quizzes','test','tests','exam','exams','midterm','finals',
-        'prelim','periodical',' reviewer','reviewer','answer key','answer keys',
-        'multiple choice','true or false','identification',
-        'score','scores','grade','grades','rubric','rubic','point system',
-        'definition','define','meaning','meaning of','explain','explanation',
-        'summarize','summary','outline','diagram','graph','table',
-        'thesis','research','capstone','chapter 1','chapter 2','chapter 3',
-        'hypothesis','statement of the problem','related literature',
-
+        
         // ===== Tech / coding / computer support =====
         'programming','coding','code','source code','script','scripting',
         'algorithm','pseudocode','flowchart','debug','debugging','bug','bugs',
@@ -1555,12 +1543,7 @@ private function isNonMentalTopic(string $norm, array $labels, array $riskStruct
         'cart','checkout','order','orders','parcel','package','tracking',
         'sale','discount','promo','voucher','free shipping',
         'shopee','lazada','zalora','amazon','aliexpress',
-        'price','prices','cost','budget','cheap','expensive',
-        'wallet','allowance','sweldo','salary','income','expense','expenses',
-        'money','peso','dollar','php','usd',
-        'loan','loans','interest','installment','credit card','debit card',
-        'bank','savings','investment','investments','stock','stocks',
-        'crypto','bitcoin','ethereum',
+        'peso','dollar','php','usd',
 
         // ===== Travel / locations / itineraries =====
         'travel','trip','trips','tour','tourist','vacation','staycation',
@@ -1591,14 +1574,7 @@ private function isNonMentalTopic(string $norm, array $labels, array $riskStruct
         'shoes','sneakers','bag','bags','accessories','necklace','bracelet',
         'haircut','hairstyle','salon','nail','nails','manicure','pedicure',
 
-        // ===== Physical health (general info, not emotions) =====
-        'fever','cough','cold','flu','sore throat','headache','migraine',
-        'stomachache','stomach pain','diarrhea','vomit','vomiting',
-        'covid','vaccine','vaccination','allergy','allergies','rash',
-        'medicine','medication','tablet','capsule','syrup','dosage',
-        'doctor','clinic','hospital','appointment with doctor',
-        'bp','blood pressure','cholesterol','glucose',
-
+       
         // ===== Random factual / how-to topics =====
         'capital','history of','invention','inventor','discover','discovery',
         'tutorial','guide','step by step','steps to','how to make',
@@ -1608,24 +1584,41 @@ private function isNonMentalTopic(string $norm, array $labels, array $riskStruct
         'law','legal','crime','case','court','constitution',
     ];
 
-    if ($this->hasAnyWord($norm, $nonMentalKeywords)) {
+    $nonMentalHits = $this->countKeywordHits($norm, $nonMentalKeywords);
+
+    // 3.a) Strong non-mental signal:
+    //     - at least 2 separate hits
+    //     - NOT self-disclosure
+    if ($nonMentalHits >= 2 && !$selfDisclosure) {
         return true;
     }
 
-    // 4) Fallback 1: no alphabetic tokens at all (e.g., "12345", emojis)
+    // 3.b) Single-keyword case:
+    //     Only treat as non-mental if the message is short & factual-sounding (e.g., "valorant rank system?")
+    if ($nonMentalHits === 1 && !$selfDisclosure) {
+        $tokens = $this->tokens($norm);
+        if (mb_strlen($norm) <= 60 && count($tokens) <= 8) {
+            return true;
+        }
+    }
+
+    // 4) Fallback: token/length-based garbage detection
     $tokens = $this->tokens($norm);
     if (empty($tokens)) {
         return true;
     }
 
-    // 5) Fallback 2: very short / random text with no obvious meaning
+    // Short random text with no basic meaning and not self-disclosure → non-mental
     if (count($tokens) <= 3 && mb_strlen($norm) <= 40) {
-        if (!$this->hasAnyWord($norm, [
-            'help','support','counselor','counselling','counseling',
-            'problem','problems','sad','anxious','anxiety','depress','stress','worried',
-            'disappoint','disappointed','dissapointed','dissappointed','disapointed',
-            'feel','feeling','feels','mind','thought','thoughts',
-        ])) {
+        if (
+            !$this->hasAnyWord($norm, [
+                'help','support','counselor','counselling','counseling',
+                'problem','problems','sad','anxious','anxiety','depress','stress','worried',
+                'disappoint','disappointed','dissapointed','dissappointed','disapointed',
+                'feel','feeling','feels','mind','thought','thoughts',
+            ])
+            && !$selfDisclosure
+        ) {
             return true;
         }
     }

@@ -1,0 +1,70 @@
+{
+  "users": {
+    "admin": "admin123",
+    "user1": "password1",
+    "user2": "password2"
+  },
+  "books": {
+    "B001": {
+      "title": "The Great Gatsby",
+      "author": "F. Scott Fitzgerald",
+      "copies": 2
+    },
+    "B002": {
+      "title": "To Kill a Mockingbird",
+      "author": "Harper Lee",
+      "copies": 2
+    },
+    "B003": {
+      "title": "1984",
+      "author": "George Orwell",
+      "copies": 4
+    },
+    "B004": {
+      "title": "Pride and Prejudice",
+      "author": "Jane Austen",
+      "copies": 3
+    },
+    "B005": {
+      "title": "The Catcher in the Rye",
+      "author": "J.D. Salinger",
+      "copies": 2
+    },
+    "B006": {
+      "title": "The Hobbit",
+      "author": "J.R.R. Tolkien",
+      "copies": 5
+    },
+    "B007": {
+      "title": "Harry Potter and the Sorcerer\u2019s Stone",
+      "author": "J.K. Rowling",
+      "copies": 4
+    },
+    "B008": {
+      "title": "The Lord of the Rings",
+      "author": "J.R.R. Tolkien",
+      "copies": 3
+    },
+    "B009": {
+      "title": "The Alchemist",
+      "author": "Paulo Coelho",
+      "copies": 2
+    },
+    "B010": {
+      "title": "Moby Dick",
+      "author": "Herman Melville",
+      "copies": 3
+    }
+  },
+  "borrowed_books": {
+    "user1": [
+      {
+        "book_id": "B001",
+        "borrow_date": "2025-11-17",
+        "due_date": "2025-11-24",
+        "returned": false,
+        "returned_at": null
+      }
+    ]
+  }
+}
