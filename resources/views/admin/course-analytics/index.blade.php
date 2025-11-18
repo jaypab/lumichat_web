@@ -95,59 +95,68 @@
     </div>
   </section>
 
-  {{-- ===== Filters ===== --}}
-  <form method="GET" action="{{ route('admin.course-analytics.index') }}" class="screen-only">
-    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+ {{-- ===== Filters ===== --}}
+<form method="GET" action="{{ route('admin.course-analytics.index') }}" class="screen-only">
+  <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
 
-      {{-- Year chips --}}
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="text-xs font-medium text-slate-500 mr-1.5">Year:</span>
-        @foreach($yearChips as $key => $label)
-          @php $active = $yearKey === $key; @endphp
-          <button name="year" value="{{ $key }}" class="inline-flex items-center h-8 px-3 rounded-lg text-xs font-medium
-                 {{ $active ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100' }}">
-            {{ $label }}
-          </button>
-          {{-- keep course when toggling year --}}
-          <input type="hidden" name="course" value="{{ $courseKey }}">
-        @endforeach
+    {{-- Year chips --}}
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-xs font-medium text-slate-500 mr-1.5">Year:</span>
+
+      {{-- single hidden to keep current course across year taps --}}
+      <input type="hidden" name="course" value="{{ $courseKey }}">
+
+      @foreach($yearChips as $key => $label)
+        @php $active = $yearKey === $key; @endphp
+
+        <button type="submit"
+                name="year"
+                value="{{ $key }}"
+                class="inline-flex items-center h-8 px-3 rounded-lg text-xs font-medium
+                       {{ $active ? 'bg-indigo-600 text-white shadow-sm'
+                                  : 'bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100' }}">
+          {{ $label }}
+        </button>
+      @endforeach
+    </div>
+
+    {{-- Course select + actions --}}
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+      <div class="md:col-span-8">
+        <label class="block text-xs font-medium text-slate-600 mb-1">Course</label>
+        <div class="relative">
+          <select name="course" class="w-full h-10 rounded-xl border border-slate-200 bg-white pr-10 pl-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+            <option value="all" {{ $courseKey==='all'?'selected':'' }}>All courses</option>
+            @foreach($courseOptions as $opt)
+              @php
+                $code = is_array($opt) ? ($opt['code'] ?? $opt['value'] ?? $opt[0] ?? '') : ($opt->code ?? (string)$opt);
+                $name = is_array($opt) ? ($opt['name'] ?? $opt['label'] ?? $code) : ($opt->name ?? $code);
+              @endphp
+              <option value="{{ $code }}" {{ $courseKey===$code ? 'selected' : '' }}>
+                {{ $code }} — {{ $name }}
+              </option>
+            @endforeach
+          </select>
+          <svg class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M6 9l6 6 6-6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
       </div>
 
-      {{-- Course select + actions --}}
-      <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-        <div class="md:col-span-8">
-          <label class="block text-xs font-medium text-slate-600 mb-1">Course</label>
-          <div class="relative">
-            <select name="course" class="w-full h-10 rounded-xl border border-slate-200 bg-white pr-10 pl-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-              <option value="all" {{ $courseKey==='all'?'selected':'' }}>All courses</option>
-              @foreach($courseOptions as $opt)
-                @php
-                  $code = is_array($opt) ? ($opt['code'] ?? $opt['value'] ?? $opt[0] ?? '') : ($opt->code ?? (string)$opt);
-                  $name = is_array($opt) ? ($opt['name'] ?? $opt['label'] ?? $code) : ($opt->name ?? $code);
-                @endphp
-                <option value="{{ $code }}" {{ $courseKey===$code ? 'selected' : '' }}>
-                  {{ $code }} — {{ $name }}
-                </option>
-              @endforeach
-            </select>
-            <svg class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path d="M6 9l6 6 6-6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </div>
-        </div>
-
-        <div class="md:col-span-4 flex items-end justify-end gap-2">
-          <a href="{{ route('admin.course-analytics.index') }}"
-             class="h-10 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 active:scale-[.99]">
-            Reset
-          </a>
-          <button class="h-10 inline-flex items-center justify-center px-5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm text-sm">
-            Apply
-          </button>
-        </div>
+      <div class="md:col-span-4 flex items-end justify-end gap-2">
+        <a href="{{ route('admin.course-analytics.index') }}"
+           class="h-10 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 active:scale-[.99]">
+          Reset
+        </a>
+        <button type="submit"
+                class="h-10 inline-flex items-center justify-center px-5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm text-sm">
+          Apply
+        </button>
       </div>
     </div>
-  </form>
+  </div>
+</form>
+
 
   {{-- ===== Table ===== --}}
   <section id="print-analytics-index">

@@ -3,306 +3,236 @@
 namespace App\Repositories\Eloquent;
 
 use App\Repositories\Contracts\CounselorLogRepositoryInterface;
-use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class CounselorLogRepository implements CounselorLogRepositoryInterface
 {
-    private const APPOINTMENTS_TBL = 'tbl_appointments';
-    private const COUNSELORS_TBL   = 'tbl_counselors';
-    private const USERS_TBL        = 'tbl_users';
-    private const DIAG_REPORTS_TBL = 'tbl_diagnosis_reports';
-    private const LOGS_TBL         = 'tbl_counselor_logs';
-
-    /* ---------- helpers ---------- */
-
-    private function userNameExpr(string $u = 'u', string $a = 'a'): string
-    {
-        $parts = [];
-        if (Schema::hasColumn(self::USERS_TBL, 'name'))         $parts[] = "NULLIF({$u}.name,'')";
-        if (Schema::hasColumn(self::USERS_TBL, 'full_name'))    $parts[] = "NULLIF({$u}.full_name,'')";
-        if (Schema::hasColumn(self::USERS_TBL, 'display_name')) $parts[] = "NULLIF({$u}.display_name,'')";
-        if (Schema::hasColumn(self::USERS_TBL, 'email'))        $parts[] = "NULLIF({$u}.email,'')";
-        $parts[] = "CONCAT('Student #', {$a}.student_id)";
-        return 'COALESCE('.implode(', ', $parts).')';
-    }
-
-    /* ---------- CRUD / lists ---------- */
+    // ===================== Generic CRUD (mostly unused) =====================
 
     public function all(): Collection
     {
-        $hasFull = Schema::hasColumn(self::COUNSELORS_TBL, 'full_name');
-        return DB::table(self::COUNSELORS_TBL)
-            ->select('id', DB::raw(($hasFull ? 'full_name' : 'name') . ' as full_name'))
-            ->orderBy('full_name')
+        return $this->baseAggregateQuery()
+            ->orderBy('year_num', 'desc')
+            ->orderBy('month_num', 'desc')
+            ->orderBy('counselor_name')
             ->get();
     }
 
     public function findById(int $id): ?object
     {
-        $hasFull = Schema::hasColumn(self::COUNSELORS_TBL, 'full_name');
-        return DB::table(self::COUNSELORS_TBL)
-            ->select('id', DB::raw(($hasFull ? 'full_name' : 'name') . ' as full_name'))
-            ->where('id', $id)
-            ->first();
+        // No single primary key for an aggregate row – not used.
+        return null;
     }
 
     public function create(array $data): object
     {
-        $id = DB::table(self::COUNSELORS_TBL)->insertGetId($data);
-        return (object) array_merge(['id' => $id], $data);
+        throw new \BadMethodCallException('create() not supported on CounselorLogRepository (read-only aggregate).');
     }
 
     public function update(int $id, array $data): bool
     {
-        return (bool) DB::table(self::COUNSELORS_TBL)->where('id', $id)->update($data);
+        throw new \BadMethodCallException('update() not supported on CounselorLogRepository (read-only aggregate).');
     }
 
     public function delete(int $id): bool
     {
-        return (bool) DB::table(self::COUNSELORS_TBL)->where('id', $id)->delete();
+        throw new \BadMethodCallException('delete() not supported on CounselorLogRepository (read-only aggregate).');
     }
 
+    // ===================== Actual log methods =====================
+
+    /**
+     * Dropdown list of counselors (id + full_name alias).
+     */
     public function listCounselors(): Collection
     {
-        $hasFull = Schema::hasColumn(self::COUNSELORS_TBL, 'full_name');
-        return DB::table(self::COUNSELORS_TBL)
-            ->select('id', DB::raw(($hasFull ? 'full_name' : 'name') . ' as full_name'))
+        return DB::table('tbl_counselors')
+            ->select([
+                'id',
+                DB::raw("name as full_name"), // alias only, you don't have full_name column
+            ])
             ->orderBy('full_name')
             ->get();
     }
 
     public function availableYears(): Collection
     {
-        if (!Schema::hasTable(self::APPOINTMENTS_TBL)) return collect();
-        return DB::table(self::APPOINTMENTS_TBL)
-            ->selectRaw('DISTINCT YEAR(scheduled_at) as y')
-            ->orderByDesc('y')
-            ->pluck('y');
+        return DB::table('tbl_case_notes')
+            ->select(DB::raw('DISTINCT YEAR(note_date) as year'))
+            ->orderBy('year', 'desc')
+            ->pluck('year');
     }
 
-    /* ---------- index (paginated) ---------- */
-
+    /**
+     * Paginated aggregated logs for index page.
+     */
     public function paginateLogs(array $filters = []): LengthAwarePaginator
     {
-        $month = isset($filters['month']) ? (int) $filters['month'] : null;
-        $year  = isset($filters['year'])  ? (int) $filters['year']  : null;
-        $cid   = isset($filters['counselor_id']) ? (int) $filters['counselor_id'] : null;
-        $per   = isset($filters['per_page']) ? (int) $filters['per_page'] : 12;
+        $month      = (int)($filters['month'] ?? 0);
+        $year       = (int)($filters['year'] ?? 0);
+        $counselor  = (int)($filters['counselor_id'] ?? 0);
+        $perPage    = (int)($filters['per_page'] ?? 12);
 
-        if (Schema::hasTable(self::LOGS_TBL)) {
-            $nameCol = Schema::hasColumn(self::COUNSELORS_TBL, 'full_name') ? 'full_name' : 'name';
+        $qb = $this->baseAggregateQuery();
 
-            $q = DB::table(self::LOGS_TBL.' as g')
-                ->join(self::COUNSELORS_TBL.' as c', 'c.id','=','g.counselor_id')
-                ->selectRaw("
-                    g.counselor_id,
-                    c.$nameCol as counselor_name,
-                    g.month as month_num,
-                    g.year  as year_num,
-                    DATE_FORMAT(STR_TO_DATE(CONCAT(g.year,'-',g.month,'-01'),'%Y-%m-%d'), '%M %Y') as month_year,
-                    g.students_count,
-                    g.students_list,
-                    g.common_dx as common_dx
-                ")
-                ->when($cid,  fn($q) => $q->where('g.counselor_id', $cid))
-                ->when($month, fn($q) => $q->where('g.month', $month))
-                ->when($year,  fn($q) => $q->where('g.year',  $year))
-                ->orderByDesc('g.year')->orderByDesc('g.month')->orderBy("c.$nameCol");
-
-            return $q->paginate($per)->withQueryString();
+        // Filter on aliases => use HAVING
+        if ($year > 0) {
+            $qb->having('year_num', '=', $year);
+        }
+        if ($month > 0) {
+            $qb->having('month_num', '=', $month);
+        }
+        if ($counselor > 0) {
+            $qb->having('counselor_id', '=', $counselor);
         }
 
-        $nameCol  = Schema::hasColumn(self::COUNSELORS_TBL, 'full_name') ? 'full_name' : 'name';
-        $nameExpr = $this->userNameExpr('u', 'a');
+        $qb->orderBy('year_num', 'desc')
+           ->orderBy('month_num', 'desc')
+           ->orderBy('counselor_name');
 
-        $base = DB::table(self::APPOINTMENTS_TBL.' as a')
-            ->join(self::COUNSELORS_TBL.' as c', 'c.id', '=', 'a.counselor_id')
-            ->leftJoin(self::USERS_TBL.' as u', 'u.id', '=', 'a.student_id')
-            ->selectRaw("
-                c.id  as counselor_id,
-                COALESCE(c.$nameCol, c.name) as counselor_name,
-                MONTH(a.scheduled_at)  as month_num,
-                YEAR(a.scheduled_at)   as year_num,
-                DATE_FORMAT(a.scheduled_at, '%M %Y') as month_year,
-                COUNT(DISTINCT a.student_id) as students_count,
-                GROUP_CONCAT(DISTINCT {$nameExpr} ORDER BY {$nameExpr} SEPARATOR ' | ') as students_list
-            ")
-            ->when($cid,  fn($q) => $q->where('a.counselor_id', $cid))
-            ->when($month, fn($q) => $q->whereRaw('MONTH(a.scheduled_at) = ?', [$month]))
-            ->when($year,  fn($q) => $q->whereRaw('YEAR(a.scheduled_at)  = ?', [$year]))
-            ->groupBy('c.id','c.full_name','c.name','month_num','year_num','month_year');
-
-        $dxAgg = DB::table(self::APPOINTMENTS_TBL.' as a')
-            ->join(self::DIAG_REPORTS_TBL.' as dr', function ($j) {
-                $j->on('dr.student_id', '=', 'a.student_id')
-                  ->on('dr.counselor_id', '=', 'a.counselor_id');
-            })
-            ->selectRaw("
-                a.counselor_id,
-                MONTH(a.scheduled_at) as month_num,
-                YEAR(a.scheduled_at)  as year_num,
-                dr.diagnosis_result,
-                COUNT(*) as cnt
-            ")
-            ->whereNotNull('dr.diagnosis_result')
-            ->where('dr.diagnosis_result','<>','')
-            ->when($cid,  fn($q) => $q->where('a.counselor_id', $cid))
-            ->when($month, fn($q) => $q->whereRaw('MONTH(a.scheduled_at) = ?', [$month]))
-            ->when($year,  fn($q) => $q->whereRaw('YEAR(a.scheduled_at)  = ?', [$year]))
-            ->groupBy('a.counselor_id','month_num','year_num','dr.diagnosis_result');
-
-        $dxTop = DB::query()
-            ->fromSub($dxAgg, 't')
-            ->selectRaw("
-                t.counselor_id,
-                t.month_num,
-                t.year_num,
-                SUBSTRING_INDEX(
-                    GROUP_CONCAT(t.diagnosis_result ORDER BY t.cnt DESC SEPARATOR '||'),
-                    '||', 3
-                ) as dx_list
-            ")
-            ->groupBy('t.counselor_id','t.month_num','t.year_num');
-
-        return DB::query()
-            ->fromSub($base, 'g')
-            ->leftJoinSub($dxTop, 'd', function ($j) {
-                $j->on('d.counselor_id','=','g.counselor_id')
-                  ->on('d.month_num','=','g.month_num')
-                  ->on('d.year_num','=','g.year_num');
-            })
-            ->selectRaw('g.*, d.dx_list')
-            ->orderByDesc('g.month_num')
-            ->orderBy('g.counselor_name')
-            ->paginate($per)
-            ->withQueryString();
+        return $qb->paginate($perPage);
     }
 
-    /* ---------- show (detail) ---------- */
+    /**
+     * All rows (used for PDF export from index).
+     */
+    public function allLogs(array $filters = []): Collection
+    {
+        $month      = (int)($filters['month'] ?? 0);
+        $year       = (int)($filters['year'] ?? 0);
+        $counselor  = (int)($filters['counselor_id'] ?? 0);
 
+        $qb = $this->baseAggregateQuery();
+
+        if ($year > 0) {
+            $qb->having('year_num', '=', $year);
+        }
+        if ($month > 0) {
+            $qb->having('month_num', '=', $month);
+        }
+        if ($counselor > 0) {
+            $qb->having('counselor_id', '=', $counselor);
+        }
+
+        $qb->orderBy('year_num', 'desc')
+           ->orderBy('month_num', 'desc')
+           ->orderBy('counselor_name');
+
+        return $qb->get();
+    }
+
+    /**
+     * Drilldown: one counselor + month/year.
+     * Now uses PRESENTING PROBLEM from tbl_case_notes.
+     */
     public function counselorMonthDetail(int $counselorId, int $month, int $year): array
     {
-        $nameCol = Schema::hasColumn(self::COUNSELORS_TBL, 'full_name') ? 'full_name' : 'name';
-        $c = DB::table(self::COUNSELORS_TBL)
-            ->select('id', DB::raw("$nameCol as full_name"))
+        // Counselor basic info
+        $counselor = DB::table('tbl_counselors')
+            ->select(
+                'id',
+                DB::raw('name as full_name'),
+                'email'
+            )
             ->where('id', $counselorId)
             ->first();
 
-        $nameExpr = $this->userNameExpr('u', 'a');
+        if (!$counselor) {
+            return ['counselor' => null];
+        }
 
-        $students = DB::table(self::APPOINTMENTS_TBL.' as a')
-            ->leftJoin(self::USERS_TBL.' as u', 'u.id', '=', 'a.student_id')
-            ->selectRaw("
-                a.student_id as student_id,
-                {$nameExpr} as student_name,
-                DATE_FORMAT(a.scheduled_at,'%b %d, %Y %I:%i %p') as scheduled_at_fmt,
-                COALESCE((
-                    SELECT dr3.diagnosis_result
-                    FROM ".self::DIAG_REPORTS_TBL." dr3
-                    WHERE dr3.student_id = a.student_id
-                      AND dr3.counselor_id = a.counselor_id
-                    ORDER BY dr3.id DESC
-                    LIMIT 1
-                ), '—') as diagnosis_result
-            ")
-            ->where('a.counselor_id', $counselorId)
-            ->whereRaw('MONTH(a.scheduled_at) = ?', [$month])
-            ->whereRaw('YEAR(a.scheduled_at)  = ?', [$year])
-            ->orderBy('a.scheduled_at', 'asc')
-            ->get();
-
-        $dxCounts = DB::table(self::APPOINTMENTS_TBL.' as a')
-            ->join(self::DIAG_REPORTS_TBL.' as dr', function ($j) {
-                $j->on('dr.student_id', '=', 'a.student_id')
-                  ->on('dr.counselor_id', '=', 'a.counselor_id');
+        // Students handled + case notes + presenting problem
+        $students = DB::table('tbl_case_notes as cn')
+            ->leftJoin('tbl_users as u', 'u.id', '=', 'cn.student_id')
+            ->leftJoin('tbl_diagnosis_reports as dr', function ($join) {
+                $join->on('dr.appointment_id', '=', 'cn.appointment_id');
             })
-            ->selectRaw('dr.diagnosis_result, COUNT(*) as cnt')
-            ->where('a.counselor_id', $counselorId)
-            ->whereRaw('MONTH(a.scheduled_at) = ?', [$month])
-            ->whereRaw('YEAR(a.scheduled_at)  = ?', [$year])
-            ->whereNotNull('dr.diagnosis_result')
-            ->where('dr.diagnosis_result','<>','')
-            ->groupBy('dr.diagnosis_result')
-            ->orderByDesc('cnt')
+            ->select([
+                'cn.student_id',
+                DB::raw('COALESCE(u.name, cn.student_name) as student_name'),
+                'u.email as student_email',
+                'cn.note_date',
+                'cn.program_year',
+                'cn.presenting_problem',
+                'cn.observations',
+                'cn.interventions',
+                'cn.response',
+                'cn.plan_followup',
+
+                // kept for reference, but UI will use presenting_problem
+                'dr.diagnosis_result',
+                'dr.notes as diagnosis_notes',
+            ])
+            ->where('cn.counselor_id', $counselorId)
+            ->whereYear('cn.note_date', $year)
+            ->whereMonth('cn.note_date', $month)
+            ->orderBy('student_name')
             ->get();
+
+        // Aggregate: counts per PRESENTING PROBLEM (not per diagnosis)
+        $dxCounts = DB::table('tbl_case_notes as cn')
+            ->where('cn.counselor_id', $counselorId)
+            ->whereYear('cn.note_date', $year)
+            ->whereMonth('cn.note_date', $month)
+            ->whereNotNull('cn.presenting_problem')
+            ->whereRaw("TRIM(cn.presenting_problem) <> ''")
+            ->groupBy('cn.presenting_problem')
+            ->pluck(DB::raw('COUNT(*) as cnt'), 'cn.presenting_problem')
+            ->toArray();
 
         return [
-            'counselor' => $c,
+            'counselor' => $counselor,
             'students'  => $students,
-            'dxCounts'  => $dxCounts,
+            'dxCounts'  => $dxCounts, // now keyed by presenting_problem text
         ];
     }
 
-    /* ---------- summary refresh/backfill ---------- */
+    // ===================== Base aggregate query (index + export) =====================
 
-    public function refreshMonth(int $counselorId, int $month, int $year): void
+    protected function baseAggregateQuery()
     {
-        if (!Schema::hasTable(self::LOGS_TBL)) return;
-
-        $nameExpr = $this->userNameExpr('u', 'a');
-
-        $students = DB::table(self::APPOINTMENTS_TBL.' as a')
-            ->leftJoin(self::USERS_TBL.' as u', 'u.id', '=', 'a.student_id')
-            ->where('a.counselor_id', $counselorId)
-            ->whereRaw('MONTH(a.scheduled_at) = ?', [$month])
-            ->whereRaw('YEAR(a.scheduled_at)  = ?', [$year])
-            ->selectRaw("{$nameExpr} as sname")
-            ->distinct()
-            ->orderBy('sname')
-            ->pluck('sname')
-            ->all();
-
-        $studentsCount = count($students);
-        $studentsList  = $studentsCount ? implode(' | ', array_slice($students, 0, 50)) : null;
-
-        $dxTop = DB::table(self::APPOINTMENTS_TBL.' as a')
-            ->join(self::DIAG_REPORTS_TBL.' as dr', function ($j) {
-                $j->on('dr.student_id','=','a.student_id')
-                  ->on('dr.counselor_id','=','a.counselor_id');
+        return DB::table('tbl_case_notes as cn')
+            ->join('tbl_counselors as c', 'c.id', '=', 'cn.counselor_id')
+            ->leftJoin('tbl_users as u', 'u.id', '=', 'cn.student_id')
+            ->leftJoin('tbl_diagnosis_reports as dr', function ($join) {
+                $join->on('dr.appointment_id', '=', 'cn.appointment_id');
             })
-            ->where('a.counselor_id', $counselorId)
-            ->whereRaw('MONTH(a.scheduled_at) = ?', [$month])
-            ->whereRaw('YEAR(a.scheduled_at)  = ?', [$year])
-            ->whereNotNull('dr.diagnosis_result')
-            ->where('dr.diagnosis_result','<>','')
-            ->selectRaw('dr.diagnosis_result as label, COUNT(*) as c')
-            ->groupBy('dr.diagnosis_result')
-            ->orderByDesc('c')
-            ->limit(3)
-            ->pluck('label')
-            ->map(fn($v) => (string) $v)
-            ->all();
+            ->select([
+                DB::raw('c.id as counselor_id'),
+                DB::raw('c.name as counselor_name'),
 
-        DB::table(self::LOGS_TBL)->updateOrInsert(
-            ['counselor_id'=>$counselorId,'month'=>$month,'year'=>$year],
-            [
-                'students_count' => $studentsCount,
-                'students_list'  => $studentsList,
-                'common_dx'      => json_encode($dxTop, JSON_UNESCAPED_UNICODE),
-                'generated_at'   => now(),
-                'updated_at'     => now(),
-                'created_at'     => now(),
-            ]
-        );
-    }
+                DB::raw('MONTH(cn.note_date) as month_num'),
+                DB::raw('YEAR(cn.note_date) as year_num'),
 
-    public function backfillAllLogs(): int
-    {
-        if (!Schema::hasTable(self::LOGS_TBL)) return 0;
+                DB::raw("
+                    GROUP_CONCAT(
+                        DISTINCT COALESCE(u.name, cn.student_name)
+                        ORDER BY COALESCE(u.name, cn.student_name)
+                        SEPARATOR ' | '
+                    ) as students_list
+                "),
+                DB::raw('COUNT(DISTINCT cn.student_id) as students_count'),
 
-        $groups = DB::table(self::APPOINTMENTS_TBL)
-            ->selectRaw('counselor_id, MONTH(scheduled_at) as m, YEAR(scheduled_at) as y')
-            ->groupBy('counselor_id', DB::raw('MONTH(scheduled_at)'), DB::raw('YEAR(scheduled_at)'))
-            ->get();
+                // IMPORTANT:
+                // we keep the alias name 'dx_list' for compatibility,
+                // but it now contains DISTINCT PRESENTING PROBLEMS joined by '||'
+                DB::raw("
+                    GROUP_CONCAT(
+                        DISTINCT TRIM(cn.presenting_problem)
+                        ORDER BY cn.presenting_problem
+                        SEPARATOR '||'
+                    ) as dx_list
+                "),
 
-        $n = 0;
-        foreach ($groups as $g) {
-            $this->refreshMonth((int)$g->counselor_id, (int)$g->m, (int)$g->y);
-            $n++;
-        }
-        return $n;
+                DB::raw('NULL as common_dx'),
+            ])
+            ->groupBy(
+                'c.id',
+                'counselor_name',
+                DB::raw('YEAR(cn.note_date)'),
+                DB::raw('MONTH(cn.note_date)')
+            );
     }
 }

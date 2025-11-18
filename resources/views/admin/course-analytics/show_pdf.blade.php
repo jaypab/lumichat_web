@@ -2,9 +2,9 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>{{ $title }}</title>
+  <title>{{ $title ?? 'Course Summary' }}</title>
   <style>
-    *{ box-sizing:border-box }
+    *{ box-sizing:border-box; }
 
     /* Embed DejaVu so Dompdf always finds it */
     @font-face{
@@ -18,38 +18,69 @@
       font-weight:700; font-style:normal;
     }
 
-    body{ font-family: "DejaVu Sans", sans-serif; margin:16mm 14mm 22mm; font-size:12.5px; color:#111827; line-height:1.45 }
+    body{
+      font-family:"DejaVu Sans",sans-serif;
+      margin:16mm 14mm 22mm;
+      font-size:12.5px;
+      color:#111827;
+      line-height:1.45;
+    }
 
-    /* Brand (same as session_pdf) */
-    .brandbar{ margin:0 0 6px }
-    .brand-title{ display:inline-block; vertical-align:middle; margin-left:10px; font:700 18px/1 "DejaVu Sans", sans-serif }
+    .brandbar{ margin:0 0 6px; }
+    .brand-title{
+      display:inline-block;
+      vertical-align:middle;
+      margin-left:10px;
+      font:700 18px/1 "DejaVu Sans",sans-serif;
+    }
 
-    /* Header */
-    h1{ margin:6px 0 8px; font-size:22px }
+    h1{ margin:6px 0 8px; font-size:22px; }
     .meta{ font-size:11px; color:#6b7280; margin:0 0 10px; }
     .meta-right{ float:right; }
 
-    /* Table */
-    table{ width:100%; border-collapse:collapse }
-    thead{ background:#f1f5f9; color:#334155 }
-    th,td{ padding:10px 12px; border-bottom:1px solid #e5e7eb; text-align:left }
-    tr{ page-break-inside:avoid }
+    table{ width:100%; border-collapse:collapse; }
+    thead{ background:#f1f5f9; color:#334155; }
+    th,td{ padding:10px 12px; border-bottom:1px solid #e5e7eb; text-align:left; }
+    tr{ page-break-inside:avoid; }
 
-    .small{ font-size:10px; color:#6b7280 }
+    .small{ font-size:10px; color:#6b7280; }
   </style>
 </head>
 <body>
+@php
+  $course = $course ?? (object)[];
+  $courseLabel = $course->course ?? ($course->course_code ?? 'Course');
+  $yearLabel   = $course->year_level ?? '—';
 
-  {{-- Brand (fixed size so it never grows) --}}
+  // Normalize breakdown like in the show blade
+  $rawItems = $course->breakdown ?? [];
+  if ($rawItems instanceof \Illuminate\Support\Collection) {
+      $rawItems = $rawItems->toArray();
+  }
+  $items = [];
+  foreach ($rawItems as $row) {
+      $label = (string) ($row['label'] ?? $row['diagnosis'] ?? $row['diagnosis_result'] ?? '—');
+      $count = (int)    ($row['count'] ?? $row['cnt'] ?? 0);
+      if ($label !== '—' && $count > 0) {
+          $items[] = ['label'=>$label,'count'=>$count];
+      }
+  }
+@endphp
+
+  {{-- Brand --}}
   <div class="brandbar">
     @if(!empty($logoData))
-      <img src="{{ $logoData }}" alt="LumiCHAT" width="50" height="50" style="width:50px;height:50px;border-radius:50%;vertical-align:middle;">
+      <img src="{{ $logoData }}" alt="LumiCHAT" width="50" height="50"
+           style="width:50px;height:50px;border-radius:50%;vertical-align:middle;">
     @endif
     <span class="brand-title">LumiCHAT</span>
-    <div class="meta"><span class="meta-right">Generated: {{ $generatedAt }}</span></div>
+    <div class="meta">
+      <span>{{ $courseLabel }} • {{ $yearLabel }}</span>
+      <span class="meta-right">Generated: {{ $generatedAt }}</span>
+    </div>
   </div>
 
-  <h1>Course Analytics</h1>
+  <h1>Course Summary — {{ $courseLabel }} • {{ $yearLabel }}</h1>
 
   {{-- Summary --}}
   <table style="margin-bottom:12px;">
@@ -57,14 +88,14 @@
       <tr>
         <th style="width:40%;">Course</th>
         <th style="width:30%;">Year Level</th>
-        <th style="width:30%;">No. of Students</th>
+        <th style="width:30%;">No. of Students<br><span class="small">(with case notes)</span></th>
       </tr>
     </thead>
     <tbody>
       <tr>
-        <td><strong>{{ $course->course ?? '—' }}</strong></td>
-        <td>{{ $course->year_level ?? '—' }}</td>
-        <td>{{ $course->student_count ?? 0 }}</td>
+        <td><strong>{{ $courseLabel }}</strong></td>
+        <td>{{ $yearLabel }}</td>
+        <td>{{ (int)($course->student_count ?? 0) }}</td>
       </tr>
     </tbody>
   </table>
@@ -73,16 +104,15 @@
   <table>
     <thead>
       <tr>
-        <th>Common Diagnosis Breakdown</th>
+        <th>Presenting Concerns Breakdown (from case notes)</th>
         <th style="width:120px; text-align:right;">Count</th>
       </tr>
     </thead>
     <tbody>
-      @php $items = $course->breakdown ?? []; @endphp
       @forelse($items as $row)
         <tr>
-          <td>{{ $row['label'] ?? '—' }}</td>
-          <td style="text-align:right;">{{ $row['count'] ?? 0 }}</td>
+          <td>{{ $row['label'] }}</td>
+          <td style="text-align:right;">{{ $row['count'] }}</td>
         </tr>
       @empty
         <tr>
@@ -93,20 +123,21 @@
   </table>
 
   {{-- Footer --}}
-   <div class="small" style="margin-top:14px;">
+  <div class="small" style="margin-top:14px;">
     LumiCHAT • Tagoloan Community College — Confidential student support record.
   </div>
-       <script type="text/php">
+
+  <script type="text/php">
 if (isset($pdf)) {
     $font  = $fontMetrics->get_font("DejaVu Sans", "normal");
     $size  = 9;
     $w     = $pdf->get_width();
     $h     = $pdf->get_height();
     $text  = "Page {PAGE_NUM} of {PAGE_COUNT}";
-    $x     = $w - 72;   // ~1 inch from right
-    $y     = $h - 28;   // ~28pt from bottom
+    $x     = $w - 72;
+    $y     = $h - 28;
     $pdf->page_text($x, $y, $text, $font, $size, [0,0,0]);
 }
-</script>
+  </script>
 </body>
 </html>

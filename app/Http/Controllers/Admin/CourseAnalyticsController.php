@@ -6,8 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Repositories\Contracts\CourseAnalyticsRepositoryInterface;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
-use Illuminate\Support\Facades\DB; 
-use Symfony\Component\HttpFoundation\Response; // use Symfony response (matches Dompdf::download)
+use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpFoundation\Response;
 
 class CourseAnalyticsController extends Controller
 {
@@ -16,18 +16,43 @@ class CourseAnalyticsController extends Controller
     ) {}
 
     /**
-     * INDEX: list rows with year + search filters
+     * Map chip year keys (all|1|2|3|4) to the values stored in tbl_course_analytics.year_level
+     */
+    protected function mapYearKeyToFilter(string $yearKey): string
+    {
+        // Adjust this mapping if your column uses different text
+        $map = [
+            '1' => '1st year',
+            '2' => '2nd year',
+            '3' => '3rd year',
+            '4' => '4th year',
+        ];
+
+        if ($yearKey === 'all') {
+            return 'all';
+        }
+
+        return $map[$yearKey] ?? $yearKey; // fallback: use as-is
+    }
+
+    /**
+     * INDEX: list rows with year + course filters
      */
     public function index(Request $request): View
     {
-        $yearKey    = (string) $request->query('year', 'all');
-        $courseKey  = (string) $request->query('course', 'all');
-        $freeTextQ  = trim((string) $request->query('q', ''));
+        // what comes from the UI (chips / query string)
+        $yearKeyParam = (string) $request->query('year', 'all');   // all|1|2|3|4
+        $courseKey    = (string) $request->query('course', 'all'); // BSIT, BSHM, etc. or 'all'
+        $freeTextQ    = trim((string) $request->query('q', ''));
+
+        // value actually used for DB filtering in the repository
+        $yearFilter = $this->mapYearKeyToFilter($yearKeyParam);
 
         // If a specific course is chosen, reuse it as the search text (keeps repo unchanged)
         $effectiveQ = $courseKey !== 'all' ? $courseKey : $freeTextQ;
 
-        $courses = $this->analytics->listCourses($yearKey, $effectiveQ);
+        // Let the repository handle DB query using the mapped year value
+        $courses = $this->analytics->listCourses($yearFilter, $effectiveQ);
 
         // 1) Map codes -> friendly names (adjust labels as you prefer)
         $COURSE_LABELS = [
@@ -46,7 +71,10 @@ class CourseAnalyticsController extends Controller
             ->selectRaw('DISTINCT course')
             ->whereNotNull('course')
             ->where('course', '<>', '')
-            ->when(DB::getSchemaBuilder()->hasColumn('tbl_users','role'), fn($q)=>$q->where('role','student'))
+            ->when(
+                DB::getSchemaBuilder()->hasColumn('tbl_users', 'role'),
+                fn($q) => $q->where('role', 'student')
+            )
             ->orderBy('course')
             ->pluck('course');
 
@@ -58,12 +86,12 @@ class CourseAnalyticsController extends Controller
             ];
         })->values();
 
-        // also pass a quick lookup map for table rendering
         $courseNameMap = $courseOptions->pluck('name', 'code');
 
         return view('admin.course-analytics.index', [
             'courses'        => $courses,
-            'yearKey'        => $yearKey,
+            // pass the RAW chip value so the Blade knows which pill to highlight
+            'yearKey'        => $yearKeyParam,
             'q'              => $freeTextQ,
             'courseKey'      => $courseKey,
             'courseOptions'  => $courseOptions,
@@ -81,7 +109,6 @@ class CourseAnalyticsController extends Controller
 
         $title = "{$course->course} • {$course->year_level}";
 
-        // Pass id explicitly so Blade can build the export link
         return view('admin.course-analytics.show', [
             'course'   => $course,
             'title'    => $title,
@@ -93,95 +120,96 @@ class CourseAnalyticsController extends Controller
      * Export the INDEX list to PDF
      * Route name suggestion: admin.course-analytics.export.pdf
      */
-public function exportIndexPdf(Request $request): Response
-{
-    $yearKey    = (string) $request->query('year', 'all');
-    $courseKey  = (string) $request->query('course', 'all');
-    $freeTextQ  = trim((string) $request->query('q', ''));
+    public function exportIndexPdf(Request $request): Response
+    {
+        $yearKeyParam = (string) $request->query('year', 'all');
+        $courseKey    = (string) $request->query('course', 'all');
+        $freeTextQ    = trim((string) $request->query('q', ''));
 
-    $effectiveQ = $courseKey !== 'all' ? $courseKey : $freeTextQ;
-    $courses    = $this->analytics->listCourses($yearKey, $effectiveQ);
+        $yearFilter = $this->mapYearKeyToFilter($yearKeyParam);
+        $effectiveQ = $courseKey !== 'all' ? $courseKey : $freeTextQ;
 
-    $logoData = null;
-    $logoPath = public_path('images/chatbot.png');
-    if (is_file($logoPath)) {
-        $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
+        $courses = $this->analytics->listCourses($yearFilter, $effectiveQ);
+
+        $logoData = null;
+        $logoPath = public_path('images/chatbot.png');
+        if (is_file($logoPath)) {
+            $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
+        }
+
+        $pdf = app('dompdf.wrapper');
+        $pdf->setPaper('a4', 'portrait');
+        $pdf->setOptions([
+            'defaultFont'          => 'DejaVu Sans',
+            'isHtml5ParserEnabled' => true,
+            'isRemoteEnabled'      => true,
+            'chroot'               => public_path(),
+            'dpi'                  => 96,
+            'isPhpEnabled'         => true,
+        ]);
+
+        $pdf->loadView('admin.course-analytics.index-pdf', [
+            'courses'     => $courses,
+            'yearKey'     => $yearKeyParam,   // still show pill state correctly
+            'q'           => $effectiveQ,
+            'generatedAt' => now()->format('Y-m-d H:i'),
+            'logoData'    => $logoData,
+        ]);
+
+        $filename = 'Course_Analytics_' . now()->format('Ymd_His') . '.pdf';
+
+        if ($request->boolean('download')) {
+            return $pdf->download($filename);
+        }
+        return $pdf->stream($filename);
     }
 
-    $pdf = app('dompdf.wrapper');
-    $pdf->setPaper('a4', 'portrait');
-    $pdf->setOptions([
-        'defaultFont'          => 'DejaVu Sans',
-        'isHtml5ParserEnabled' => true,
-        'isRemoteEnabled'      => true,
-        'chroot'               => public_path(),
-        'dpi'                  => 96,
-        'isPhpEnabled'         => true, // if your Blade adds page numbers
-    ]);
+    /**
+     * Export the SHOW view to PDF
+     * Route name: admin.course-analytics.show.export.pdf
+     */
+    public function exportShowPdf(Request $request, int $course): Response
+    {
+        $courseObj = $this->analytics->findCourseWithBreakdown($course);
+        abort_unless($courseObj, 404);
 
-    $pdf->loadView('admin.course-analytics.index-pdf', [
-        'courses'     => $courses,
-        'yearKey'     => $yearKey,
-        'q'           => $effectiveQ,
-        'generatedAt' => now()->format('Y-m-d H:i'),
-        'logoData'    => $logoData,
-    ]);
+        $title       = "{$courseObj->course} • {$courseObj->year_level}";
+        $generatedAt = now()->format('Y-m-d H:i');
 
-    $filename = 'Course_Analytics_' . now()->format('Ymd_His') . '.pdf';
+        $logoData = null;
+        $logoPath = public_path('images/chatbot.png');
+        if (is_file($logoPath)) {
+            $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
+        }
 
-    if ($request->boolean('download')) {
-        return $pdf->download($filename);   // force download
+        $pdf = app('dompdf.wrapper');
+        $pdf->setPaper('a4', 'portrait');
+        $pdf->setOptions([
+            'defaultFont'          => 'DejaVu Sans',
+            'isHtml5ParserEnabled' => true,
+            'isRemoteEnabled'      => true,
+            'chroot'               => public_path(),
+            'dpi'                  => 96,
+            'isPhpEnabled'         => true,
+        ]);
+
+        $pdf->loadView('admin.course-analytics.show_pdf', [
+            'course'      => $courseObj,
+            'title'       => $title,
+            'generatedAt' => $generatedAt,
+            'logoData'    => $logoData,
+        ]);
+
+        $filename = 'Course_Analytics_' . now()->format('Ymd_His') . '.pdf';
+
+        if ($request->boolean('download')) {
+            return $pdf->download($filename);
+        }
+        return $pdf->stream($filename);
     }
-    return $pdf->stream($filename);         // inline view (opens in the new tab)
-}
 
-/**
- * Export the SHOW view to PDF
- * Route name: admin.course-analytics.show.export.pdf
- */
-public function exportShowPdf(Request $request, int $course): Response
-{
-    $courseObj = $this->analytics->findCourseWithBreakdown($course);
-    abort_unless($courseObj, 404);
-
-    $title       = "{$courseObj->course} • {$courseObj->year_level}";
-    $generatedAt = now()->format('Y-m-d H:i');
-
-    $logoData = null;
-    $logoPath = public_path('images/chatbot.png');
-    if (is_file($logoPath)) {
-        $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
+    public function exportPdf(Request $request): Response
+    {
+        return $this->exportIndexPdf($request);
     }
-
-    $pdf = app('dompdf.wrapper');
-    $pdf->setPaper('a4', 'portrait');
-    $pdf->setOptions([
-        'defaultFont'          => 'DejaVu Sans',
-        'isHtml5ParserEnabled' => true,
-        'isRemoteEnabled'      => true,
-        'chroot'               => public_path(),
-        'dpi'                  => 96,
-        'isPhpEnabled'         => true,
-    ]);
-
-    $pdf->loadView('admin.course-analytics.show_pdf', [
-        'course'      => $courseObj,
-        'title'       => $title,
-        'generatedAt' => $generatedAt,
-        'logoData'    => $logoData,
-    ]);
-
-    $filename = 'Course_Analytics_' . now()->format('Ymd_His') . '.pdf';
-
-    if ($request->boolean('download')) {
-        return $pdf->download($filename);
-    }
-    return $pdf->stream($filename); // inline in a new tab
-}
-
-/** Back-compat alias if you still call exportPdf for the index. */
-public function exportPdf(Request $request): Response
-{
-    return $this->exportIndexPdf($request);
-}
 }

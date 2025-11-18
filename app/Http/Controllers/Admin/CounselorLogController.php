@@ -7,7 +7,6 @@ use App\Repositories\Contracts\CounselorLogRepositoryInterface;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
-
 class CounselorLogController extends Controller
 {
     public function __construct(

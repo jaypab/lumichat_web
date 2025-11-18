@@ -104,7 +104,7 @@
             <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Counselor</th>
             <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Month / Year</th>
             <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Students handled</th>
-            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Common diagnosis</th>
+            <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Presenting Problems</th>
             <th class="px-6 py-3 text-right font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap col-action">Action</th>
           </tr>
         </thead>
@@ -121,11 +121,14 @@
                 </div>
               </td>
 
-              <td class="px-6 py-4 whitespace-nowrap">
-                <span class="inline-flex items-center h-7 px-3 rounded-full text-xs font-medium ring-1 bg-violet-50 text-violet-700 ring-violet-200">
-                  {{ $r->month_year }}
-                </span>
-              </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              @php
+                $labelMonthYear = \Carbon\Carbon::create($r->year_num, $r->month_num, 1)->format('F Y');
+              @endphp
+              <span class="inline-flex items-center h-7 px-3 rounded-full text-xs font-medium ring-1 bg-violet-50 text-violet-700 ring-violet-200">
+                {{ $labelMonthYear }}
+              </span>
+            </td>
 
               {{-- Students handled --}}
               <td class="px-6 py-4">
@@ -150,7 +153,7 @@
                 @endif
               </td>
 
-             {{-- Common diagnosis (pretty pills, max 3, +N more) --}}
+             {{-- Presenting Problems (pretty pills, max 3, +N more) --}}
             <td class="px-6 py-4 align-top">
               @php
                 $dx = [];
@@ -227,7 +230,7 @@
                   $s = $palette[$label] ?? $default;
                   return '<span role="listitem" class="inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium '
                         .$s['bg'].' '.$s['text'].' ring-1 '.$s['ring'].'"
-                        aria-label="Common diagnosis: '.e($label).'">'.e($label).'</span>';
+                        aria-label="Presenting Problems: '.e($label).'">'.e($label).'</span>';
                 };
               @endphp
 

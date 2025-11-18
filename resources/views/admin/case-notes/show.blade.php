@@ -18,17 +18,28 @@
   <div class="rounded-2xl bg-white border border-slate-200 shadow-sm">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-5">
       <div>
-        <h2 class="text-xl sm:text-2xl font-bold text-slate-900">Case Note — <span class="font-semibold">{{ $code }}</span></h2>
-        <div class="text-sm text-slate-600">Saved {{ \Carbon\Carbon::parse($note->updated_at)->format('M d, Y g:i A') }}</div>
+        <h2 class="text-xl sm:text-2xl font-bold text-slate-900">
+          Case Note — <span class="font-semibold">{{ $code }}</span>
+        </h2>
+        <div class="text-sm text-slate-600">
+          Saved {{ \Carbon\Carbon::parse($note->updated_at)->format('M d, Y g:i A') }}
+        </div>
       </div>
-      <div class="flex gap-2">
+
+      {{-- Actions (Back + Download PDF) --}}
+      <div class="flex items-center gap-2">
         <a href="{{ route('admin.case-notes.index') }}"
            class="inline-flex items-center h-10 px-3.5 rounded-xl bg-white ring-1 ring-slate-200 text-slate-700 hover:bg-slate-50">
           Back
         </a>
-        <a href="{{ route('admin.case-notes.show.export.pdf', $note->id) }}" target="_blank" rel="noopener"
-           class="inline-flex items-center h-10 px-3.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">
-          Print / PDF
+        <a href="{{ route('admin.case-notes.show.export.pdf', $note->id) }}"
+           target="_blank" rel="noopener"
+           class="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-blue-50 active:scale-[.99] transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+          </svg>
+          Download PDF
         </a>
       </div>
     </div>
@@ -53,7 +64,9 @@
           @if($note->scheduled_at)
             {{ \Carbon\Carbon::parse($note->scheduled_at)->format('F d, Y g:i A') }}
             <span class="text-slate-500">• {{ ucfirst($note->appt_status ?? '—') }}</span>
-          @else — @endif
+          @else
+            —
+          @endif
         </div>
       </div>
     </div>
@@ -63,27 +76,37 @@
   <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-5 space-y-5">
     <div>
       <div class="text-[13px] font-semibold text-slate-700 mb-1.5">I. Presenting Problem</div>
-      <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 whitespace-pre-line">{!! $toBr($note->presenting_problem) !!}</div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 whitespace-pre-line">
+        {!! $toBr($note->presenting_problem) !!}
+      </div>
     </div>
 
     <div>
       <div class="text-[13px] font-semibold text-slate-700 mb-1.5">II. Observations</div>
-      <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 whitespace-pre-line">{!! $toBr($note->observations) !!}</div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 whitespace-pre-line">
+        {!! $toBr($note->observations) !!}
+      </div>
     </div>
 
     <div>
       <div class="text-[13px] font-semibold text-slate-700 mb-1.5">III. Interventions / Counselor’s Actions</div>
-      <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 whitespace-pre-line">{!! $toBr($note->interventions) !!}</div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 whitespace-pre-line">
+        {!! $toBr($note->interventions) !!}
+      </div>
     </div>
 
     <div>
       <div class="text-[13px] font-semibold text-slate-700 mb-1.5">IV. Student’s Response / Insight</div>
-      <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 whitespace-pre-line">{!! $toBr($note->response) !!}</div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 whitespace-pre-line">
+        {!! $toBr($note->response) !!}
+      </div>
     </div>
 
     <div>
       <div class="text-[13px] font-semibold text-slate-700 mb-1.5">V. Plan / Follow-Up</div>
-      <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 whitespace-pre-line">{!! $toBr($note->plan_followup) !!}</div>
+      <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 whitespace-pre-line">
+        {!! $toBr($note->plan_followup) !!}
+      </div>
     </div>
   </div>
 </div>

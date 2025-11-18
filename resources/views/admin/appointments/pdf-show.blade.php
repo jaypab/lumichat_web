@@ -2,9 +2,9 @@
 @php
   use Carbon\Carbon;
 
-  $dt         = Carbon::parse($appointment->scheduled_at);
-  $bookedAt   = $appointment->created_at ? Carbon::parse($appointment->created_at) : null;
-  $generated  = $generatedAt ?? now()->format('Y-m-d H:i');
+  $dt        = Carbon::parse($appointment->scheduled_at);
+  $bookedAt  = $appointment->created_at ? Carbon::parse($appointment->created_at) : null;
+  $generated = $generatedAt ?? now()->format('Y-m-d H:i');
 
   // status → chip colors (same palette as app)
   $status = strtolower($appointment->status ?? 'pending');
@@ -13,8 +13,11 @@
     'confirmed' => ['bg' => '#DBEAFE', 'bd' => '#BFDBFE', 'fg' => '#1E3A8A'], // blue
     'canceled'  => ['bg' => '#FEE2E2', 'bd' => '#FECACA', 'fg' => '#991B1B'], // rose
     'completed' => ['bg' => '#DCFCE7', 'bd' => '#BBF7D0', 'fg' => '#166534'], // emerald
+    'no_show'   => ['bg' => '#FEE2E2', 'bd' => '#FECACA', 'fg' => '#991B1B'], // treat as rose
   ];
   $chip = $chipMap[$status] ?? $chipMap['pending'];
+
+  $statusLabel = $status === 'no_show' ? 'No Show' : ucfirst($status);
 @endphp
 <!DOCTYPE html>
 <html>
@@ -33,39 +36,111 @@
       src:url('{{ public_path('fonts/DejaVuSans-Bold.ttf') }}') format('truetype');
       font-weight:700; font-style:normal;
     }
+
     *{ box-sizing:border-box; }
-    body{  margin: 18mm 14mm 22mm; font-family:'DejaVu Sans', sans-serif; color:#111827; font-size:12.5px; line-height:1.45; }
+    body{
+      margin: 18mm 14mm 22mm;
+      font-family:'DejaVu Sans', sans-serif;
+      color:#111827;
+      font-size:12.5px;
+      line-height:1.45;
+    }
 
     /* Brand */
     .brandbar{ margin:0 0 8px; }
-    .brand-title{ display:inline-block; vertical-align:middle; margin-left:10px; font:700 18px/1 'DejaVu Sans', sans-serif; }
+    .brand-title{
+      display:inline-block;
+      vertical-align:middle;
+      margin-left:10px;
+      font:700 18px/1 'DejaVu Sans', sans-serif;
+    }
 
     /* Top gradient accent (like your other PDFs) */
-    .topbar{ height:4px; background:linear-gradient(90deg,#6366f1,#a855f7,#d946ef); border-radius:10px; margin:6px 0 12px; }
+    .topbar{
+      height:4px;
+      background:linear-gradient(90deg,#6366f1,#a855f7,#d946ef);
+      border-radius:10px;
+      margin:6px 0 12px;
+    }
 
     /* Headings + meta */
-    h1{ margin:6px 0 8px; font-size:22px; }
-    .meta-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; color:#6b7280; font-size:11px; }
+    h1{
+      margin:6px 0 8px;
+      font-size:22px;
+    }
+    .meta-row{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      color:#6b7280;
+      font-size:11px;
+    }
     .muted{ color:#6b7280; }
 
     /* Chip */
-    .chip{ display:inline-block; padding:3px 9px; border-radius:999px; font-weight:700; font-size:10.5px; border:1px solid transparent; }
+    .chip{
+      display:inline-block;
+      padding:3px 9px;
+      border-radius:999px;
+      font-weight:700;
+      font-size:10.5px;
+      border:1px solid transparent;
+    }
 
     /* Cards & tables */
-    .cards{ display:flex; gap:12px; }
-    .card{ flex:1 1 0; border:1px solid #e5e7eb; border-radius:12px; padding:12px; }
-    .card h2{ margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:#475569; }
-    .kv b{ display:block; font-size:11px; color:#475569; text-transform:uppercase; margin-bottom:2px; }
-    .kv span{ font-size:13px; }
+    .cards{
+      display:flex;
+      gap:12px;
+      margin-top:10px;
+    }
+    .card{
+      flex:1 1 0;
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      padding:12px;
+    }
+    .card h2{
+      margin:0 0 8px;
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+      color:#475569;
+    }
+
     .info{ width:100%; border-collapse:collapse; }
     .info td{ padding:2px 0; vertical-align:top; }
+
     .section{ margin-bottom:8px; }
 
-    /* Final Diagnosis box */
-    .box{ border:1px solid #e5e7eb; border-radius:12px; padding:12px; margin-top:12px; }
-    .small{ font-size:11px; color:#64748b; }
+    .kv b{
+      display:block;
+      font-size:11px;
+      color:#475569;
+      text-transform:uppercase;
+      margin-bottom:2px;
+    }
+    .kv span{ font-size:13px; }
 
-    /* Spacing helper */
+    /* Final Diagnosis box */
+    .box{
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      padding:12px;
+      margin-top:14px;
+    }
+    .box h2{
+      margin:0 0 6px;
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+      color:#475569;
+    }
+    .small{
+      font-size:11px;
+      color:#64748b;
+    }
+
     .spacer{ height:10px; }
   </style>
 </head>
@@ -74,7 +149,8 @@
   {{-- Brand --}}
   <div class="brandbar">
     @if(!empty($logoData))
-      <img src="{{ $logoData }}" alt="LumiCHAT" width="50" height="50" style="width:50px;height:50px;border-radius:50%;vertical-align:middle;">
+      <img src="{{ $logoData }}" alt="LumiCHAT" width="50" height="50"
+           style="width:50px;height:50px;border-radius:50%;vertical-align:middle;">
     @endif
     <span class="brand-title">LumiCHAT</span>
   </div>
@@ -85,18 +161,21 @@
   {{-- Title --}}
   <h1>Appointment #{{ $appointment->id }}</h1>
 
-  {{-- Meta row: status chip (left) • created on (center-left) • generated (right) --}}
+  {{-- Meta row: status chip + created + generated --}}
   <div class="meta-row">
     <div>
       Status:
       <span class="chip"
             style="background:{{ $chip['bg'] }}; border-color:{{ $chip['bd'] }}; color:{{ $chip['fg'] }};">
-        {{ ucfirst($status) }}
+        {{ $statusLabel }}
       </span>
-      &nbsp;•&nbsp; Created on:
+      &nbsp;•&nbsp;
+      Created on:
       <strong>{{ $bookedAt ? $bookedAt->format('F d, Y · g:i A') : '—' }}</strong>
     </div>
-    <div class="muted">Generated: {{ $generated }}</div>
+    <div class="muted">
+      Generated: {{ $generated }}
+    </div>
   </div>
 
   <div class="spacer"></div>
@@ -106,37 +185,77 @@
     <div class="card">
       <h2>Participants</h2>
 
+      {{-- Student --}}
       <div class="section">
         <table class="info">
-          <tr><td class="small" style="text-transform:uppercase;">Student</td></tr>
-          <tr><td><strong>{{ $appointment->student_name }}</strong></td></tr>
+          <tr>
+            <td class="small" style="text-transform:uppercase;">Student</td>
+          </tr>
+          <tr>
+            <td><strong>{{ $appointment->student_name }}</strong></td>
+          </tr>
           @if(!empty($appointment->student_email))
-            <tr><td class="small">{{ $appointment->student_email }}</td></tr>
+            <tr>
+              <td class="small">{{ $appointment->student_email }}</td>
+            </tr>
           @endif
           @if(!empty($appointment->student_id))
-            <tr><td class="small">Student ID: {{ $appointment->student_id }}</td></tr>
+            <tr>
+              <td class="small">Student ID: {{ $appointment->student_id }}</td>
+            </tr>
+          @endif
+          @if(!empty($appointment->student_course) || !empty($appointment->student_year_level))
+            <tr>
+              <td class="small">
+                {{ $appointment->student_course ?? '' }}
+                @if(!empty($appointment->student_year_level))
+                  @php
+                    $yearRaw = $appointment->student_year_level;
+                    $yearLbl = match((string) $yearRaw) {
+                      '1' => '1st Year',
+                      '2' => '2nd Year',
+                      '3' => '3rd Year',
+                      '4' => '4th Year',
+                      default => $yearRaw,
+                    };
+                  @endphp
+                  &nbsp;·&nbsp; {{ $yearLbl }}
+                @endif
+              </td>
+            </tr>
           @endif
         </table>
       </div>
 
+      {{-- Counselor --}}
       <div class="section">
         <table class="info">
-          <tr><td class="small" style="text-transform:uppercase;">Counselor</td></tr>
-          <tr><td><strong>{{ $appointment->counselor_name ?: '—' }}</strong></td></tr>
           <tr>
-            <td class="small">
-              {{ $appointment->counselor_email }}
-              @if(!empty($appointment->counselor_phone)) · {{ $appointment->counselor_phone }} @endif
-            </td>
+            <td class="small" style="text-transform:uppercase;">Counselor</td>
           </tr>
+          <tr>
+            <td><strong>{{ $appointment->counselor_name ?: '—' }}</strong></td>
+          </tr>
+          @if(!empty($appointment->counselor_email) || !empty($appointment->counselor_phone))
+            <tr>
+              <td class="small">
+                {{ $appointment->counselor_email }}
+                @if(!empty($appointment->counselor_phone))
+                  &nbsp;·&nbsp; {{ $appointment->counselor_phone }}
+                @endif
+              </td>
+            </tr>
+          @endif
           @if(!empty($appointment->counselor_dept))
-            <tr><td class="small">{{ $appointment->counselor_dept }}</td></tr>
+            <tr>
+              <td class="small">{{ $appointment->counselor_dept }}</td>
+            </tr>
           @endif
         </table>
       </div>
     </div>
 
-    <div class="card" style="margin-top:12px;">
+    <div class="card">
       <h2>Appointment Timing</h2>
 
       <div class="kv">
@@ -156,12 +275,11 @@
         </div>
       @endif
     </div>
+  </div>
 
-  {{-- Final Diagnosis --}}
+  {{-- Final Diagnosis / Report --}}
   <div class="box">
-    <h2 style="margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:#475569;">
-      Final Diagnosis (Report)
-    </h2>
+    <h2>Final Diagnosis (Report)</h2>
 
     <div class="kv">
       <b>Diagnosis</b>
@@ -169,7 +287,7 @@
         @if(isset($latestReport) && ($latestReport->diagnosis_result ?? '') !== '')
           {!! nl2br(e($latestReport->diagnosis_result)) !!}
         @else
-          —
+          No diagnosis has been recorded yet for this student and counselor.
         @endif
       </span>
     </div>
@@ -181,21 +299,25 @@
       </div>
     @endif
   </div>
- {{-- Footer --}}
+
+  {{-- Footer --}}
   <div class="small" style="margin-top:14px;">
     LumiCHAT • Tagoloan Community College — Confidential student support record.
   </div>
-<script type="text/php">
-if (isset($pdf)) {
-    $font  = $fontMetrics->get_font("DejaVu Sans", "normal");
-    $size  = 9;
-    $w     = $pdf->get_width();
-    $h     = $pdf->get_height();
-    $text  = "Page {PAGE_NUM} of {PAGE_COUNT}";
-    $x     = $w - 72;   // ~1 inch from right
-    $y     = $h - 28;   // ~28pt from bottom
-    $pdf->page_text($x, $y, $text, $font, $size, [0,0,0]);
-}
-</script>
+
+  {{-- Footer page numbers --}}
+  <script type="text/php">
+  if (isset($pdf)) {
+      $font  = $fontMetrics->get_font("DejaVu Sans", "normal");
+      $size  = 9;
+      $w     = $pdf->get_width();
+      $h     = $pdf->get_height();
+      $text  = "Page {PAGE_NUM} of {PAGE_COUNT}";
+      $x     = $w - 72;   // ~1 inch from right
+      $y     = $h - 28;   // ~28pt from bottom
+      $pdf->page_text($x, $y, $text, $font, $size, [0,0,0]);
+  }
+  </script>
+
 </body>
 </html>
