@@ -201,6 +201,93 @@
   </div>
 </div>
 
+{{-- =========================
+     Re-Assigned Appointments
+     (history from tbl_appointment_counselor_history)
+   ========================= --}}
+@if(isset($reassignedAppointments) && $reassignedAppointments->count() > 0)
+  <div class="max-w-7xl mx-auto space-y-4 mt-6">
+    <div class="flex items-center justify-between">
+      <div>
+        <h3 class="text-sm font-semibold text-slate-800">Re-Assigned Appointments</h3>
+        <p class="text-xs text-slate-500">
+          Appointments that were previously assigned to you and later reassigned to another counselor.
+        </p>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
+      <div class="relative overflow-x-auto">
+        <table class="min-w-full text-sm leading-6">
+          <thead class="bg-slate-100 border-b border-slate-200 text-slate-700">
+            <tr>
+              <th class="px-6 py-3 text-left uppercase tracking-wide text-[11px]">ID</th>
+              <th class="px-6 py-3 text-left uppercase tracking-wide text-[11px]">Student</th>
+              <th class="px-6 py-3 text-left uppercase tracking-wide text-[11px]">Date &amp; Time</th>
+              <th class="px-6 py-3 text-left uppercase tracking-wide text-[11px]">Booked On</th>
+              <th class="px-6 py-3 text-left uppercase tracking-wide text-[11px]">Status</th>
+            </tr>
+          </thead>
+
+          <tbody class="divide-y divide-slate-100">
+            @foreach($reassignedAppointments as $row)
+              @php
+                $dt       = Carbon::parse($row->scheduled_at);
+                $bookedAt = $row->booked_at ? Carbon::parse($row->booked_at) : null;
+
+                $changedLabel = $row->changed_at
+                    ? Carbon::parse($row->changed_at)->diffForHumans()
+                    : null;
+              @endphp
+
+              <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition">
+                <td class="px-6 py-4 font-semibold text-slate-900">{{ $row->id }}</td>
+
+                <td class="px-6 py-4">
+                  <div class="font-medium text-slate-900">{{ $row->student_name }}</div>
+                  @if(!empty($row->student_email))
+                    <div class="text-slate-500 text-xs">{{ $row->student_email }}</div>
+                  @endif
+                </td>
+
+                <td class="px-6 py-4">
+                  <div class="leading-tight">
+                    <div class="font-medium text-slate-900">{{ $dt->format('M d, Y') }}</div>
+                    <div class="text-slate-500 text-xs">{{ $dt->format('g:i A') }}</div>
+                  </div>
+                </td>
+
+                <td class="px-6 py-4">
+                  @if($bookedAt)
+                    <div class="leading-tight">
+                      <div class="font-medium text-slate-900">{{ $bookedAt->format('M d, Y') }}</div>
+                      <div class="text-slate-500 text-xs">{{ $bookedAt->format('g:i A') }}</div>
+                    </div>
+                  @else
+                    <span class="text-slate-400">—</span>
+                  @endif
+                </td>
+
+                <td class="px-6 py-4">
+                  <span class="inline-flex items-center h-7 rounded-full bg-slate-900 text-white text-xs font-medium px-3">
+                    <span class="inline-block size-1.5 rounded-full bg-yellow-300 mr-1.5"></span>
+                    Re-Assigned
+                  </span>
+                  @if($changedLabel)
+                    <div class="mt-1 text-[11px] text-slate-500">
+                      Reassigned {{ $changedLabel }}
+                    </div>
+                  @endif
+                </td>
+              </tr>
+            @endforeach
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+@endif
+
 {{-- Micro-UX: auto-submit search after a short pause --}}
 <script>
   const q = document.getElementById('q');
