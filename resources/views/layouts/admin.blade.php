@@ -326,83 +326,128 @@
     </main>
   </div>
 
-  <script>
-    (function () {
-      const body      = document.body;
-      const sidebar   = document.getElementById('adminSidebar');
-      const scrim     = document.getElementById('sidebarScrim');
-      const openBtn   = document.getElementById('railOpen');
-      const closeBtn  = document.getElementById('railClose');
-      const mqDesktop = window.matchMedia('(min-width: 1024px)');
-      const LS_KEY    = 'adminSidebarCollapsed';
-      const isDesktop = () => mqDesktop.matches;
+<script>
+  (function () {
+    const body       = document.body;
+    const sidebar    = document.getElementById('adminSidebar');
+    const scrim      = document.getElementById('sidebarScrim');
+    const openBtn    = document.getElementById('railOpen');
+    const closeBtn   = document.getElementById('railClose');
+    const mqDesktop  = window.matchMedia('(min-width: 1024px)');
+    const LS_KEY     = 'adminSidebarCollapsed';
+    const SCROLL_KEY = 'adminSidebarScroll';
+    const railScroll = document.getElementById('railScroll');
 
-      function setCollapsed(on) {
-        if (on) {
-          body.classList.add('admin-collapsed');
-          localStorage.setItem(LS_KEY, '1');
-        } else {
-          body.classList.remove('admin-collapsed');
-          localStorage.setItem(LS_KEY, '0');
-        }
+    const isDesktop = () => mqDesktop.matches;
+
+    function setCollapsed(on) {
+      if (on) {
+        body.classList.add('admin-collapsed');
+        localStorage.setItem(LS_KEY, '1');
+      } else {
+        body.classList.remove('admin-collapsed');
+        localStorage.setItem(LS_KEY, '0');
       }
-      const getCollapsed = () => localStorage.getItem(LS_KEY) === '1';
+    }
+    const getCollapsed = () => localStorage.getItem(LS_KEY) === '1';
 
-      /* Mobile open/close */
-      function openMobile(){
+    /* ========== Mobile open / close ========== */
+    function openMobile(){
+      sidebar.classList.remove('-translate-x-full');
+      scrim.classList.remove('hidden');
+      body.classList.add('no-scroll');
+      body.classList.add('mobile-rail-open');
+    }
+    function closeMobile(){
+      sidebar.classList.add('-translate-x-full');
+      scrim.classList.add('hidden');
+      body.classList.remove('no-scroll');
+      body.classList.remove('mobile-rail-open');
+    }
+
+    /* Buttons */
+    openBtn?.addEventListener('click', () => {
+      if (isDesktop()) {
+        if (getCollapsed()) setCollapsed(false);   // expand on desktop
+      } else {
+        openMobile();
+      }
+    });
+
+    closeBtn?.addEventListener('click', () => {
+      if (isDesktop()) {
+        setCollapsed(true);                        // collapse on desktop
+      } else {
+        closeMobile();                             // close overlay on mobile
+      }
+    });
+
+    scrim?.addEventListener('click', closeMobile);
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !isDesktop()) closeMobile();
+    });
+
+    /* ========== Init per viewport ========== */
+    function applyMode(){
+      if (isDesktop()){
+        body.classList.remove('mobile-rail-open');
         sidebar.classList.remove('-translate-x-full');
-        scrim.classList.remove('hidden');
-        body.classList.add('no-scroll');
-        body.classList.add('mobile-rail-open');     // mark mobile open (hides hamburger)
-      }
-      function closeMobile(){
-        sidebar.classList.add('-translate-x-full');
         scrim.classList.add('hidden');
         body.classList.remove('no-scroll');
-        body.classList.remove('mobile-rail-open');  // show hamburger again
+        setCollapsed(getCollapsed());              // restore saved state
+      } else {
+        sidebar.classList.add('-translate-x-full'); // hidden by default on mobile
+        body.classList.remove('admin-collapsed');   // mobile uses full rail
+        body.classList.remove('mobile-rail-open');
+      }
+    }
+    mqDesktop.addEventListener('change', applyMode);
+    applyMode();
+
+    /* ========== Sidebar scroll behavior ========== */
+    function setupSidebarScroll(){
+      if (!railScroll) return;
+
+      // 1) Restore last saved scroll position
+      const saved = localStorage.getItem(SCROLL_KEY);
+      if (saved !== null) {
+        const y = parseInt(saved, 10);
+        if (!isNaN(y)) {
+          railScroll.scrollTop = y;
+        }
       }
 
-      /* Buttons */
-      openBtn?.addEventListener('click', () => {
-        if (isDesktop()) {
-          if (getCollapsed()) setCollapsed(false);   // expand on desktop
-        } else {
-          openMobile();
-        }
-      });
+      // 2) Make sure active nav item is visible
+      const active = railScroll.querySelector('a.nav-item.is-active');
+      if (active) {
+        const cRect = railScroll.getBoundingClientRect();
+        const aRect = active.getBoundingClientRect();
 
-      closeBtn?.addEventListener('click', () => {
-        if (isDesktop()) {
-          setCollapsed(true);                        // collapse on desktop (X hides via CSS)
-        } else {
-          closeMobile();                             // close overlay on mobile
-        }
-      });
-
-      scrim?.addEventListener('click', closeMobile);
-      window.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && !isDesktop()) closeMobile();
-      });
-
-      /* Init per viewport */
-      function applyMode(){
-        if (isDesktop()){
-          body.classList.remove('mobile-rail-open');
-          sidebar.classList.remove('-translate-x-full');
-          scrim.classList.add('hidden');
-          body.classList.remove('no-scroll');
-          setCollapsed(getCollapsed());              // restore saved state
-        } else {
-          sidebar.classList.add('-translate-x-full'); // hidden by default on mobile
-          body.classList.remove('admin-collapsed');   // mobile uses full rail (no collapsed UI)
-          body.classList.remove('mobile-rail-open');
+        // only scroll if wala siya sa view
+        if (aRect.top < cRect.top || aRect.bottom > cRect.bottom) {
+          active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         }
       }
-      mqDesktop.addEventListener('change', applyMode);
-      applyMode();
-    })();
-  </script>
-  {{-- ==== Wide SweetAlert “Appointment booked!” (global) ==== --}}
+
+      // 3) Save scroll before leaving page
+      window.addEventListener('beforeunload', () => {
+        localStorage.setItem(SCROLL_KEY, String(railScroll.scrollTop));
+      });
+
+      // 4) Also save when clicking any nav item
+      const navLinks = railScroll.querySelectorAll('a.nav-item');
+      navLinks.forEach(link => {
+        link.addEventListener('click', () => {
+          localStorage.setItem(SCROLL_KEY, String(railScroll.scrollTop));
+        });
+      });
+    }
+
+    setupSidebarScroll();
+  })();
+</script>
+
+{{-- ==== Wide SweetAlert “Appointment booked!” (global) ==== --}}
 <style>
   /* Force left-aligned body for our compact success modal */
   .swal-compact .swal2-html-container{
