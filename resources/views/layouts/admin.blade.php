@@ -227,6 +227,8 @@
         <span class="rail-tip">Chatbot Sessions</span>
       </a>
 
+      <p class="mt-4 px-3 text-[11px] uppercase tracking-wider/relaxed opacity-90 nav-label">Analytics</p>
+
       {{-- Case Form Summary (NEW) --}}
       <a href="{{ route('admin.case-notes.index') }}"
         aria-current="{{ request()->routeIs('admin.case-notes.*') ? 'page' : 'false' }}"
@@ -239,8 +241,6 @@
         <span class="nav-label font-medium">Case Form Summary</span>
         <span class="rail-tip">Case Form Summary</span>
       </a>
-
-      <p class="mt-4 px-3 text-[11px] uppercase tracking-wider/relaxed opacity-90 nav-label">Analytics</p>
 
       {{-- Course Analytics --}}
       <a href="{{ route('admin.course-analytics.index') }}"
