@@ -226,118 +226,121 @@ public function index(Request $r): View
     }
 
     /** Update status via action ('confirm' | 'done') with rule checks. */
-    public function updateStatus(Request $r, int $id): RedirectResponse
-    {
-        $action = $r->input('action'); // 'confirm' | 'done' | 'no_show'
+        public function updateStatus(Request $r, int $id): RedirectResponse
+        {
+            $action = $r->input('action'); // 'confirm' | 'done' | 'no_show'
 
-        // Fast path: use repo for confirm/done as you already had
-        if (in_array($action, ['confirm','done'], true)) {
-            $res = $this->appointments->updateStatusByAction($id, $action);
+            // Use repo for confirm/done (keeps your business rules)
+            if (in_array($action, ['confirm','done'], true)) {
+                $res = $this->appointments->updateStatusByAction($id, $action);
 
-            if (!$res['ok']) {
-                $map = [
-                    'invalid_action'    => ['warning','Not allowed','Invalid action.'],
-                    'not_found'         => ['warning','Not allowed','Appointment not found.'],
-                    'must_be_confirmed' => ['warning','Not allowed','Appointment must be confirmed before you can mark it as done.'],
-                    'too_early'         => ['warning','Too early','You can only mark the appointment as done once it has started.'],
-                ];
-                [$icon,$title,$text] = $map[$res['reason']] ?? ['error','Error','Unable to update status.'];
-
-                return back()->with(self::FLASH_SWAL, compact('icon','title','text'));
+                if (!$res['ok']) {
+                    $map = [
+                        'invalid_action'    => ['warning','Not allowed','Invalid action.'],
+                        'not_found'         => ['warning','Not allowed','Appointment not found.'],
+                        'must_be_confirmed' => ['warning','Not allowed','Appointment must be confirmed before you can mark it as done.'],
+                        'too_early'         => ['warning','Too early','You can only mark the appointment as done once it has started.'],
+                    ];
+                    [$icon,$title,$text] = $map[$res['reason']] ?? ['error','Error','Unable to update status.'];
+                    return back()->with(self::FLASH_SWAL, compact('icon','title','text'));
+                }
             }
-        }
-        // ✅ New: No-Show
-        else if ($action === 'no_show') {
-            $row = DB::table('tbl_appointments')->where('id', $id)->first();
-            if (!$row) {
-                return back()->with(self::FLASH_SWAL, [
-                    'icon'  => 'warning',
-                    'title' => 'Not found',
-                    'text'  => 'Appointment not found.',
-                ]);
-            }
+            // No-show handling with grace period
+            elseif ($action === 'no_show') {
+                $row = DB::table('tbl_appointments')->where('id', $id)->first();
+                if (!$row) {
+                    return back()->with(self::FLASH_SWAL, [
+                        'icon'  => 'warning',
+                        'title' => 'Not found',
+                        'text'  => 'Appointment not found.',
+                    ]);
+                }
 
-            // Only pending/confirmed can become no_show
-            if (!in_array($row->status, ['pending','confirmed'], true)) {
+                // Only pending/confirmed can become no_show
+                if (!in_array($row->status, ['pending','confirmed'], true)) {
+                    return back()->with(self::FLASH_SWAL, [
+                        'icon'  => 'warning',
+                        'title' => 'Not allowed',
+                        'text'  => 'Only pending/confirmed appointments can be marked as No-Show.',
+                    ]);
+                }
+
+                $start     = Carbon::parse($row->scheduled_at)->second(0);
+                $endOfSlot = $start->copy()->addMinutes(60); // slot length = 60m
+                $graceOver = $endOfSlot->copy()->addMinutes(self::NO_SHOW_GRACE_MINUTES);
+
+                if ($graceOver->isFuture()) {
+                    return back()->with(self::FLASH_SWAL, [
+                        'icon'  => 'warning',
+                        'title' => 'Too early',
+                        'text'  => 'You can mark No-Show only after the slot has passed the grace period.',
+                    ]);
+                }
+
+                DB::table('tbl_appointments')
+                    ->where('id', $id)
+                    ->update([
+                        'status'     => 'no_show',
+                        'updated_at' => now(),
+                    ]);
+            }
+            else {
                 return back()->with(self::FLASH_SWAL, [
                     'icon'  => 'warning',
                     'title' => 'Not allowed',
-                    'text'  => 'Only pending/confirmed appointments can be marked as No-Show.',
+                    'text'  => 'Invalid action.',
                 ]);
             }
 
-            $start      = Carbon::parse($row->scheduled_at);
-            $endOfSlot  = $start->copy()->addMinutes(60); // your slot = 60 minutes
-            $graceOver  = $endOfSlot->copy()->addMinutes(self::NO_SHOW_GRACE_MINUTES);
-
-            if ($graceOver->isFuture()) {
-                return back()->with(self::FLASH_SWAL, [
-                    'icon'  => 'warning',
-                    'title' => 'Too early',
-                    'text'  => 'You can mark No-Show only after the slot has passed the grace period.',
-                ]);
-            }
-
-            DB::table('tbl_appointments')
+            // Post-update effects
+            $appt = DB::table('tbl_appointments')
+                ->select('id','student_id','status')
                 ->where('id', $id)
-                ->update([
-                    'status'     => 'no_show',
-                    'updated_at' => now(),
-                ]);
-        }
-        else {
+                ->first();
+
+            if ($appt) {
+                // Safe deep link (only if the route exists)
+                $viewUrl = \Illuminate\Support\Facades\Route::has('appointment.view')
+                    ? route('appointment.view', (int)$appt->id)
+                    : null;
+
+                // Per-status student notifications (in-app)
+                switch ($appt->status) {
+                    case 'confirmed':
+                        Notify::student((int)$appt->student_id, 'Appointment confirmed', 'Your appointment has been confirmed.', $viewUrl);
+                        break;
+                    case 'completed':
+                        Notify::student((int)$appt->student_id, 'Appointment completed', 'Your appointment has been marked as completed.', $viewUrl);
+                        break;
+                    case 'no_show':
+                        Notify::student((int)$appt->student_id, 'Marked as no-show', 'The appointment was marked as no-show.', $viewUrl);
+                        break;
+                    case 'canceled':
+                        Notify::student((int)$appt->student_id, 'Appointment canceled', 'The appointment was canceled.', $viewUrl);
+                        break;
+                }
+
+                // Clear HIGH risk on completion (preserves your existing behavior)
+                if ($appt->status === 'completed') {
+                    $updates = [
+                        'risk_level' => null,
+                        'updated_at' => now(),
+                    ];
+                    if (Schema::hasColumn((new ChatSession)->getTable(), 'risk_score')) {
+                        $updates['risk_score'] = 0;
+                    }
+                    ChatSession::where('user_id', $appt->student_id)
+                        ->whereRaw("LOWER(COALESCE(risk_level, '')) IN ('high','high-risk','high_risk')")
+                        ->update($updates);
+                }
+            }
+
             return back()->with(self::FLASH_SWAL, [
-                'icon'  => 'warning',
-                'title' => 'Not allowed',
-                'text'  => 'Invalid action.',
+                'icon'  => 'success',
+                'title' => 'Updated',
+                'text'  => 'Appointment status has been updated.',
             ]);
         }
-
-        // ⬇️ Keep your post-update logic (clear high risk when completed)
-        $appt = DB::table('tbl_appointments')
-            ->select('id','student_id','status')
-            ->where('id', $id)
-            ->first();
-
-        if ($appt) {
-            // 🔔 Per-status student notifications (in-app)
-            switch ($appt->status) {
-                case 'confirmed':
-                    Notify::student((int)$appt->student_id, 'Appointment confirmed', 'Your appointment has been confirmed.');
-                    break;
-                case 'completed':
-                    Notify::student((int)$appt->student_id, 'Appointment completed', 'Your appointment has been marked as completed.');
-                    break;
-                case 'no_show':
-                    Notify::student((int)$appt->student_id, 'Marked as no-show', 'The appointment was marked as no-show.');
-                    break;
-                case 'canceled':
-                    Notify::student((int)$appt->student_id, 'Appointment canceled', 'The appointment was canceled.');
-                    break;
-                // other statuses: no notification
-            }
-
-            // ✅ Your existing risk reset stays intact and only runs for 'completed'
-            if ($appt->status === 'completed') {
-                $updates = [
-                    'risk_level' => null,
-                    'updated_at' => now(),
-                ];
-                if (Schema::hasColumn((new ChatSession)->getTable(), 'risk_score')) {
-                    $updates['risk_score'] = 0;
-                }
-                ChatSession::where('user_id', $appt->student_id)
-                    ->whereRaw("LOWER(COALESCE(risk_level, '')) IN ('high','high-risk','high_risk')")
-                    ->update($updates);
-            }
-        }
-
-        return back()->with(self::FLASH_SWAL, [
-            'icon'  => 'success',
-            'title' => 'Updated',
-            'text'  => 'Appointment status has been updated.',
-        ]);
-}
 
     public function exportPdf(Request $request)
     {
@@ -621,127 +624,130 @@ public function index(Request $r): View
         return view('admin.appointments.assign', compact('appointment', 'counselors', 'blockedCounselorId'));
     }
 
-    public function assign(Request $request, int $id): RedirectResponse
-    {
-        $data = $request->validate([
-            'counselor_id' => ['required','exists:tbl_counselors,id'],
-        ]);
-        $cid = (int) $data['counselor_id'];
+        public function assign(Request $request, int $id): RedirectResponse
+        {
+            $data = $request->validate([
+                'counselor_id' => ['required','exists:tbl_counselors,id'],
+            ]);
+            $cid = (int) $data['counselor_id'];
 
-        return \DB::transaction(function () use ($id, $cid) {
-            $ap = \DB::table('tbl_appointments')->where('id', $id)->first();
-            abort_unless($ap, 404);
+            return \DB::transaction(function () use ($id, $cid) {
+                $ap = \DB::table('tbl_appointments')->where('id', $id)->first();
+                abort_unless($ap, 404);
 
-            if (!empty($ap->counselor_id)) {
-                return back()->with(self::FLASH_SWAL, [
-                    'icon'=>'info','title'=>'Already assigned',
-                    'text'=>'This appointment already has a counselor. Use the change-request flow to reassign.',
-                ]);
-            }
-            if (!in_array($ap->status, ['pending','confirmed'], true)) {
-                return back()->with(self::FLASH_SWAL, ['icon'=>'warning','title'=>'Not allowed','text'=>'Only pending/confirmed appointments can be assigned.']);
-            }
-            if (\Carbon\Carbon::parse($ap->scheduled_at)->lte(now())) {
-                return back()->with(self::FLASH_SWAL, ['icon'=>'warning','title'=>'Not allowed','text'=>'Cannot assign a counselor to a past time.']);
-            }
-
-            // 🚫 server guard: if there is an approved CR, do not allow the same previous counselor
-            $cr = \DB::table('counselor_change_requests')
-                ->where('appointment_id', $id)
-                ->orderByDesc('id')
-                ->first();
-
-            if ($cr && $cr->status === 'approved' && !empty($cr->previous_counselor_id)) {
-                if ((int)$cr->previous_counselor_id === $cid) {
+                if (!empty($ap->counselor_id)) {
                     return back()->with(self::FLASH_SWAL, [
-                        'icon'=>'warning',
-                        'title'=>'Not allowed',
-                        'text'=>'You can’t reassign the same counselor for an approved change request.',
-                    ])->withInput();
+                        'icon'=>'info','title'=>'Already assigned',
+                        'text'=>'This appointment already has a counselor. Use the change-request flow to reassign.',
+                    ]);
                 }
-            }
+                if (!in_array($ap->status, ['pending','confirmed'], true)) {
+                    return back()->with(self::FLASH_SWAL, ['icon'=>'warning','title'=>'Not allowed','text'=>'Only pending/confirmed appointments can be assigned.']);
+                }
+                if (\Carbon\Carbon::parse($ap->scheduled_at)->lte(now())) {
+                    return back()->with(self::FLASH_SWAL, ['icon'=>'warning','title'=>'Not allowed','text'=>'Cannot assign a counselor to a past time.']);
+                }
 
-            // repo: lock + CAS + availability
-            $res = $this->appointments->assignCounselor($id, $cid);
-            if (!$res['ok']) {
-                $map = [
-                    'not_found'        => ['warning','Not found','Appointment not found.'],
-                    'invalid_status'   => ['warning','Not allowed','This appointment cannot be assigned.'],
-                    'already_assigned' => ['info','Already assigned','A counselor is already set.'],
-                    'in_past'          => ['warning','Not allowed','Cannot assign in the past.'],
-                    'not_available'    => ['error','Counselor busy','Selected counselor is no longer free.'],
-                    'race_taken'       => ['error','Just taken','That slot was taken moments ago.'],
-                    'same_as_previous' => ['warning','Not allowed','You can’t assign the same counselor requested to be changed.'],
-                ];
-                [$icon,$title,$text] = $map[$res['reason']] ?? ['error','Error','Unable to assign counselor.'];
-                return back()->with(self::FLASH_SWAL, compact('icon','title','text'));
-            }
+                // 🚫 server guard: if there is an approved CR, do not allow the same previous counselor
+                $cr = \DB::table('counselor_change_requests')
+                    ->where('appointment_id', $id)
+                    ->orderByDesc('id')
+                    ->first();
 
-            // Auto-confirm once (your existing rule)
-            $this->appointments->updateStatusByAction($id, 'confirm');
-
-            // ——— notifications + email (keep your existing block) ———
-            try {
-                $row = \DB::table('tbl_appointments as a')
-                    ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-                    ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
-                    ->where('a.id', $id)
-                    ->select([
-                        'a.id','a.scheduled_at',
-                        's.id as student_id','s.name as student_name','s.email as student_email',
-                        'c.id as counselor_id','c.name as counselor_name','c.email as counselor_email',
-                    ])->first();
-
-                if ($row) {
-                    $whenNice     = \Carbon\Carbon::parse($row->scheduled_at)->format('M d, Y g:i A');
-                    $studentUrl   = route('appointment.view', $row->id);
-                    $counselorUrl = \Illuminate\Support\Facades\Route::has('counselor.appointments.show')
-                        ? route('counselor.appointments.show', $row->id)
-                        : null;
-
-                    \App\Support\Notify::student(
-                        (int) $row->student_id,
-                        'Appointment approved',
-                        'Your appointment has been approved. Counselor: '.$row->counselor_name.' · '.$whenNice.'.',
-                        $studentUrl
-                    );
-
-                    if ($row->counselor_id && method_exists(\App\Support\Notify::class, 'counselor')) {
-                        \App\Support\Notify::counselor(
-                            (int) $row->counselor_id,
-                            'New appointment assigned',
-                            'Student: '.$row->student_name.' · '.$whenNice.'.',
-                            $counselorUrl
-                        );
+                if ($cr && $cr->status === 'approved' && !empty($cr->previous_counselor_id)) {
+                    if ((int)$cr->previous_counselor_id === $cid) {
+                        return back()->with(self::FLASH_SWAL, [
+                            'icon'=>'warning',
+                            'title'=>'Not allowed',
+                            'text'=>'You can’t reassign the same counselor for an approved change request.',
+                        ])->withInput();
                     }
                 }
-            } catch (\Throwable $e) { \Log::warning('Admin assign notify failed', ['id'=>$id,'e'=>$e->getMessage()]); }
 
-            // Email block (unchanged) — keep yours here if needed…
+                // repo: lock + CAS + availability
+                $res = $this->appointments->assignCounselor($id, $cid);
+                if (!$res['ok']) {
+                    $map = [
+                        'not_found'        => ['warning','Not found','Appointment not found.'],
+                        'invalid_status'   => ['warning','Not allowed','This appointment cannot be assigned.'],
+                        'already_assigned' => ['info','Already assigned','A counselor is already set.'],
+                        'in_past'          => ['warning','Not allowed','Cannot assign in the past.'],
+                        'not_available'    => ['error','Counselor busy','Selected counselor is no longer free.'],
+                        'race_taken'       => ['error','Just taken','That slot was taken moments ago.'],
+                        'same_as_previous' => ['warning','Not allowed','You can’t assign the same counselor requested to be changed.'],
+                    ];
+                    [$icon,$title,$text] = $map[$res['reason']] ?? ['error','Error','Unable to assign counselor.'];
+                    return back()->with(self::FLASH_SWAL, compact('icon','title','text'));
+                }
 
-            // Success swal
-            $whenDate = \Carbon\Carbon::parse($ap->scheduled_at)->format('M d, Y');
-            $whenTime = \Carbon\Carbon::parse($ap->scheduled_at)->format('g:i A');
+                // Auto-confirm once (your existing rule)
+                $this->appointments->updateStatusByAction($id, 'confirm');
 
-            return redirect()
-                ->route('admin.appointments.show', $id)
-                ->with(self::FLASH_SWAL, [
-                    'icon'  => 'success',
-                    'title' => 'Counselor assigned',
-                    'html'  => sprintf(
-                        '<div style="text-align:left">
-                        <div><b>Date:</b> %s</div>
-                        <div><b>Time:</b> %s</div>
-                        <div style="margin-top:.35rem;color:#475569">
-                            Student and counselor have been notified.
-                        </div>
-                        </div>',
-                        e($whenDate), e($whenTime)
-                    ),
-                    'confirmButtonText' => 'OK',
-                ]);
-        });
-    }
+                // ——— notifications (student + counselor) ———
+                try {
+                    $row = \DB::table('tbl_appointments as a')
+                        ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
+                        ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
+                        ->where('a.id', $id)
+                        ->select([
+                            'a.id','a.scheduled_at',
+                            's.id as student_id','s.name as student_name','s.email as student_email',
+                            'c.id as counselor_id','c.name as counselor_name','c.email as counselor_email',
+                        ])->first();
+
+                    if ($row) {
+                        $whenNice     = \Carbon\Carbon::parse($row->scheduled_at)->format('M d, Y g:i A');
+                        $studentUrl   = route('appointment.view', $row->id); // keep your student route
+                        $counselorUrl = \Illuminate\Support\Facades\Route::has('counselor.appointments.show')
+                            ? route('counselor.appointments.show', $row->id)
+                            : null;
+
+                        // Student: Appointment confirmed
+                        Notify::student(
+                            (int) $row->student_id,
+                            'Appointment confirmed',
+                            'Your counseling appointment has been confirmed. Counselor: '.$row->counselor_name.' · '.$whenNice.'.',
+                            $studentUrl
+                        );
+
+                        // Counselor: New appointment assigned
+                        if ($row->counselor_id) {
+                            Notify::counselor(
+                                (int) $row->counselor_id,
+                                'New appointment assigned',
+                                'Student: '.$row->student_name.' · '.$whenNice.'.',
+                                $counselorUrl
+                            );
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    \Log::warning('Admin assign notify failed', ['id'=>$id,'e'=>$e->getMessage()]);
+                }
+
+                // Success swal
+                $whenDate = \Carbon\Carbon::parse($ap->scheduled_at)->format('M d, Y');
+                $whenTime = \Carbon\Carbon::parse($ap->scheduled_at)->format('g:i A');
+
+                return redirect()
+                    ->route('admin.appointments.show', $id)
+                    ->with(self::FLASH_SWAL, [
+                        'icon'  => 'success',
+                        'title' => 'Counselor assigned',
+                        'html'  => sprintf(
+                            '<div style="text-align:left">
+                            <div><b>Date:</b> %s</div>
+                            <div><b>Time:</b> %s</div>
+                            <div style="margin-top:.35rem;color:#475569">
+                                Student and counselor have been notified.
+                            </div>
+                            </div>',
+                            e($whenDate), e($whenTime)
+                        ),
+                        'confirmButtonText' => 'OK',
+                    ]);
+            });
+        }
+
 
     /* ===================== Follow-up ===================== */
 
@@ -831,103 +837,128 @@ public function index(Request $r): View
     }
 
 
-    public function followUpStore(Request $request, int $id)
-    {
-        $appointment = $this->appointments->findById($id);
-        abort_unless($appointment, 404);
+public function followUpStore(Request $request, int $id)
+{
+    $appointment = $this->appointments->findById($id);
+    abort_unless($appointment, 404);
 
-        // Only after completion
-        if ($appointment->status !== 'completed') {
-            return back()->with(self::FLASH_SWAL, [
-                'icon'  => 'warning',
-                'title' => 'Not allowed',
-                'text'  => 'You can create a follow-up only after the appointment is completed.',
-            ]);
-        }
-
-        $data = $request->validate([
-            'date' => ['required','date_format:Y-m-d'],
-            'time' => ['required','regex:/^\d{2}:\d{2}$/'],
-            'note' => ['nullable','string','max:4000'],
+    // Only after completion
+    if ($appointment->status !== 'completed') {
+        return back()->with(self::FLASH_SWAL, [
+            'icon'  => 'warning',
+            'title' => 'Not allowed',
+            'text'  => 'You can create a follow-up only after the appointment is completed.',
         ]);
+    }
 
-        $scheduledAt = Carbon::parse($data['date'].' '.$data['time'].':00');
-        if ($scheduledAt->lte(now())) {
-            return back()->withErrors(['time' => 'Please pick a future time.'])->withInput();
-        }
+    $data = $request->validate([
+        'date' => ['required','date_format:Y-m-d'],
+        'time' => ['required','regex:/^\d{2}:\d{2}$/'],
+        'note' => ['nullable','string','max:4000'],
+    ]);
 
-        $originalCounselorId = $appointment->counselor_id ?: null;
+    $scheduledAt = Carbon::parse($data['date'].' '.$data['time'].':00');
+    if ($scheduledAt->lte(now())) {
+        return back()->withErrors(['time' => 'Please pick a future time.'])->withInput();
+    }
 
-        try {
-            DB::transaction(function () use ($appointment, $scheduledAt, $originalCounselorId, $data) {
+    $originalCounselorId = $appointment->counselor_id ?: null;
 
-                // counselors free at that exact slot (pooled capacity)
-                $freeIds = $this->appointments->counselorIdsFreeAt($scheduledAt);
+    // capture created appt details for post-commit notifications
+    $created = (object)['id' => null, 'counselor_id' => null, 'scheduled_at' => null];
 
-                if ($originalCounselorId) {
-                    // keep same counselor only if free
-                    if (!in_array((int)$originalCounselorId, $freeIds, true)) {
-                        throw new \RuntimeException('COUNSELOR_BUSY');
-                    }
-                    $counselorId = (int)$originalCounselorId;
-                } else {
-                    // pooled capacity required
-                    if (empty($freeIds)) {
-                        throw new \RuntimeException('FULL');
-                    }
-                    $counselorId = null; // assign later
+    try {
+        DB::transaction(function () use ($appointment, $scheduledAt, $originalCounselorId, $data, &$created) {
+
+            // counselors free at that exact slot (pooled capacity)
+            $freeIds = $this->appointments->counselorIdsFreeAt($scheduledAt);
+
+            if ($originalCounselorId) {
+                // keep same counselor only if free
+                if (!in_array((int)$originalCounselorId, $freeIds, true)) {
+                    throw new \RuntimeException('COUNSELOR_BUSY');
                 }
+                $counselorId = (int)$originalCounselorId;
+            } else {
+                // pooled capacity required
+                if (empty($freeIds)) {
+                    throw new \RuntimeException('FULL');
+                }
+                $counselorId = null; // assign later (pooled)
+            }
 
-            // Create the appointment and capture its ID (all your fields stay the same)
+            // Create the appointment and capture its ID
             $newId = DB::table('tbl_appointments')->insertGetId([
                 'student_id'   => (int) $appointment->student_id,
-                'counselor_id' => $counselorId,        // leave as you already compute (can be null or an id)
-                'scheduled_at' => $scheduledAt,        // your existing variable
-                'status'       => 'confirmed',         // ✅ unchanged (auto-confirm per your flow)
+                'counselor_id' => $counselorId,        // can be null or an id
+                'scheduled_at' => $scheduledAt,
+                'status'       => 'confirmed',         // auto-confirm per your flow
                 'parent_id'    => $appointment->id,
+                'note'         => $data['note'] ?? null,
                 'created_at'   => now(),
                 'updated_at'   => now(),
             ]);
 
-            // 🔔 Notify the student with a deep link to their appointment view
-            if ($student = User::find((int) $appointment->student_id)) {
-                $dtLabel = Carbon::parse($scheduledAt)->format('M d, Y g:i A');
-
-                $student->notify(new SimpleDatabaseNotification(
-                    'Appointment approved',
-                    'Your appointment for ' . $dtLabel . ' has been approved.',
-                    route('appointment.view', $newId) // student-side page
-                ));
-            }
-            });
-        } catch (\RuntimeException $e) {
-            if ($e->getMessage() === 'FULL') {
-                return back()->with(self::FLASH_SWAL, [
-                    'icon'  => 'info',
-                    'title' => 'Time slot unavailable',
-                    'text'  => 'That time has no remaining capacity. Please pick another slot.',
-                ])->withInput();
-            }
-            if ($e->getMessage() === 'COUNSELOR_BUSY') {
-                return back()->with(self::FLASH_SWAL, [
-                    'icon'  => 'warning',
-                    'title' => 'Counselor not available',
-                    'text'  => 'The original counselor is busy at that time. Please pick a different time.',
-                ])->withInput();
-            }
-            throw $e;
+            // expose for post-commit notifications
+            $created->id           = $newId;
+            $created->counselor_id = $counselorId;
+            $created->scheduled_at = $scheduledAt;
+        });
+    } catch (\RuntimeException $e) {
+        if ($e->getMessage() === 'FULL') {
+            return back()->with(self::FLASH_SWAL, [
+                'icon'  => 'info',
+                'title' => 'Time slot unavailable',
+                'text'  => 'That time has no remaining capacity. Please pick another slot.',
+            ])->withInput();
         }
-
-
-        
-        return redirect()
-            ->route('admin.appointments.index')
-            ->with(self::FLASH_SWAL, [
-                'icon'  => 'success',
-                'title' => 'Follow-up confirmed',
-                'text'  => 'The follow-up appointment has been created and confirmed.',
-            ]);
+        if ($e->getMessage() === 'COUNSELOR_BUSY') {
+            return back()->with(self::FLASH_SWAL, [
+                'icon'  => 'warning',
+                'title' => 'Counselor not available',
+                'text'  => 'The original counselor is busy at that time. Please pick a different time.',
+            ])->withInput();
+        }
+        throw $e;
     }
+
+    // 🔔 Post-commit notifications (soft-fail)
+    try {
+        $dtLabel = Carbon::parse($created->scheduled_at)->format('M d, Y g:i A');
+
+        // Student — Follow-up scheduled
+        \App\Support\Notify::student(
+            (int) $appointment->student_id,
+            'Follow-up scheduled',
+            'Your follow-up appointment has been scheduled for '.$dtLabel.'.',
+            route('appointment.view', (int) $created->id)
+        );
+
+        // Counselor — New follow-up assigned (only if counselor kept/assigned)
+        if (!empty($created->counselor_id) && \Illuminate\Support\Facades\Route::has('counselor.appointments.show')) {
+            $studentName = \DB::table('tbl_users')->where('id', $appointment->student_id)->value('name') ?? ('#'.$appointment->student_id);
+
+            \App\Support\Notify::counselor(
+                (int) $created->counselor_id,
+                'New follow-up assigned',
+                'Student: '.$studentName.' · '.$dtLabel.'.',
+                route('counselor.appointments.show', (int) $created->id)
+            );
+        }
+    } catch (\Throwable $e) {
+        \Log::warning('followUpStore notify failed', ['id' => $created->id, 'e' => $e->getMessage()]);
+    }
+
+    return redirect()
+        ->route('admin.appointments.index')
+        ->with(self::FLASH_SWAL, [
+            'icon'  => 'success',
+            'title' => 'Follow-up confirmed',
+            'text'  => 'The follow-up appointment has been created and confirmed.',
+        ]);
+}
+
+
 
     /** JSON: pooled capacity and (optional) specific counselor availability */
     public function capacity(Request $r): JsonResponse
