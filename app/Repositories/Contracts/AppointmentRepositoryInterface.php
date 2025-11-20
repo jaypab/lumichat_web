@@ -38,14 +38,21 @@ interface AppointmentRepositoryInterface
      *  - validation of current status
      *  - insert into tbl_diagnosis_reports
      *  - update finalized_by/at/final_note on tbl_appointments
-     * Returns: ['ok'=>true] or ['ok'=>false,'reason'=>'...']
+     * @return array{ok: bool, reason?: string}
      */
     public function saveFinalReport(int $appointmentId, string $diagnosis, ?string $finalNote, int $finalizedBy): array;
 
     /**
-     * Update status via action ('confirm' → confirmed, 'done' → completed)
-     * Enforces the same business rules you had (must be confirmed before done, not before start time).
-     * Returns: ['ok'=>true] or ['ok'=>false,'reason'=>'...']
+     * Update status using a semantic action (e.g., confirm, cancel, complete, no_show, reopen).
+     *
+     * Returns a rich payload to allow controllers to emit notifications:
+     * @return array{
+     *   ok: bool,
+     *   reason?: string,
+     *   from?: string|null,
+     *   to?: string|null,
+     *   row?: object   // minimally: id, student_id, counselor_id, scheduled_at, status
+     * }
      */
     public function updateStatusByAction(int $appointmentId, string $action): array;
 }

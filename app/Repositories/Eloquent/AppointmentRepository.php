@@ -140,31 +140,45 @@ class AppointmentRepository implements AppointmentRepositoryInterface
         return ['ok' => true];
     }
 
-    public function updateStatusByAction(int $appointmentId, string $action): array
-    {
-        $map = ['confirm' => 'confirmed', 'done' => 'completed'];
-        if (!isset($map[$action])) return ['ok' => false, 'reason' => 'invalid_action'];
+public function updateStatusByAction(int $appointmentId, string $action): array
+{
+    $map = [
+        'confirm'  => 'confirmed',
+        'cancel'   => 'cancelled',
+        'complete' => 'completed',
+        'no_show'  => 'no_show',
+        'reopen'   => 'pending',
+    ];
 
-        $newStatus = $map[$action];
+    if (!isset($map[$action])) {
+        return ['ok' => false, 'reason' => 'invalid_action'];
+    }
 
-        if ($newStatus === 'completed') {
-            $row = DB::table(self::TABLE)
-                ->select('status', 'scheduled_at')
-                ->where('id', $appointmentId)
-                ->first();
+    $to = $map[$action];
 
-            if (!$row) return ['ok' => false, 'reason' => 'not_found'];
-            if ($row->status !== 'confirmed') return ['ok' => false, 'reason' => 'must_be_confirmed'];
-            if (Carbon::parse($row->scheduled_at)->isFuture()) return ['ok' => false, 'reason' => 'too_early'];
+    return \DB::transaction(function () use ($appointmentId, $to) {
+        $row = \DB::table('tbl_appointments')->lockForUpdate()->where('id', $appointmentId)->first();
+        if (!$row) {
+            return ['ok' => false, 'reason' => 'not_found'];
         }
 
-        DB::table(self::TABLE)->where('id', $appointmentId)->update([
-            'status'     => $newStatus,
+        $from = (string) $row->status;
+
+        // (Keep any business rules you already enforce here...)
+        \DB::table('tbl_appointments')->where('id', $appointmentId)->update([
+            'status'     => $to,
             'updated_at' => now(),
         ]);
 
-        return ['ok' => true];
-    }
+        // Refresh minimal fields for notifications
+        $fresh = \DB::table('tbl_appointments')->where('id', $appointmentId)->first([
+            'id','student_id','counselor_id','scheduled_at','status'
+        ]);
+
+        return ['ok' => true, 'from' => $from, 'to' => $to, 'row' => $fresh];
+    });
+}
+
 
     /* ===================== Helpers ===================== */
 

@@ -496,131 +496,150 @@ class ChatbotSessionController extends Controller
     }
 
     /** Admin books appointment for the session’s student with counselor+time */
-    public function book(int $id, Request $request): JsonResponse
-    {
-        $session = $this->sessions->findWithOrderedChats($id);
-        if (!$session || empty($session->user_id)) {
-            return response()->json(['message'=>'Session not found.'], 404);
-        }
-        $studentId = (int) $session->user_id;
+public function book(int $id, Request $request): JsonResponse
+{
+    $session = $this->sessions->findWithOrderedChats($id);
+    if (!$session || empty($session->user_id)) {
+        return response()->json(['message'=>'Session not found.'], 404);
+    }
+    $studentId = (int) $session->user_id;
 
-        // block if the student already has ANY active appointment (pending/confirmed)
-        $hasActiveForStudent = DB::table('tbl_appointments')
-            ->where('student_id', $studentId)
-            ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
-            ->exists();
-        if ($hasActiveForStudent) {
-            return response()->json(['message' => 'Student already has an active appointment.'], 409);
-        }
+    // block if the student already has ANY active appointment (pending/confirmed)
+    $hasActiveForStudent = DB::table('tbl_appointments')
+        ->where('student_id', $studentId)
+        ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
+        ->exists();
+    if ($hasActiveForStudent) {
+        return response()->json(['message' => 'Student already has an active appointment.'], 409);
+    }
 
-        $validated = $request->validate([
-            'date'         => ['required','date_format:Y-m-d'],
-            'time'         => ['required','regex:/^\d{2}:\d{2}$/'],
-            'counselor_id' => ['required','integer','exists:tbl_counselors,id'],
-        ]);
+    $validated = $request->validate([
+        'date'         => ['required','date_format:Y-m-d'],
+        'time'         => ['required','regex:/^\d{2}:\d{2}$/'],
+        'counselor_id' => ['required','integer','exists:tbl_counselors,id'],
+    ]);
 
-        $raw  = Carbon::parse($validated['date'].' '.$validated['time'].':00')->second(0);
-        $slot = (function(Carbon $dt){ $m=(int)floor($dt->minute/30)*30; return $dt->copy()->setTime($dt->hour,$m,0);} )($raw);
-        if ($raw->ne($slot)) {
-            return response()->json(['message'=>'Please choose a 30-minute step time (e.g., 09:00, 09:30).'], 422);
-        }
+    $raw  = Carbon::parse($validated['date'].' '.$validated['time'].':00')->second(0);
+    $slot = (function(Carbon $dt){ $m=(int)floor($dt->minute/30)*30; return $dt->copy()->setTime($dt->hour,$m,0);} )($raw);
+    if ($raw->ne($slot)) {
+        return response()->json(['message'=>'Please choose a 30-minute step time (e.g., 09:00, 09:30).'], 422);
+    }
 
-        $dowIso = $slot->isoWeekday();
-        if ($dowIso < 1 || $dowIso > 5) {
-            return response()->json(['message'=>'Appointments are available Monday to Friday only.'], 422);
-        }
-        if ($slot->lte(now())) {
-            return response()->json(['message'=>'Please choose a future time.'], 422);
-        }
+    $dowIso = $slot->isoWeekday();
+    if ($dowIso < 1 || $dowIso > 5) {
+        return response()->json(['message'=>'Appointments are available Monday to Friday only.'], 422);
+    }
+    if ($slot->lte(now())) {
+        return response()->json(['message'=>'Please choose a future time.'], 422);
+    }
 
-        $counselorId   = (int) $validated['counselor_id'];
-        $counselorName = DB::table('tbl_counselors')->where('id',$counselorId)->value('name') ?? null;
-        $note          = $this->composeBookingNote($session, $slot, $counselorName);
+    $counselorId   = (int) $validated['counselor_id'];
+    $counselorName = DB::table('tbl_counselors')->where('id',$counselorId)->value('name') ?? null;
+    $note          = $this->composeBookingNote($session, $slot, $counselorName);
 
-        $createdId = null;
+    $createdId = null;
 
-        try {
-            DB::transaction(function () use ($studentId, $counselorId, $slot, $session, $note, &$createdId) {
-                // re-check for race
-                $activeNowForStudent = DB::table('tbl_appointments')
-                    ->where('student_id', $studentId)
-                    ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
-                    ->lockForUpdate()
-                    ->exists();
-                if ($activeNowForStudent) throw new \RuntimeException('STUDENT_ACTIVE');
+    try {
+        DB::transaction(function () use ($studentId, $counselorId, $slot, $session, $note, &$createdId) {
+            // re-check for race
+            $activeNowForStudent = DB::table('tbl_appointments')
+                ->where('student_id', $studentId)
+                ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
+                ->lockForUpdate()
+                ->exists();
+            if ($activeNowForStudent) throw new \RuntimeException('STUDENT_ACTIVE');
 
-                $taken = DB::table('tbl_appointments')
-                    ->where('counselor_id', $counselorId)
-                    ->where('scheduled_at', $slot)
-                    ->whereIn('status', self::BLOCKING_STATUSES)
-                    ->lockForUpdate()
-                    ->exists();
-                if ($taken) throw new \RuntimeException('TAKEN');
+            $taken = DB::table('tbl_appointments')
+                ->where('counselor_id', $counselorId)
+                ->where('scheduled_at', $slot)
+                ->whereIn('status', self::BLOCKING_STATUSES)
+                ->lockForUpdate()
+                ->exists();
+            if ($taken) throw new \RuntimeException('TAKEN');
 
-                        $createdId = DB::table('tbl_appointments')->insertGetId([
-                        'student_id'         => $studentId,
-                        'counselor_id'       => $counselorId,
-                        'scheduled_at'       => $slot,
-                        'status'             => 'confirmed',
-                        'note'               => $note,
-                        'chatbot_session_id' => $session->id,
-                        'created_at'         => now(),
-                        'updated_at'         => now(),
-                    ]);
+            $createdId = DB::table('tbl_appointments')->insertGetId([
+                'student_id'         => $studentId,
+                'counselor_id'       => $counselorId,
+                'scheduled_at'       => $slot,
+                'status'             => 'confirmed',
+                'note'               => $note,
+                'chatbot_session_id' => $session->id,
+                'created_at'         => now(),
+                'updated_at'         => now(),
+            ]);
 
-                    // optional notification (unchanged) ...
-                    if (Schema::hasTable('tbl_notifications')) {
-                        DB::table('tbl_notifications')->insert([
-                            'user_id'    => $studentId,
-                            'title'      => 'Appointment Scheduled',
-                            'body'       => $note,
-                            'type'       => 'appointment',
-                            'created_at' => now(),
-                            'updated_at' => now(),
-                        ]);
-                    }
-                });
-            } catch (\RuntimeException $e) {
-                if ($e->getMessage() === 'TAKEN')
-                    return response()->json(['message'=>'That counselor/time just filled. Pick another slot.'], 409);
-                if ($e->getMessage() === 'STUDENT_ACTIVE')
-                    return response()->json(['message'=>'This student already has an active appointment (pending/confirmed).'], 409);
-                throw $e;
+            // optional notification (unchanged) ...
+            if (Schema::hasTable('tbl_notifications')) {
+                DB::table('tbl_notifications')->insert([
+                    'user_id'    => $studentId,
+                    'title'      => 'Appointment Scheduled',
+                    'body'       => $note,
+                    'type'       => 'appointment',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
             }
-        $start = $slot->copy()->second(0);
-        $rel   = $start->isFuture()
-            ? 'in '.$start->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW])
-            : 'Started '.$start->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW]);
+        });
+    } catch (\RuntimeException $e) {
+        if ($e->getMessage() === 'TAKEN')
+            return response()->json(['message'=>'That counselor/time just filled. Pick another slot.'], 409);
+        if ($e->getMessage() === 'STUDENT_ACTIVE')
+            return response()->json(['message'=>'This student already has an active appointment (pending/confirmed).'], 409);
+        throw $e;
+    }
 
-        return response()->json([
-            'ok' => true,
-            'appointment' => [
-                'id'                => $createdId,
-                'scheduled_at_iso'  => $start->toIso8601String(),
-                'date_label'        => $start->format('M d, Y'),
-                'time_label'        => $start->format('g:i A'),
-                'rel_label'         => $rel,                  // e.g., "in 11h 2m"
-                'counselor_name'    => $counselorName,        // may be null
-            ],
-            'html' => sprintf(
-                '
-                <div class="kv-grid">
-                <div class="kv"><span class="label">Student:</span>   <span class="value">%s</span></div>
-                <div class="kv"><span class="label">Counselor:</span> <span class="value">%s</span></div>
-                <div class="kv"><span class="label">Date:</span>      <span class="value">%s</span></div>
-                <div class="kv"><span class="label">Time:</span>      <span class="value">%s</span></div>
-                </div>
-                <div style="margin:6px 0 2px"><b>Note sent to student:</b></div>
-                <div style="white-space:pre-wrap">%s</div>
-                ',
-                e($session->user->name ?? ('#'.$studentId)),
-                e($counselorName ?? '—'),
-                e($start->format('M d, Y')),
-                e($start->format('g:i A')),
-                e($note)
-            ),
+    // 🔔 NEW: broadcast to all admins that an admin booked an appointment
+    try {
+        $studentName   = (string) ($session->user->name ?? ('#'.$studentId));
+        $whenNice      = $slot->format('M d, Y g:i A');
+        $counselorNice = $counselorName ?: '—';
+
+        Notify::admins(
+            'Appointment booked by admin',
+            "Student: {$studentName}\nCounselor: {$counselorNice}\nWhen: {$whenNice}",
+            route('admin.appointments.show', $createdId)
+        );
+    } catch (\Throwable $e) {
+        \Log::warning('Notify::admins (booked by admin) failed', [
+            'appt_id' => $createdId,
+            'e'       => $e->getMessage(),
         ]);
     }
+
+    $start = $slot->copy()->second(0);
+    $rel   = $start->isFuture()
+        ? 'in '.$start->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW])
+        : 'Started '.$start->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW]);
+
+    return response()->json([
+        'ok' => true,
+        'appointment' => [
+            'id'                => $createdId,
+            'scheduled_at_iso'  => $start->toIso8601String(),
+            'date_label'        => $start->format('M d, Y'),
+            'time_label'        => $start->format('g:i A'),
+            'rel_label'         => $rel,                  // e.g., "in 11h 2m"
+            'counselor_name'    => $counselorName,        // may be null
+        ],
+        'html' => sprintf(
+            '
+            <div class="kv-grid">
+            <div class="kv"><span class="label">Student:</span>   <span class="value">%s</span></div>
+            <div class="kv"><span class="label">Counselor:</span> <span class="value">%s</span></div>
+            <div class="kv"><span class="label">Date:</span>      <span class="value">%s</span></div>
+            <div class="kv"><span class="label">Time:</span>      <span class="value">%s</span></div>
+            </div>
+            <div style="margin:6px 0 2px"><b>Note sent to student:</b></div>
+            <div style="white-space:pre-wrap">%s</div>
+            ',
+            e($session->user->name ?? ('#'.$studentId)),
+            e($counselorName ?? '—'),
+            e($start->format('M d, Y')),
+            e($start->format('g:i A')),
+            e($note)
+        ),
+    ]);
+}
 
     private function composeBookingNote(object $session, Carbon $slot, ?string $counselorName = null): string
     {
@@ -1036,58 +1055,90 @@ class ChatbotSessionController extends Controller
         return $out;
     }
 
-    public function setRisk(int $id, Request $request): JsonResponse
-    {
-        // Validate
-        $request->validate([
-            'risk_level' => ['required','in:low,moderate,high'],
-            'risk_score' => ['nullable','integer','between:0,100'],
-            'risk_note'  => ['nullable','string','max:2000'], // provided when downgrading from high
+public function setRisk(int $id, Request $request): JsonResponse
+{
+    // Validate
+    $request->validate([
+        'risk_level' => ['required','in:low,moderate,high'],
+        'risk_score' => ['nullable','integer','between:0,100'],
+        'risk_note'  => ['nullable','string','max:2000'], // required when downgrading from high
+    ]);
+
+    // Find session (via repository, includes user)
+    $session = $this->sessions->findById($id, ['user']);
+    if (!$session) return response()->json(['message' => 'Session not found.'], 404);
+
+    $table = $this->sessionsTable() ?? 'chat_sessions';
+
+    // Read current + requested
+    $currentLevel = strtolower((string)($session->risk_level ?? $session->risk ?? ''));
+    $newLevel     = (string) $request->input('risk_level');
+    $newScore     = (int) ($request->input('risk_score') ?? 0);
+    $note         = trim((string) $request->input('risk_note', ''));
+
+    // If demoting from high -> (low|moderate), require a short note
+    $isDemotion = in_array($currentLevel, ['high','high-risk','high_risk'], true)
+               && in_array($newLevel, ['moderate','low'], true);
+    if ($isDemotion && $note === '') {
+        return response()->json(['message' => 'Please provide a short reason for the downgrade.'], 422);
+    }
+
+    // Persist
+    \DB::transaction(function () use ($table, $id, $newLevel, $newScore, $currentLevel, $note) {
+        $updates = ['updated_at' => now()];
+        if (\Schema::hasColumn($table, 'risk_level')) $updates['risk_level'] = $newLevel;
+        if (\Schema::hasColumn($table, 'risk'))       $updates['risk']       = $newLevel;
+        if (\Schema::hasColumn($table, 'risk_score')) $updates['risk_score'] = $newScore;
+        \DB::table($table)->where('id', $id)->update($updates);
+
+        // Log the change (always)
+        ChatbotSessionRiskLog::create([
+            'chatbot_session_id' => $id,
+            'admin_id'           => \Auth::id(),
+            'from_level'         => $currentLevel ?: null,
+            'to_level'           => $newLevel,
+            'to_score'           => $newScore,
+            'note'               => $note ?: null,
         ]);
+    });
 
-        // Find session (via repository, includes user)
-        $session = $this->sessions->findById($id, ['user']);
-        if (!$session) return response()->json(['message' => 'Session not found.'], 404);
+    // ---------- Admin broadcasts (feature-flagged via NOTIFY_ENABLE_ADMINS_BROADCAST) ----------
+    try {
+        $wasHigh = in_array($currentLevel, ['high','high-risk','high_risk'], true);
+        $toHigh  = $newLevel === 'high';
 
-        // Determine columns + table safely
-        $table = $this->sessionsTable() ?? 'chat_sessions';
-
-        // Read current
-        $currentLevel = strtolower((string)($session->risk_level ?? $session->risk ?? ''));
-        $newLevel     = (string) $request->input('risk_level');
-        $newScore     = (int) ($request->input('risk_score') ?? 0);
-        $note         = trim((string) $request->input('risk_note', ''));
-
-        // If demoting from high -> (low|moderate), require a short note
-        $isDemotion = in_array($currentLevel, ['high','high-risk','high_risk'], true)
-                && in_array($newLevel, ['moderate','low'], true);
-
-        if ($isDemotion && $note === '') {
-            return response()->json(['message' => 'Please provide a short reason for the downgrade.'], 422);
+        // Escalation → HIGH
+        if (!$wasHigh && $toHigh) {
+            $student = $session->user->name ?? ('#'.($session->user_id ?? '—'));
+            \App\Support\Notify::admins(
+                'High-risk flagged',
+                "Session #{$id} was flagged HIGH.\nStudent: {$student}\nScore: {$newScore}",
+                route('admin.chatbot-sessions.show', $id)
+            );
         }
 
-        // Persist
-        \DB::transaction(function () use ($table, $id, $newLevel, $newScore, $currentLevel, $note) {
-            // Update session risk columns if they exist
-            $updates = ['updated_at' => now()];
-            if (\Schema::hasColumn($table, 'risk_level')) $updates['risk_level'] = $newLevel;
-            if (\Schema::hasColumn($table, 'risk'))       $updates['risk']       = $newLevel;
-            if (\Schema::hasColumn($table, 'risk_score')) $updates['risk_score'] = $newScore;
-            \DB::table($table)->where('id', $id)->update($updates);
-
-            // Log the change (always)
-            ChatbotSessionRiskLog::create([
-                'chatbot_session_id' => $id,
-                'admin_id'           => Auth::id(),
-                'from_level'         => $currentLevel ?: null,
-                'to_level'           => $newLevel,
-                'to_score'           => $newScore,
-                'note'               => $note ?: null,
-            ]);
-        });
-
-        return response()->json(['ok' => true]);
+        // Downgrade from HIGH → (moderate|low)
+        if ($wasHigh && !$toHigh) {
+            $student = $session->user->name ?? ('#'.($session->user_id ?? '—'));
+            $extra   = $note ? "\nReason: {$note}" : '';
+            \App\Support\Notify::admins(
+                'Risk level downgraded',
+                "Session #{$id} downgraded from HIGH to {$newLevel}.\nStudent: {$student}\nScore: {$newScore}{$extra}",
+                route('admin.chatbot-sessions.riskHistory', $id)
+            );
+        }
+    } catch (\Throwable $e) {
+        \Log::warning('Notify::admins (risk change) failed', [
+            'session_id' => $id,
+            'e' => $e->getMessage(),
+        ]);
     }
+    // -------------------------------------------------------------------------------------------
+
+    return response()->json(['ok' => true]);
+}
+
+
 
     private function tryDecryptOrPlain(?string $v): ?string
     {
