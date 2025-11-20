@@ -15,6 +15,12 @@ class Kernel extends ConsoleKernel
         $schedule->command('chats:cleanup')->dailyAt('02:10');
         $schedule->command('lumichat:sweep-no-shows --grace=30 --slot=60')->hourly();
         $schedule->command('availability:purge-past')->dailyAt('02:30');
+
+         // every 5 minutes, catch both 24h and 3h windows (+/− 5m)
+        $schedule->command('appointments:remind')->everyFiveMinutes();
+
+        $schedule->command('appointments:remind --lead=24h --window=20')->everyTenMinutes();
+        $schedule->command('appointments:remind --lead=2h --window=20')->everyTenMinutes();
     }
 
     /**

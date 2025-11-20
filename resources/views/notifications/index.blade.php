@@ -60,8 +60,6 @@
 
     foreach ($notifications as $n) {
         $date = $n->created_at;
-        $today = Carbon::today();
-        $yesterday = Carbon::yesterday();
 
         if ($date->isToday()) {
             $groups['Today'][] = $n;
@@ -104,8 +102,8 @@
           @endphp
 
           <div class="nb-item p-4 flex items-start gap-3 rounded-xl cursor-pointer"
-          data-row="{{ $n->id }}"
-          @if($url) data-url="{{ $url }}" @endif>
+               data-row="{{ $n->id }}"
+               @if($url) data-url="{{ $url }}" @endif>
 
             {{-- UNREAD DOT --}}
             <span class="mt-1 inline-block w-2 h-2 rounded-full
@@ -156,7 +154,7 @@
     transition: background-color .15s ease, transform .15s ease, box-shadow .15s ease;
   }
   .nb-item:hover {
-    background-color: rgba(99,102,241,0.06); /* subtle indigo */
+    background-color: rgba(99,102,241,0.06);
     transform: translateY(-1px);
     box-shadow: 0 2px 6px rgba(0,0,0,0.04);
   }
@@ -167,7 +165,7 @@
 </style>
 
 {{-- ============================================================
-   JS: mark-as-read + row click + bell-badge sync
+   JS: mark-as-read + row click + bell-badge sync (safe)
 ============================================================ --}}
 <script>
     const NB_MARK_URL_TEMPLATE = @json(route('notifications.mark', ['id' => '__ID__']));
@@ -192,9 +190,7 @@ echo <<<'SCRIPT'
     return res.json();
   }
 
-  function getBadge(){
-    return document.querySelector('[data-nb-badge]');
-  }
+  function getBadge(){ return document.querySelector('[data-nb-badge]'); }
 
   function parseBadgeCount(el){
     if(!el || el.classList.contains('hidden')) return 0;
@@ -206,50 +202,57 @@ echo <<<'SCRIPT'
   function bumpBadge(delta){
     const badge = getBadge();
     if(!badge) return;
-
     const cur = parseBadgeCount(badge);
     const next = Math.max(0, cur + delta);
-
-    if(next <= 0){
-      badge.classList.add('hidden');
-      badge.textContent = '';
-    }else{
-      badge.textContent = next > 9 ? '9+' : String(next);
-      badge.classList.remove('hidden');
-    }
+    if(next <= 0){ badge.classList.add('hidden'); badge.textContent = ''; }
+    else { badge.textContent = next > 9 ? '9+' : String(next); badge.classList.remove('hidden'); }
   }
 
-  // Clicking a notification row
+  // Treat as navigable only if it starts with http(s):// or /
+  function isNavigableUrl(u){
+    if(!u) return false;
+    return /^https?:\/\//i.test(u) || u.startsWith('/');
+  }
+
+  // Row click → navigate only for valid URLs; ignore clicks from [data-mark]
   document.addEventListener('click', (e) => {
     const row = e.target.closest('[data-row]');
-    if(!row) return;
+    if (!row) return;
+
+    // If click originated from mark button, do nothing here
+    if (e.target.closest('[data-mark]')) return;
 
     const url = row.getAttribute('data-url');
-    if(!url) return;
+    if (!isNavigableUrl(url)){
+      e.preventDefault();
+      return; // no navigation when URL missing/invalid (prevents /1 404s)
+    }
 
     const markBtn = row.querySelector('[data-mark]');
-    if(markBtn){
-      markBtn.click();
-      setTimeout(() => location.href = url, 80);
+    if (markBtn){
+      markBtn.click(); // mark first
+      setTimeout(() => { window.location.href = url; }, 80);
     } else {
-      location.href = url;
+      window.location.href = url;
     }
   });
 
-  // Mark as read
+  // Mark as read (never navigate)
   document.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-mark]');
-    if(!btn) return;
+    if (!btn) return;
 
     e.preventDefault();
+    e.stopPropagation(); // avoid row navigation
+
     const id = btn.getAttribute('data-id');
 
     try{
       await post(NB_MARK_URL_TEMPLATE.replace('__ID__', id));
 
       const row = document.querySelector(`[data-row="${id}"]`);
-      row?.querySelector('[data-dot]')?.classList.remove('bg-indigo-600');
-      row?.querySelector('[data-dot]')?.classList.add('bg-gray-300');
+      const dot = row?.querySelector('[data-dot]');
+      if (dot){ dot.classList.remove('bg-indigo-600'); dot.classList.add('bg-gray-300'); }
 
       const readTag = document.createElement('span');
       readTag.className = 'text-xs text-gray-400';
@@ -259,6 +262,17 @@ echo <<<'SCRIPT'
       bumpBadge(-1);
     }catch(err){
       console.error(err);
+    }
+  });
+
+  // Block accidental <a href="1"> type links inside the list
+  document.getElementById('nb-list')?.addEventListener('click', (e) => {
+    const a = e.target.closest('a');
+    if (!a) return;
+    const href = (a.getAttribute('href') || '').trim();
+    if (/^\d+$/.test(href)){
+      e.preventDefault();
+      e.stopPropagation();
     }
   });
 

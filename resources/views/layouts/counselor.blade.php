@@ -261,12 +261,12 @@
         {{-- 🔔 Notification bell (wrapped with high z-index root) --}}
         @auth
           <div data-nb-root class="relative z-[2147483641]">
-            <x-notification-bell
-              :indexRoute="route('counselor.notifications.index')"
-              :feedRoute="route('counselor.notifications.feed')"
-              :markRoute="route('counselor.notifications.mark', ['id' => ':id'])"
-              :markAllRoute="route('counselor.notifications.mark_all')"
-            />
+          <x-notification-bell
+            :indexRoute="route('counselor.notifications.index')"
+            :feedRoute="route('counselor.notifications.feed')"
+            :markRoute="route('counselor.notifications.mark', ['id' => ':id'])"
+            :markAllRoute="route('counselor.notifications.mark_all')"
+          />
           </div>
         @endauth
 

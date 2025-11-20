@@ -60,6 +60,7 @@
     const FEED_URL    = root.getAttribute('data-nb-feed')    || '';
     const MARK_URL_T  = root.getAttribute('data-nb-mark')    || '';
     const MARKALL_URL = root.getAttribute('data-nb-markall') || '';
+    const INDEX_URL   = root.getAttribute('data-nb-index')   || '#';
     const CSRF        = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
     // Helper to validate a route string
@@ -165,7 +166,7 @@
               <div class="nb-title text-sm font-medium"></div>
               <div class="nb-body text-sm text-gray-600 dark:text-gray-300 truncate"></div>
               <div class="text-xs text-gray-400 mt-0.5" title="${n.created_at_human_full ?? ''}">${n.created_at_human ?? ''}</div>
-              ${n.url ? `<a href="${n.url}" class="text-xs underline mt-1 inline-block">Open</a>` : ''}
+              <a href="${INDEX_URL}" class="text-xs underline mt-1 inline-block">Open</a>
             </div>
             ${n.read_at ? '' : '<button class="text-xs underline shrink-0" data-mark>Mark read</button>'}
           </div>`;
@@ -175,12 +176,12 @@
 
         const markBtn = row.querySelector('[data-mark]');
         if (markBtn && isValidUrl(MARK_URL_T)){
-          markBtn.addEventListener('click', async (e)=>{
-            e.preventDefault();
-            const markUrl = MARK_URL_T.replace(':id', String(n.id));
-            await fetchJSON(markUrl, { method:'POST' }, {silent:true});
-            refresh({silent:false});
-          });
+            markBtn.addEventListener('click', async (e)=>{
+              e.preventDefault();
+              const markUrl = MARK_URL_T.replace(':id', String(n.id));
+              await fetchJSON(markUrl, { method:'POST' }, {silent:true});
+              refresh({silent:false});
+            });
         }
         listEl.appendChild(row);
       }

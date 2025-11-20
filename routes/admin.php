@@ -15,7 +15,7 @@ use App\Http\Controllers\Admin\SelfAssessmentController;
 use App\Http\Controllers\Admin\CounselorLogController;
 use App\Http\Controllers\Admin\CourseAnalyticsController;
 use App\Http\Controllers\Admin\CaseNoteController;
-use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\Admin\AdminNotificationController;
 
 // ---------------------- Public (guest) admin auth routes ----------------------
 Route::prefix('admin')->name('admin.')->middleware('guest')->group(function () {
@@ -88,7 +88,7 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
     Route::match(['GET', 'POST'], '/appointments/{id}/change-request/{action}',
         [AdminAppointmentController::class, 'handleChangeRequest']
     )->whereNumber('id')->whereIn('action', ['approve','decline'])
-    ->name('appointments.change_request.handle');
+     ->name('appointments.change_request.handle');
 
     // COUNSELOR LOGS
     Route::get('/counselor-logs', [CounselorLogController::class, 'index'])->name('counselor-logs.index');
@@ -109,11 +109,9 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
     Route::get('course-analytics/export/pdf', [CourseAnalyticsController::class, 'exportPdf'])->name('course-analytics.export.pdf');
     Route::get('course-analytics/{course}/export/pdf', [CourseAnalyticsController::class, 'exportShowPdf'])->whereNumber('course')->name('course-analytics.show.export.pdf');
 
-    // ===================== ADMIN NOTIFICATIONS =====================
-    Route::prefix('notifications')->as('notifications.')->group(function () {
-        Route::get('/', [NotificationController::class, 'index'])->name('index');
-        Route::get('/feed', [NotificationController::class, 'feed'])->name('feed');
-        Route::post('/mark/{id}', [NotificationController::class, 'mark'])->whereUuid('id')->name('mark');   // UUID, not numeric
-        Route::post('/mark-all', [NotificationController::class, 'markAll'])->name('mark_all');
-    });
+    // ===================== ADMIN NOTIFICATIONS (no nested admin prefix!) =====================
+    Route::get('/notifications',            [AdminNotificationController::class, 'index'])->name('notifications.index');
+    Route::get('/notifications/feed',       [AdminNotificationController::class, 'feed'])->name('notifications.feed');
+    Route::post('/notifications/{id}/mark', [AdminNotificationController::class, 'mark'])->name('notifications.mark');
+    Route::post('/notifications/mark-all',  [AdminNotificationController::class, 'markAll'])->name('notifications.mark_all');
 });

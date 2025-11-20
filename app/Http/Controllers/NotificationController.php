@@ -114,6 +114,7 @@ class NotificationController extends Controller
             'notifications' => $notifications,
             'layout'        => $layout,
         ]);
+        
     }
 
     // Mark all as read (AJAX-safe, keeps your flash for non-AJAX)
