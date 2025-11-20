@@ -309,19 +309,23 @@
         <select id="crReason" name="reason_code" required
                 class="w-full h-11 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-violet-500 mb-3">
           <option value="" hidden>Choose a reason</option>
-          <option value="uncomfortable">I feel uncomfortable</option>
+          <option value="comfort_mismatch">Comfort or rapport mismatch</option>
+          <option value="communication_style">Communication style mismatch</option>
           <option value="language">Language preference</option>
-          <option value="schedule">Schedule mismatch</option>
           <option value="conflict">Conflict of interest</option>
+          <option value="gender_preference">Gender preference</option>
+          <option value="cultural_preference">Cultural or personal preference</option>
           <option value="other">Other</option>
         </select>
 
-        {{-- Additional explanation (required) --}}
+        {{-- Additional explanation (optional, required only for "Other") --}}
         <div class="flex items-center justify-between">
-          <label class="block text-xs font-medium text-slate-600">Additional explanation <span class="text-rose-600">*</span></label>
-          <span id="crCount" class="text-[11px] text-slate-500">0/300</span>
+              <label data-cr-extra-label class="block text-xs font-medium text-slate-600">
+                Additional explanation (optional)
+              </label>
+              <span id="crCount" class="text-[11px] text-slate-500">0/300</span>
         </div>
-        <textarea id="crText" name="reason_text" rows="4" maxlength="300" required
+        <textarea id="crText" name="reason_text" rows="4" maxlength="300"
                   class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-violet-500 mb-2"
                   placeholder="Be specific (e.g., comfort level, language, scheduling, conflict)."></textarea>
 
@@ -336,17 +340,17 @@
         @endphp
 
         <label class="block text-xs font-medium text-slate-600 mb-1">
-          Preferred counselor (optional)
+          Preferred counselor <span class="text-rose-600">*</span>
         </label>
-        <select name="preference_counselor_id"
+        <select id="crCounselor" name="preference_counselor_id" required
                 class="w-full h-11 bg-white border border-slate-200 rounded-xl px-3 text-sm mb-1">
-          <option value="">No preference</option>
+          <option value="" hidden>Select a counselor</option>
 
           @if($availablePref->isNotEmpty())
             <optgroup label="Available ({{ $availablePref->count() }})">
               @foreach($availablePref as $c)
                 <option value="{{ $c->id }}" @selected($preferredId == $c->id)>
-                  {{ $c->name }}@if($c->email) — {{ $c->email }} @endif
+                  {{ $c->name }}
                 </option>
               @endforeach
             </optgroup>
@@ -356,8 +360,7 @@
             <optgroup label="Busy / Not selectable ({{ $busyPref->count() }})" disabled>
               @foreach($busyPref as $c)
                 <option value="{{ $c->id }}" disabled>
-                  {{ $c->name }}@if($c->email) — {{ $c->email }} @endif
-                  (Currently booked for this time)
+                  {{ $c->name }} (Currently booked for this time)
                 </option>
               @endforeach
             </optgroup>
@@ -480,16 +483,19 @@ function printAppointmentCard() {
 </script>
 
 {{-- Change-request form validation + SweetAlert confirm --}}
+{{-- Change-request form validation + SweetAlert confirm --}}
 <script>
 (function () {
-  const reason   = document.getElementById('crReason');
-  const text     = document.getElementById('crText');
-  const count    = document.getElementById('crCount');
-  const submit   = document.getElementById('crSubmit');
-  const dialogEl = document.getElementById('crModal');
-  const form     = dialogEl?.querySelector('form');
+  const reason    = document.getElementById('crReason');
+  const text      = document.getElementById('crText');
+  const count     = document.getElementById('crCount');
+  const submit    = document.getElementById('crSubmit');
+  const counselor = document.getElementById('crCounselor');
+  const dialogEl  = document.getElementById('crModal');
+  const form      = dialogEl?.querySelector('form');
+  const labelEl   = document.querySelector('[data-cr-extra-label]');
 
-  if (!reason || !text || !submit || !form) return;
+  if (!reason || !text || !submit || !form || !count || !counselor) return;
 
   const sanitizeWhileTyping = (s) => {
     s = s.replace(/<[^>]*>/g, '');
@@ -500,9 +506,34 @@ function printAppointmentCard() {
   };
 
   const validate = () => {
-    const ok = reason.value && text.value.trim().length >= 10;
-    submit.disabled = !ok;
+    const reasonVal    = reason.value.trim();
+    const counselorVal = counselor.value.trim();
+    const trimmed      = text.value.trim();
+
+    let ok = false;
+
+    // must have reason + counselor
+    if (!reasonVal || !counselorVal) {
+      ok = false;
+    } else if (reasonVal === 'other') {
+      // "Other" => explanation required (min 10 chars)
+      ok = trimmed.length >= 10;
+    } else {
+      // All other reasons => explanation optional
+      ok = true;
+    }
+
+    submit.disabled   = !ok;
     count.textContent = text.value.length + '/300';
+
+    // update label dynamically
+    if (labelEl) {
+      if (reasonVal === 'other') {
+        labelEl.innerHTML = 'Additional explanation <span class="text-rose-600">*</span>';
+      } else {
+        labelEl.textContent = 'Additional explanation (optional)';
+      }
+    }
   };
 
   text.addEventListener('input', () => {
@@ -517,17 +548,57 @@ function printAppointmentCard() {
   });
 
   reason.addEventListener('change', validate);
+  counselor.addEventListener('change', validate);
 
-  form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', (e) => {
     e.preventDefault();
+
+    const reasonVal    = reason.value.trim();
+    const counselorVal = counselor.value.trim();
+
+    // Guard: reason required
+    if (!reasonVal) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Select a reason',
+        text: 'Please choose why you want to change counselor.',
+      });
+      return;
+    }
+
+    // Guard: counselor required
+    if (!counselorVal) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Select a counselor',
+        text: 'Please choose your preferred counselor for this request.',
+      });
+      return;
+    }
 
     let v = text.value.replace(/\s{2,}/g, ' ').trim();
     text.value = v.slice(0, 300);
 
+    // Extra guard for "Other"
+    if (reasonVal === 'other' && text.value.length < 10) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Add a short explanation',
+        text: 'Please describe your reason in a bit more detail (at least 10 characters).',
+      });
+      return;
+    }
+
     Swal.fire({
       icon: 'question',
-      title: 'Send this request?',
-      text: 'Are you sure you want to submit this counselor change request?',
+      title: 'Confirm Your Request',
+      html: `
+        <p class="text-slate-600 text-sm">
+          You are allowed <strong>only one counselor-change request</strong> for this appointment.<br><br>
+          After submitting, you <strong>cannot undo or submit another request</strong> for this session.<br><br>
+          Are you sure you want to continue?
+        </p>
+      `,
       showCancelButton: true,
       confirmButtonText: 'Yes, submit',
       cancelButtonText: 'No, review first',
@@ -540,12 +611,13 @@ function printAppointmentCard() {
     }).then((result) => {
       if (!result.isConfirmed) return;
 
-      submit.disabled = true;
+      submit.disabled    = true;
       submit.textContent = 'Submitting…';
       form.submit();
     });
   });
 
+  // Initial state
   validate();
 })();
 </script>

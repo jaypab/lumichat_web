@@ -871,45 +871,63 @@ class AppointmentController extends Controller
             ]);
         }
 
-        // Allowed reason codes
-        $allowedReasons = ['uncomfortable', 'language', 'schedule', 'conflict', 'other'];
+        // Reason codes aligned with the Blade <select>
+        $allowedReasons = [
+            'comfort_mismatch',
+            'communication_style',
+            'language',
+            'conflict',
+            'gender_preference',
+            'cultural_preference',
+            'other',
+        ];
 
-        // Validate base fields
+        // Base validation
         $data = $request->validate([
             'reason_code'             => ['required', 'in:' . implode(',', $allowedReasons)],
-            'reason_text'             => ['required', 'string', 'min:10', 'max:300'],
-            'preference_counselor_id' => ['nullable', 'integer', 'exists:tbl_counselors,id'],
+            // optional by default – only required when "other"
+            'reason_text'             => ['nullable', 'string', 'max:300'],
+            // preferred counselor is required in the UI
+            'preference_counselor_id' => ['required', 'integer', 'exists:tbl_counselors,id'],
         ], [], [
-            'reason_code' => 'reason',
-            'reason_text' => 'additional explanation',
+            'reason_code'             => 'reason',
+            'reason_text'             => 'additional explanation',
+            'preference_counselor_id' => 'preferred counselor',
         ]);
 
-        // --- STRICT SANITIZATION (reason text only) ---
-        $clean = function (string $s): string {
-            $s = strip_tags($s);                                        // remove HTML
-            $s = preg_replace('/https?:\/\/\S+/i', '[link removed]', $s); // strip URLs
-            $s = preg_replace('/[\x00-\x1F\x7F]/u', ' ', $s);           // control chars
-            $s = preg_replace('/\s{2,}/', ' ', $s);                     // collapse spaces
-            return trim($s);
-        };
-        $data['reason_text'] = $clean($data['reason_text']);
-
-        // --- HANDLE PREFERRED COUNSELOR EXPLICITLY ---
-        $prefId = $request->input('preference_counselor_id');
-
-        if ($prefId === null || $prefId === '') {
-            $prefId = null; // No preference
-        } else {
-            $prefId = (int) $prefId;
-
-            // Double-check it really exists; if not, drop to null
-            $exists = DB::table('tbl_counselors')->where('id', $prefId)->exists();
-            if (!$exists) {
-                $prefId = null;
+        // Conditional requirement for "other"
+        $reasonText = (string)($data['reason_text'] ?? '');
+        if ($data['reason_code'] === 'other') {
+            if (mb_strlen(trim($reasonText)) < 10) {
+                return back()
+                    ->withErrors([
+                        'reason_text' => 'Please describe your reason in at least 10 characters.',
+                    ])
+                    ->withInput();
             }
         }
 
-        // Check if there is already a "requested" change for this appointment
+        // Sanitize text
+        $clean = function (?string $s): string {
+            $s = (string) $s;
+            $s = strip_tags($s);
+            $s = preg_replace('/https?:\/\/\S+/i', '[link removed]', $s);
+            $s = preg_replace('/[\x00-\x1F\x7F]/u', ' ', $s);
+            $s = preg_replace('/\s{2,}/', ' ', $s);
+            return trim($s);
+        };
+        $data['reason_text'] = $clean($reasonText);
+
+        // Preferred counselor (double-check)
+        $prefId = (int) $data['preference_counselor_id'];
+        $exists = DB::table('tbl_counselors')->where('id', $prefId)->exists();
+        if (!$exists) {
+            return back()
+                ->withErrors(['preference_counselor_id' => 'Selected counselor is not valid.'])
+                ->withInput();
+        }
+
+        // Existing open request?
         $existing = DB::table('counselor_change_requests')
             ->where('appointment_id', $ap->id)
             ->where('status', 'requested')
@@ -917,11 +935,11 @@ class AppointmentController extends Controller
 
         $payload = [
             'appointment_id'          => $ap->id,
-            'requested_by_student_id' => $userId,              // actual column
+            'requested_by_student_id' => $userId,
             'current_counselor_id'    => $ap->counselor_id,
             'reason_code'             => $data['reason_code'],
             'reason_text'             => $data['reason_text'],
-            'preference_counselor_id' => $prefId,              // <<– DITO NAPUPUNTA
+            'preference_counselor_id' => $prefId,
             'status'                  => 'requested',
             'updated_at'              => now(),
         ];
@@ -935,7 +953,7 @@ class AppointmentController extends Controller
             DB::table('counselor_change_requests')->insert($payload);
         }
 
-        // Optional: notify admins
+        // Notify admins (optional)
         try {
             Notify::admins(
                 'Counselor change request',
@@ -949,4 +967,5 @@ class AppointmentController extends Controller
             ->route('appointment.view', $ap->id)
             ->with('success', 'Your request was submitted and is now under review. We’ll notify you once the admin decides.');
     }
+
 }
