@@ -1091,7 +1091,7 @@ public function followUpStore(Request $request, int $id)
 
             $newStatus = $action === 'approve' ? 'approved' : 'declined';
 
-            // 4) Atomic update
+            // 4) Atomic update + history log
             \DB::transaction(function () use ($id, $cr, $newStatus, $declineNote) {
                 // lock appointment row so we see the current counselor before we clear it
                 $apLocked = \DB::table('tbl_appointments')
@@ -1104,10 +1104,10 @@ public function followUpStore(Request $request, int $id)
 
                 // base update payload
                 $updateData = [
-                    'status'            => $newStatus,
-                    'updated_at'        => now(),
+                    'status'              => $newStatus,
+                    'updated_at'          => now(),
                     'handled_by_admin_id' => auth()->id(),
-                    'handled_at'        => now(),
+                    'handled_at'          => now(),
                 ];
 
                 // only touch previous_counselor_id if it exists in the table
@@ -1115,13 +1115,11 @@ public function followUpStore(Request $request, int $id)
                     $updateData['previous_counselor_id'] = $prevId;
                 }
 
-                // 🔴 IMPORTANT: save the decline note into the actual column name
+                // save decline note into proper column
                 if ($newStatus === 'declined' && $declineNote !== null) {
                     if (\Schema::hasColumn('counselor_change_requests', 'decision_notes')) {
-                        // this matches your DB screenshot
                         $updateData['decision_notes'] = $declineNote;
                     } elseif (\Schema::hasColumn('counselor_change_requests', 'decline_note')) {
-                        // fallback if later mag-rename ka ng column
                         $updateData['decline_note'] = $declineNote;
                     }
                 }
@@ -1131,8 +1129,21 @@ public function followUpStore(Request $request, int $id)
                     ->where('id', $cr->id)
                     ->update($updateData);
 
-                // if approved → clear counselor + bump back to pending so Assign Counselor is allowed
+                // If APPROVED: log history for the previous counselor, then clear counselor_id
                 if ($newStatus === 'approved') {
+                    if ($prevId && \Schema::hasTable('tbl_appointment_counselor_history')) {
+                        \DB::table('tbl_appointment_counselor_history')->insert([
+                            'appointment_id'       => $apLocked->id,
+                            'counselor_id'         => (int) $prevId,
+                            'status'               => 'reassigned',
+                            'changed_at'           => now(),
+                            'changed_by_admin_id'  => auth()->id(),
+                            'created_at'           => now(),
+                            'updated_at'           => now(),
+                        ]);
+                    }
+
+                    // clear counselor + bump back to pending so Assign Counselor is allowed
                     \DB::table('tbl_appointments')
                         ->where('id', $id)
                         ->update([

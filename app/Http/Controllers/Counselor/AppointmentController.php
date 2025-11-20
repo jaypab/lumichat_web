@@ -54,10 +54,11 @@ class AppointmentController extends Controller
         if (!$cid) {
             $empty = new \Illuminate\Pagination\LengthAwarePaginator([], 0, 10, 1, ['path' => url()->current()]);
             return view('Counselor_Interface.appointments.index', [
-                'appointments' => $empty,
-                'status'       => $r->query('status', 'all'),
-                'period'       => $r->query('period', 'all'),
-                'q'            => $r->query('q', ''),
+                'appointments'          => $empty,
+                'reassignedAppointments'=> collect(),
+                'status'                => $r->query('status', 'all'),
+                'period'                => $r->query('period', 'all'),
+                'q'                     => $r->query('q', ''),
             ])->with('swal', [
                 'icon'  => 'warning',
                 'title' => 'Counselor account not linked',
@@ -75,6 +76,7 @@ class AppointmentController extends Controller
         $hasCrStatus  = \Illuminate\Support\Facades\Schema::hasColumn('tbl_appointments', 'cr_status');
         $hasCrCreated = \Illuminate\Support\Facades\Schema::hasColumn('tbl_appointments', 'cr_created_at');
 
+        // ===== ACTIVE APPOINTMENTS (current counselor_id = $cid) =====
         $select = [
             'a.id',
             'a.scheduled_at',
@@ -83,10 +85,13 @@ class AppointmentController extends Controller
             \Illuminate\Support\Facades\DB::raw("COALESCE(s.name,'—')  as student_name"),
             \Illuminate\Support\Facades\DB::raw("COALESCE(s.email,'') as student_email"),
         ];
-        $select[] = $hasCrStatus  ? 'a.cr_status'     : \Illuminate\Support\Facades\DB::raw('NULL as cr_status');
-        $select[] = $hasCrCreated ? 'a.cr_created_at' : \Illuminate\Support\Facades\DB::raw('NULL as cr_created_at');
+        $select[] = $hasCrStatus
+            ? 'a.cr_status'
+            : \Illuminate\Support\Facades\DB::raw('NULL as cr_status');
+        $select[] = $hasCrCreated
+            ? 'a.cr_created_at'
+            : \Illuminate\Support\Facades\DB::raw('NULL as cr_created_at');
 
-        // Base query
         $qrb = \Illuminate\Support\Facades\DB::table('tbl_appointments as a')
             ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
             ->select($select)
@@ -135,7 +140,68 @@ class AppointmentController extends Controller
 
         $appointments = $qrb->paginate(10)->withQueryString();
 
-        return view('Counselor_Interface.appointments.index', compact('appointments', 'status', 'period', 'q'));
+        // ===== REASSIGNED HISTORY (read-only; still visible to past counselor) =====
+        $reassignedAppointments = collect();
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('tbl_appointment_counselor_history')) {
+            $hr = \Illuminate\Support\Facades\DB::table('tbl_appointment_counselor_history as h')
+                ->join('tbl_appointments as a', 'a.id', '=', 'h.appointment_id')
+                ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
+                ->select([
+                    'a.id',
+                    'a.scheduled_at',
+                    'a.created_at as booked_at',
+                    \Illuminate\Support\Facades\DB::raw("COALESCE(s.name,'—')  as student_name"),
+                    \Illuminate\Support\Facades\DB::raw("COALESCE(s.email,'') as student_email"),
+                    'h.status as history_status',
+                    'h.changed_at',
+                ])
+                ->where('h.counselor_id', $cid)
+                ->where('h.status', 'reassigned');
+
+            // optional: reuse period filter for these as well (based on scheduled_at)
+            switch ($period) {
+                case 'today':
+                    $hr->whereDate('a.scheduled_at', $now->toDateString());
+                    break;
+                case 'upcoming':
+                    $hr->where('a.scheduled_at', '>=', $now);
+                    break;
+                case 'this_week':
+                    $hr->whereBetween('a.scheduled_at', [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()]);
+                    break;
+                case 'this_month':
+                    $hr->whereBetween('a.scheduled_at', [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()]);
+                    break;
+                case 'past':
+                    $hr->where('a.scheduled_at', '<', $now);
+                    break;
+                default:
+                    // all
+                    break;
+            }
+
+            // optional: reuse search filter
+            if ($q !== '') {
+                $hr->where(function ($w) use ($q) {
+                    $w->where('s.name', 'like', "%{$q}%")
+                    ->orWhere('s.email', 'like', "%{$q}%");
+                });
+            }
+
+            $reassignedAppointments = $hr
+                ->orderByDesc('h.changed_at')
+                ->orderByDesc('a.scheduled_at')
+                ->get();
+        }
+
+        return view('Counselor_Interface.appointments.index', [
+            'appointments'           => $appointments,
+            'reassignedAppointments' => $reassignedAppointments,
+            'status'                 => $status,
+            'period'                 => $period,
+            'q'                      => $q,
+        ]);
     }
 
     /** Show a single appointment (must belong to this counselor) */

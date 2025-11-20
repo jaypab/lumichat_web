@@ -215,6 +215,8 @@
         <span class="rail-tip">Chatbot Sessions</span>
       </a>
 
+      <p class="mt-4 px-3 text-[11px] uppercase tracking-wider/relaxed opacity-90 nav-label">Analytics</p>
+
       {{-- Case Form Summary --}}
       <a href="{{ route('admin.case-notes.index') }}"
         aria-current="{{ request()->routeIs('admin.case-notes.*') ? 'page' : 'false' }}"
@@ -227,8 +229,6 @@
         <span class="nav-label font-medium">Case Form Summary</span>
         <span class="rail-tip">Case Form Summary</span>
       </a>
-
-      <p class="mt-4 px-3 text-[11px] uppercase tracking-wider/relaxed opacity-90 nav-label">Analytics</p>
 
       {{-- Course Analytics --}}
       <a href="{{ route('admin.course-analytics.index') }}"
@@ -319,21 +319,30 @@
 
 <script>
   (function () {
-    const body      = document.body;
-    const sidebar   = document.getElementById('adminSidebar');
-    const scrim     = document.getElementById('sidebarScrim');
-    const openBtn   = document.getElementById('railOpen');
-    const closeBtn  = document.getElementById('railClose');
-    const mqDesktop = window.matchMedia('(min-width: 1024px)');
-    const LS_KEY    = 'adminSidebarCollapsed';
+    const body       = document.body;
+    const sidebar    = document.getElementById('adminSidebar');
+    const scrim      = document.getElementById('sidebarScrim');
+    const openBtn    = document.getElementById('railOpen');
+    const closeBtn   = document.getElementById('railClose');
+    const mqDesktop  = window.matchMedia('(min-width: 1024px)');
+    const LS_KEY     = 'adminSidebarCollapsed';
+    const SCROLL_KEY = 'adminSidebarScroll';
+    const railScroll = document.getElementById('railScroll');
+
     const isDesktop = () => mqDesktop.matches;
 
     function setCollapsed(on) {
-      if (on) { body.classList.add('admin-collapsed'); localStorage.setItem(LS_KEY, '1'); }
-      else    { body.classList.remove('admin-collapsed'); localStorage.setItem(LS_KEY, '0'); }
+      if (on) {
+        body.classList.add('admin-collapsed');
+        localStorage.setItem(LS_KEY, '1');
+      } else {
+        body.classList.remove('admin-collapsed');
+        localStorage.setItem(LS_KEY, '0');
+      }
     }
     const getCollapsed = () => localStorage.getItem(LS_KEY) === '1';
 
+    /* ========== Mobile open / close ========== */
     function openMobile(){
       sidebar.classList.remove('-translate-x-full');
       scrim.classList.remove('hidden');
@@ -347,9 +356,10 @@
       body.classList.remove('mobile-rail-open');
     }
 
+    /* Buttons */
     openBtn?.addEventListener('click', () => {
       if (isDesktop()) {
-        if (getCollapsed()) setCollapsed(false);
+        if (getCollapsed()) setCollapsed(false);   // expand on desktop
       } else {
         openMobile();
       }
@@ -357,9 +367,9 @@
 
     closeBtn?.addEventListener('click', () => {
       if (isDesktop()) {
-        setCollapsed(true);
+        setCollapsed(true);                        // collapse on desktop
       } else {
-        closeMobile();
+        closeMobile();                             // close overlay on mobile
       }
     });
 
@@ -368,24 +378,67 @@
       if (e.key === 'Escape' && !isDesktop()) closeMobile();
     });
 
+    /* ========== Init per viewport ========== */
     function applyMode(){
       if (isDesktop()){
         body.classList.remove('mobile-rail-open');
         sidebar.classList.remove('-translate-x-full');
         scrim.classList.add('hidden');
         body.classList.remove('no-scroll');
-        setCollapsed(getCollapsed());
+        setCollapsed(getCollapsed());              // restore saved state
       } else {
-        sidebar.classList.add('-translate-x-full');
-        body.classList.remove('admin-collapsed');
+        sidebar.classList.add('-translate-x-full'); // hidden by default on mobile
+        body.classList.remove('admin-collapsed');   // mobile uses full rail
         body.classList.remove('mobile-rail-open');
       }
     }
     mqDesktop.addEventListener('change', applyMode);
     applyMode();
+
+    /* ========== Sidebar scroll behavior ========== */
+    function setupSidebarScroll(){
+      if (!railScroll) return;
+
+      // 1) Restore last saved scroll position
+      const saved = localStorage.getItem(SCROLL_KEY);
+      if (saved !== null) {
+        const y = parseInt(saved, 10);
+        if (!isNaN(y)) {
+          railScroll.scrollTop = y;
+        }
+      }
+
+      // 2) Make sure active nav item is visible
+      const active = railScroll.querySelector('a.nav-item.is-active');
+      if (active) {
+        const cRect = railScroll.getBoundingClientRect();
+        const aRect = active.getBoundingClientRect();
+
+        // only scroll if wala siya sa view
+        if (aRect.top < cRect.top || aRect.bottom > cRect.bottom) {
+          active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+      }
+
+      // 3) Save scroll before leaving page
+      window.addEventListener('beforeunload', () => {
+        localStorage.setItem(SCROLL_KEY, String(railScroll.scrollTop));
+      });
+
+      // 4) Also save when clicking any nav item
+      const navLinks = railScroll.querySelectorAll('a.nav-item');
+      navLinks.forEach(link => {
+        link.addEventListener('click', () => {
+          localStorage.setItem(SCROLL_KEY, String(railScroll.scrollTop));
+        });
+      });
+    }
+
+    setupSidebarScroll();
   })();
 </script>
 
+{{-- ==== Wide SweetAlert “Appointment booked!” (global) ==== --}}
 <style>
   /* compact success modal */
   .swal-compact .swal2-html-container{ text-align: left !important; padding: 18px 24px !important; }
