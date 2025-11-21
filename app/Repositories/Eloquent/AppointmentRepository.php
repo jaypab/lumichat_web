@@ -201,8 +201,17 @@ public function updateStatusByAction(int $appointmentId, string $action): array
             ->join(self::STUDENTS_TABLE.' as u', 'u.id', '=', 'a.student_id')
             ->select([
                 'a.*',
-                'c.name  as counselor_name','c.email as counselor_email','c.phone as counselor_phone',
-                'u.name  as student_name','u.email as student_email',
+
+                // counselor fields
+                'c.name  as counselor_name',
+                'c.email as counselor_email',
+                'c.phone as counselor_phone',
+
+                // student fields (✨ dagdag dito)
+                'u.name       as student_name',
+                'u.email      as student_email',
+                'u.course     as student_course',
+                'u.year_level as student_year_level',
             ]);
     }
 

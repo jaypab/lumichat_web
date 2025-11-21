@@ -178,8 +178,9 @@
               </td>
 
               <td class="px-6 py-4 text-right">
+              {{-- View in read-only mode via show() (isHistory=true) --}}
                 <a href="{{ route('counselor.appointments.show', $row->id) }}"
-                   class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-1.5 text-white hover:bg-indigo-700">
+                  class="inline-flex items-center justify-center h-10 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700">
                   View
                 </a>
               </td>
@@ -209,10 +210,15 @@
   <div class="max-w-7xl mx-auto space-y-4 mt-6">
     <div class="flex items-center justify-between">
       <div>
-        <h3 class="text-sm font-semibold text-slate-800">Re-Assigned Appointments</h3>
+        <h3 class="text-sm font-semibold text-slate-800">
+          Re-Assigned Appointments
+        </h3>
         <p class="text-xs text-slate-500">
           Appointments that were previously assigned to you and later reassigned to another counselor.
         </p>
+      </div>
+      <div class="text-xs text-slate-500">
+        Total: <span class="font-semibold">{{ $reassignedAppointments->count() }}</span>
       </div>
     </div>
 
@@ -226,6 +232,7 @@
               <th class="px-6 py-3 text-left uppercase tracking-wide text-[11px]">Date &amp; Time</th>
               <th class="px-6 py-3 text-left uppercase tracking-wide text-[11px]">Booked On</th>
               <th class="px-6 py-3 text-left uppercase tracking-wide text-[11px]">Status</th>
+              <th class="px-6 py-3 text-right uppercase tracking-wide text-[11px]">Actions</th>
             </tr>
           </thead>
 
@@ -278,6 +285,14 @@
                       Reassigned {{ $changedLabel }}
                     </div>
                   @endif
+                </td>
+
+                <td class="px-6 py-4 text-right">
+                  {{-- View in read-only mode via show() (isHistory=true) --}}
+                  <a href="{{ route('counselor.appointments.show', $row->id) }}"
+                    class="inline-flex items-center justify-center h-10 rounded-lg bg-slate-800 px-4 text-sm font-medium text-white hover:bg-slate-900">
+                    View
+                  </a>
                 </td>
               </tr>
             @endforeach

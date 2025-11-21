@@ -207,21 +207,80 @@ class AppointmentController extends Controller
     /** Show a single appointment (must belong to this counselor) */
     public function show(int $id)
     {
-        $cid = $this->myCounselorId(); abort_unless($cid, 404);
+        $cid = $this->myCounselorId();
+        abort_unless($cid, 404);
 
+        // 1) Try as ACTIVE appointment (current counselor)
         $row = DB::table('tbl_appointments as a')
+        ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
+        ->select(
+            'a.*',
+            DB::raw("COALESCE(s.name,'—') as student_name"),
+            DB::raw("COALESCE(s.email,'') as student_email"),
+            DB::raw("
+                TRIM(
+                    CONCAT(
+                        COALESCE(s.course, ''),
+                        CASE 
+                            WHEN s.course IS NOT NULL AND s.year_level IS NOT NULL 
+                                THEN ' · ' 
+                            ELSE '' 
+                        END,
+                        COALESCE(s.year_level, '')
+                    )
+                ) as student_program_year
+            ")
+        )
+        ->where('a.id', $id)
+        ->where('a.counselor_id', $cid)
+        ->first();
+
+        $isHistory = false;
+        $historyChangedAt = null;
+
+        // 2) If not active, try as REASSIGNED history for this counselor
+        if (!$row && \Illuminate\Support\Facades\Schema::hasTable('tbl_appointment_counselor_history')) {
+            $hist = DB::table('tbl_appointment_counselor_history as h')
+            ->join('tbl_appointments as a', 'a.id', '=', 'h.appointment_id')
             ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-            ->select('a.*',
+            ->select(
+                'a.*',
                 DB::raw("COALESCE(s.name,'—') as student_name"),
-                DB::raw("COALESCE(s.email,'') as student_email"))
-            ->where('a.id', $id)->where('a.counselor_id', $cid)->first();
+                DB::raw("COALESCE(s.email,'') as student_email"),
+                DB::raw("
+                    TRIM(
+                        CONCAT(
+                            COALESCE(s.course, ''),
+                            CASE 
+                                WHEN s.course IS NOT NULL AND s.year_level IS NOT NULL 
+                                    THEN ' · ' 
+                                ELSE '' 
+                            END,
+                            COALESCE(s.year_level, '')
+                        )
+                    ) as student_program_year
+                "),
+                'h.status as history_status',
+                'h.changed_at'
+            )
+            ->first();
+
+            if ($hist) {
+                $row = $hist;
+                $isHistory = true;
+                $historyChangedAt = $hist->changed_at;
+            }
+        }
+
         abort_unless($row, 404);
 
         $caseNote = CaseNote::where('appointment_id', $row->id)->first();
 
         return view('Counselor_Interface.appointments.show', [
-            'appointment' => $row,
-            'caseNote'    => $caseNote,   // <-- pass to Blade
+            'appointment'       => $row,
+            'caseNote'          => $caseNote,
+            'isHistory'         => $isHistory,
+            'historyChangedAt'  => $historyChangedAt,
         ]);
     }
 

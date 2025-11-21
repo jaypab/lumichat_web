@@ -32,7 +32,7 @@ class AppointmentController extends Controller
     // ==== Filters ====
     private const STATUS_ALL = 'all';
     private const PERIOD_ALL = 'all';
-    private const STATUSES   = ['pending','confirmed','canceled','completed','no_show'];
+    private const STATUSES   = ['pending','confirmed','canceled','completed','no_show','reassigned'];
     private const PERIODS    = ['all','upcoming','today','this_week','this_month','past'];
     private const NO_SHOW_GRACE_MINUTES = 30;
 
@@ -41,160 +41,187 @@ class AppointmentController extends Controller
     ) {}  
 
     /** List appointments with optional filters + search (counselor name). */
-public function index(Request $r): View
-{
-    $status = \in_array($r->query('status'), self::STATUSES, true) ? $r->query('status') : self::STATUS_ALL;
-    $period = \in_array($r->query('period'), self::PERIODS, true)   ? $r->query('period') : self::PERIOD_ALL;
-    $q      = \trim((string) $r->query('q', ''));
-
-    $now = now();
-
-    // ✅ Eloquent + eager loading to avoid N+1
-    $table = (new \App\Models\Appointment)->getTable(); 
-
-    // alias the table to 'a' so we can whereColumn() cleanly
-    $query = \App\Models\Appointment::from($table.' as a')
-        ->with(['student','counselor'])
-        ->select('a.*')
-        ->addSelect([
-            // latest counselor-change request for this appointment (if any)
-            'cr_status' => \DB::table('counselor_change_requests')
-                ->select('status')
-                ->whereColumn('appointment_id','a.id')
-                ->orderByDesc('id')
-                ->limit(1),
-            'cr_created_at' => \DB::table('counselor_change_requests')
-                ->select('created_at')
-                ->whereColumn('appointment_id','a.id')
-                ->orderByDesc('id')
-                ->limit(1),
-        ]);
-
-
-    // ---- status filter ----
-    if ($status !== self::STATUS_ALL) {
-        $query->where('status', $status);
-    }
-
-    // ---- period filter (same logic as exportPdf) ----
-    switch ($period) {
-        case 'today':
-            $query->whereDate('scheduled_at', $now->toDateString());
-            break;
-
-        case 'upcoming':
-            $query->where('scheduled_at', '>=', $now);
-            break;
-
-        case 'this_week':
-            $query->whereBetween('scheduled_at', [
-                $now->copy()->startOfWeek(),
-                $now->copy()->endOfWeek(),
-            ]);
-            break;
-
-        case 'this_month':
-            $query->whereBetween('scheduled_at', [
-                $now->copy()->startOfMonth(),
-                $now->copy()->endOfMonth(),
-            ]);
-            break;
-
-        case 'past':
-            $query->where('scheduled_at', '<', $now);
-            break;
-
-        default:
-            // 'all' → no date filter
-            break;
-    }
-
-    // ---- search by student or counselor name ----
-    if ($q !== '') {
-        $query->where(function ($w) use ($q) {
-            $w->whereHas('student', function ($s) use ($q) {
-                $s->where('name', 'like', "%{$q}%");
-            })->orWhereHas('counselor', function ($c) use ($q) {
-                $c->where('name', 'like', "%{$q}%");
-            });
-        });
-    }
-
-    // ---- ordering: completed at bottom + date-aware ordering ----
-    $query->orderByRaw("CASE WHEN status = 'completed' THEN 1 ELSE 0 END ASC");
-
-    if ($period === 'past') {
-        $query->orderBy('scheduled_at', 'desc');
-    } elseif (\in_array($period, ['today','upcoming','this_week','this_month'], true)) {
-        $query->orderBy('scheduled_at', 'asc');
-    } else {
-        $query
-            ->orderByRaw("CASE WHEN scheduled_at >= ? THEN 0 ELSE 1 END", [$now])
-            ->orderByRaw("CASE WHEN scheduled_at >= ? THEN scheduled_at END ASC",  [$now])
-            ->orderByRaw("CASE WHEN scheduled_at <  ? THEN scheduled_at END DESC", [$now])
-            ->orderByRaw("CASE WHEN status = 'completed' THEN scheduled_at END DESC");
-    }
-
-    // paginate + keep filters in the query string
-    $appointments = $query->paginate(10)->withQueryString();
-
-    return view('admin.appointments.index', compact('appointments', 'status', 'period', 'q'));
-}
-
-  public function show(int $id): View
+    public function index(Request $r): View
     {
-        $row = $this->appointments->findDetailedById($id);
-        abort_unless($row, 404);
+        $status = \in_array($r->query('status'), self::STATUSES, true) ? $r->query('status') : self::STATUS_ALL;
+        $period = \in_array($r->query('period'), self::PERIODS, true)   ? $r->query('period') : self::PERIOD_ALL;
+        $q      = \trim((string) $r->query('q', ''));
 
-        // pull extra student metadata (course + year level)
-        $studentMeta = \DB::table('tbl_users')
-            ->where('id', $row->student_id)
-            ->first(['course','year_level']);
+        $now = now();
 
-        if ($studentMeta) {
-            $row->student_course     = $studentMeta->course;
-            $row->student_year_level = $studentMeta->year_level;
-        }
+        // ✅ Eloquent + eager loading to avoid N+1
+        $table = (new \App\Models\Appointment)->getTable(); 
 
-        $latestReport = \DB::table('tbl_diagnosis_reports')
-            ->where('student_id', $row->student_id)
-            ->where('student_id', $row->student_id)
-            ->where('counselor_id', $row->counselor_id)
-            ->orderByDesc('id')
-            ->first();
+        // alias the table to 'a' so we can whereColumn() cleanly
+        $query = \App\Models\Appointment::from($table.' as a')
+            ->with(['student','counselor'])
+            ->select('a.*')
+            ->addSelect([
+                // latest counselor-change request for this appointment (if any)
+                'cr_status' => \DB::table('counselor_change_requests')
+                    ->select('status')
+                    ->whereColumn('appointment_id','a.id')
+                    ->orderByDesc('id')
+                    ->limit(1),
+                'cr_created_at' => \DB::table('counselor_change_requests')
+                    ->select('created_at')
+                    ->whereColumn('appointment_id','a.id')
+                    ->orderByDesc('id')
+                    ->limit(1),
+            ]);
 
-        // 🔎 Latest counselor-change request + JOIN sa counselors table
-        $changeReq = \DB::table('counselor_change_requests as cr')
-            ->leftJoin('tbl_counselors as pc', 'pc.id', '=', 'cr.preference_counselor_id')
-            ->select(
-                'cr.*',
-                'pc.name as preferred_counselor_name' // direktang resolved name
-            )
-            ->where('cr.appointment_id', $row->id)
-            ->orderByDesc('cr.id')
-            ->first();
-
-        // Label na ipapasa sa Blade
-        $preferredCounselorName = null;
-
-        if ($changeReq) {
-            if (!empty($changeReq->preferred_counselor_name)) {
-                // galing sa LEFT JOIN sa tbl_counselors
-                $preferredCounselorName = $changeReq->preferred_counselor_name;
-            } elseif (!empty($changeReq->preference_counselor_id)) {
-                // may ID pero walang nahanap na name (edge case)
-                $preferredCounselorName = 'Counselor #'.$changeReq->preference_counselor_id;
+        // ---- status filter ----
+        if ($status !== self::STATUS_ALL) {
+            if ($status === 'reassigned') {
+                // virtual filter: show only appointments that have counselor history
+                $query->whereExists(function ($q) {
+                    $q->from('tbl_appointment_counselor_history as h')
+                    ->whereColumn('h.appointment_id', 'a.id')
+                    ->where('h.status', 'reassigned');
+                });
+            } elseif ($status !== self::STATUS_ALL) {
+                // normal statuses: pending / confirmed / completed / canceled / no_show
+                $query->where('status', $status);
             }
         }
 
-        return view('admin.appointments.show', [
-            'appointment'            => $row,
-            'latestReport'           => $latestReport,
-            'changeReq'              => $changeReq,
-            'preferredCounselorName' => $preferredCounselorName,
-        ]);
+        // special: "Re-assigned only" → appointments that have history rows
+        if ($status === 'reassigned' && \Schema::hasTable('tbl_appointment_counselor_history')) {
+            $query->whereExists(function ($sub) {
+                $sub->from('tbl_appointment_counselor_history as h')
+                    ->whereColumn('h.appointment_id', 'a.id')
+                    ->where('h.status', 'reassigned');
+            });
+        }
+
+        // ---- period filter (same logic as exportPdf) ----
+        switch ($period) {
+            case 'today':
+                $query->whereDate('a.scheduled_at', $now->toDateString());
+                break;
+
+            case 'upcoming':
+                $query->where('a.scheduled_at', '>=', $now);
+                break;
+
+            case 'this_week':
+                $query->whereBetween('a.scheduled_at', [
+                    $now->copy()->startOfWeek(),
+                    $now->copy()->endOfWeek(),
+                ]);
+                break;
+
+            case 'this_month':
+                $query->whereBetween('a.scheduled_at', [
+                    $now->copy()->startOfMonth(),
+                    $now->copy()->endOfMonth(),
+                ]);
+                break;
+
+            case 'past':
+                $query->where('a.scheduled_at', '<', $now);
+                break;
+
+            default:
+                // 'all' → no date filter
+                break;
+        }
+
+        // ---- search by student or counselor name ----
+        if ($q !== '') {
+            $query->where(function ($w) use ($q) {
+                $w->whereHas('student', function ($s) use ($q) {
+                    $s->where('name', 'like', "%{$q}%");
+                })->orWhereHas('counselor', function ($c) use ($q) {
+                    $c->where('name', 'like', "%{$q}%");
+                });
+            });
+        }
+
+        // ---- ordering: completed at bottom + date-aware ordering ----
+        $query->orderByRaw("CASE WHEN a.status = 'completed' THEN 1 ELSE 0 END ASC");
+
+        if ($period === 'past') {
+            $query->orderBy('a.scheduled_at', 'desc');
+        } elseif (\in_array($period, ['today','upcoming','this_week','this_month'], true)) {
+            $query->orderBy('a.scheduled_at', 'asc');
+        } else {
+            $query
+                ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN 0 ELSE 1 END", [$now])
+                ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN a.scheduled_at END ASC",  [$now])
+                ->orderByRaw("CASE WHEN a.scheduled_at <  ? THEN a.scheduled_at END DESC", [$now])
+                ->orderByRaw("CASE WHEN a.status = 'completed' THEN a.scheduled_at END DESC");
+        }
+
+        // paginate + keep filters in the query string
+        $appointments = $query->paginate(10)->withQueryString();
+
+        // 🔎 counselor re-assignment history for all listed appointments
+        $historyByAppt = [];
+
+        if ($appointments->count() > 0 && \Schema::hasTable('tbl_appointment_counselor_history')) {
+            $ids = $appointments->pluck('id')->all();
+
+            $rowsHist = \DB::table('tbl_appointment_counselor_history as h')
+                ->leftJoin('tbl_counselors as c', 'c.id', '=', 'h.counselor_id')
+                ->whereIn('h.appointment_id', $ids)
+                ->orderBy('h.changed_at')          // oldest → newest
+                ->get([
+                    'h.appointment_id',
+                    'h.counselor_id',
+                    'h.status',
+                    'h.changed_at',
+                    'c.name as counselor_name',
+                ]);
+
+            foreach ($rowsHist as $h) {
+                $historyByAppt[$h->appointment_id][] = $h;
+            }
+        }
+
+        return view('admin.appointments.index', compact(
+            'appointments',
+            'status',
+            'period',
+            'q',
+            'historyByAppt'
+        ));
     }
 
+    public function show(int $id): \Illuminate\View\View
+    {
+        // Use the same detailed finder you already use in exportShowPdf, followUpForm, etc.
+        $appointment = $this->appointments->findDetailedById($id);
+        abort_unless($appointment, 404);
+
+        // Optional: load counselor reassignment history for THIS appointment
+        $history = [];
+        if (\Schema::hasTable('tbl_appointment_counselor_history')) {
+            $history = \DB::table('tbl_appointment_counselor_history as h')
+                ->leftJoin('tbl_counselors as c', 'c.id', '=', 'h.counselor_id')
+                ->where('h.appointment_id', $id)
+                ->orderBy('h.changed_at')
+                ->get([
+                    'h.appointment_id',
+                    'h.counselor_id',
+                    'h.status',
+                    'h.changed_at',
+                    'c.name as counselor_name',
+                ]);
+        }
+
+        // Optional: latest change-request info for this appointment
+        $latestChangeRequest = \DB::table('counselor_change_requests')
+            ->where('appointment_id', $id)
+            ->orderByDesc('id')
+            ->first();
+
+        return view('admin.appointments.show', [
+            'appointment'         => $appointment,
+            'history'             => $history,
+            'latestChangeRequest' => $latestChangeRequest,
+        ]);
+    }
 
     /** Persist final report for a completed appointment. */
     public function saveReport(Request $r, int $id): RedirectResponse
@@ -364,7 +391,17 @@ public function index(Request $r): View
                 DB::raw("COALESCE(c.name,'—') as counselor_name"),
             ]);
 
-        if ($status !== 'all') $query->where('a.status', $status);
+        if ($status !== 'all') {
+            if ($status === 'reassigned') {
+                $query->whereIn('a.id', function ($sub) {
+                    $sub->from('tbl_appointment_counselor_history as h')
+                        ->select('h.appointment_id')
+                        ->distinct();
+                });
+            } else {
+                $query->where('a.status', $status);
+            }
+        }
 
         switch ($period) {
             case 'today':      $query->whereDate('a.scheduled_at', $now->toDateString()); break;
@@ -1052,6 +1089,7 @@ public function followUpStore(Request $request, int $id)
         return true; // nothing available => full-day disabled
     }
 
+<<<<<<< HEAD
 public function handleChangeRequest(Request $r, int $id, string $action): \Illuminate\Http\RedirectResponse
 {
     try {
@@ -1061,6 +1099,208 @@ public function handleChangeRequest(Request $r, int $id, string $action): \Illum
                 'icon'  => 'warning',
                 'title' => 'Invalid',
                 'text'  => 'Unknown action.',
+=======
+   public function handleChangeRequest(Request $r, int $id, string $action): \Illuminate\Http\RedirectResponse
+    {
+        try {
+            // 1) Only APPROVE is allowed now
+            if ($action !== 'approve') {
+                return back()->with(self::FLASH_SWAL, [
+                    'icon'  => 'warning',
+                    'title' => 'Invalid action',
+                    'text'  => 'Only approval of counselor change requests is allowed.',
+                ]);
+            }
+
+            // 2) Load appointment
+            $ap = \DB::table('tbl_appointments')->where('id', $id)->first();
+            if (!$ap) {
+                return back()->with(self::FLASH_SWAL, [
+                    'icon'  => 'warning',
+                    'title' => 'Not found',
+                    'text'  => 'Appointment not found.',
+                ]);
+            }
+
+            // Only pending/confirmed can be processed
+            if (!in_array($ap->status, ['pending','confirmed'], true)) {
+                return back()->with(self::FLASH_SWAL, [
+                    'icon'  => 'warning',
+                    'title' => 'Not allowed',
+                    'text'  => 'You can process change requests only for pending/confirmed appointments.',
+                ]);
+            }
+
+            // 3) Most recent counselor-change request
+            $cr = \DB::table('counselor_change_requests')
+                ->where('appointment_id', $id)
+                ->orderByDesc('id')
+                ->first();
+
+            if (!$cr || $cr->status !== 'requested') {
+                return back()->with(self::FLASH_SWAL, [
+                    'icon'  => 'info',
+                    'title' => 'No pending request',
+                    'text'  => 'Nothing to process.',
+                ]);
+            }
+
+            // Student’s preferred counselor (if any)
+            $preferredId = null;
+            if (!empty($cr->preference_counselor_id)) {
+                $preferredId = (int) $cr->preference_counselor_id;
+            }
+
+            // 4) First: mark request as approved, log previous counselor, clear current counselor
+            DB::transaction(function () use ($id, $cr) {
+                // lock appointment so we can capture the last counselor before clearing
+                $apLocked = \DB::table('tbl_appointments')
+                    ->lockForUpdate()
+                    ->where('id', $id)
+                    ->first();
+
+                $prevId = $cr->previous_counselor_id ?? ($apLocked?->counselor_id ?? null);
+
+                $updateData = [
+                    'status'              => 'approved',
+                    'updated_at'          => now(),
+                    'handled_by_admin_id' => auth()->id(),
+                    'handled_at'          => now(),
+                ];
+
+                if (\Schema::hasColumn('counselor_change_requests', 'previous_counselor_id')) {
+                    $updateData['previous_counselor_id'] = $prevId;
+                }
+
+                \DB::table('counselor_change_requests')
+                    ->where('id', $cr->id)
+                    ->update($updateData);
+
+                // history row for the past counselor
+                if ($prevId && \Schema::hasTable('tbl_appointment_counselor_history')) {
+                    \DB::table('tbl_appointment_counselor_history')->insert([
+                        'appointment_id'       => $apLocked->id,
+                        'counselor_id'         => (int) $prevId,
+                        'status'               => 'reassigned',
+                        'changed_at'           => now(),
+                        'changed_by_admin_id'  => auth()->id(),
+                        'created_at'           => now(),
+                        'updated_at'           => now(),
+                    ]);
+                }
+
+                // clear counselor and move back to pending
+                \DB::table('tbl_appointments')
+                    ->where('id', $id)
+                    ->update([
+                        'counselor_id' => null,
+                        'status'       => 'pending',
+                        'updated_at'   => now(),
+                    ]);
+            });
+
+            // 5) If there is a preferred counselor → try AUTO ASSIGN
+            if ($preferredId) {
+                $res = $this->appointments->assignCounselor($id, $preferredId);
+
+                if ($res['ok'] ?? false) {
+                    // auto-confirm (same rule as manual assign)
+                    $this->appointments->updateStatusByAction($id, 'confirm');
+
+                    // pull row for notifications
+                    try {
+                        $row = \DB::table('tbl_appointments as a')
+                            ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
+                            ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
+                            ->where('a.id', $id)
+                            ->select([
+                                'a.id','a.scheduled_at',
+                                's.id as student_id','s.name as student_name','s.email as student_email',
+                                'c.id as counselor_id','c.name as counselor_name','c.email as counselor_email',
+                            ])->first();
+
+                        if ($row) {
+                            $whenNice     = \Carbon\Carbon::parse($row->scheduled_at)->format('M d, Y g:i A');
+                            $studentUrl   = route('appointment.view', $row->id);
+                            $counselorUrl = \Illuminate\Support\Facades\Route::has('counselor.appointments.show')
+                                ? route('counselor.appointments.show', $row->id)
+                                : null;
+
+                            // student notification
+                            \App\Support\Notify::student(
+                                (int) $row->student_id,
+                                'Reassignment approved',
+                                'Your counselor change request was approved. You have been reassigned to '.$row->counselor_name.' on '.$whenNice.'.',
+                                $studentUrl
+                            );
+
+                            // counselor notification
+                            if ($row->counselor_id && method_exists(\App\Support\Notify::class, 'counselor')) {
+                                \App\Support\Notify::counselor(
+                                    (int) $row->counselor_id,
+                                    'New reassigned appointment',
+                                    'Student: '.$row->student_name.' · '.$whenNice.'.',
+                                    $counselorUrl
+                                );
+                            }
+                        }
+                    } catch (\Throwable $e) {
+                        \Log::warning('Notify failed on auto-assign change-request', [
+                            'id'  => $id,
+                            'e'   => $e->getMessage(),
+                        ]);
+                    }
+
+                    // ✅ SUCCESS – auto-assigned to preferred counselor
+                    return redirect()
+                        ->route('admin.appointments.show', $id)
+                        ->with(self::FLASH_SWAL, [
+                            'icon'  => 'success',
+                            'title' => 'Reassignment completed',
+                            'text'  => 'Request approved and the student has been moved to their preferred counselor.',
+                        ]);
+                }
+
+                // ❌ Auto-assign failed → fall back to manual Assign screen
+                return redirect()
+                    ->route('admin.appointments.assign.form', $id)
+                    ->with(self::FLASH_SWAL, [
+                        'icon'  => 'warning',
+                        'title' => 'Preferred counselor unavailable',
+                        'text'  => 'The preferred counselor is not available for this slot. Please select another counselor.',
+                    ]);
+            }
+
+            // 6) No preferred counselor → old flow: approved + admin must assign
+            if (class_exists(\App\Support\Notify::class)) {
+                \App\Support\Notify::student(
+                    (int) $ap->student_id,
+                    'Reassignment approved',
+                    'Your counselor change request was approved. We will assign a new counselor shortly.',
+                    route('appointment.view', $id)
+                );
+            }
+
+            return redirect()
+                ->route('admin.appointments.assign.form', $id)
+                ->with(self::FLASH_SWAL, [
+                    'icon'  => 'success',
+                    'title' => 'Approved',
+                    'text'  => 'Request approved. Please assign a new counselor.',
+                ]);
+
+        } catch (\Throwable $e) {
+            \Log::error('change_request.handle failed', [
+                'id'     => $id,
+                'action' => $action,
+                'e'      => $e,
+            ]);
+
+            return back()->with(self::FLASH_SWAL, [
+                'icon'  => 'error',
+                'title' => 'Server error',
+                'text'  => 'Something went wrong while processing the request. Check logs.',
+>>>>>>> bdc641e (Fixed and Polished Admin + Counselor Interface v2.7)
             ]);
         }
 

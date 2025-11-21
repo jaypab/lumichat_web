@@ -142,7 +142,7 @@
                 '2' => '2nd Year',
                 '3' => '3rd Year',
                 '4' => '4th Year',
-                default => $yearRaw, // kung naka-text na sa DB (e.g. "4th Year"), use as-is
+                default => $yearRaw,
               };
             @endphp
 
@@ -163,7 +163,7 @@
           </div>
         </section>
 
-        {{-- Timing card (strict 12-hour display) --}}
+        {{-- Timing card --}}
         <section class="rounded-2xl ring-1 ring-slate-200 bg-white overflow-hidden">
           <header class="px-4 py-2.5 bg-slate-50/60">
             <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-600">Appointment Timing</h3>
@@ -273,7 +273,7 @@
 
               <div class="md:text-right">
                 @if($changeReq->status === 'requested')
-                  {{-- Approve form (with Swal "Are you sure?") --}}
+                  {{-- Approve form (auto-assign to preferred counselor if possible) --}}
                   <form method="POST"
                         action="{{ route('admin.appointments.change_request.handle', [$appointment->id, 'approve']) }}"
                         class="inline"
@@ -281,20 +281,7 @@
                     @csrf
                     <button type="button"
                             class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 js-cr-approve-btn">
-                      Approve
-                    </button>
-                  </form>
-
-                  {{-- Decline form (with Swal + note) --}}
-                  <form method="POST"
-                        action="{{ route('admin.appointments.change_request.handle', [$appointment->id, 'decline']) }}"
-                        class="inline ml-2"
-                        data-cr-action="decline">
-                    @csrf
-                    <input type="hidden" name="decline_note" value="">
-                    <button type="button"
-                            class="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 js-cr-decline-btn">
-                      Decline
+                      Approve request
                     </button>
                   </form>
                 @else
@@ -303,18 +290,6 @@
                   </span>
                 @endif
               </div>
-
-              {{-- Show admin note when declined --}}
-              @if($changeReq->status === 'declined' && !empty($changeReq->decision_notes ?? null))
-                <div class="md:col-span-3 mt-2">
-                  <div class="text-[13px] uppercase tracking-wide text-slate-500 mb-1">
-                    Admin Note
-                  </div>
-                  <div class="rounded-xl bg-rose-50 text-rose-800 text-sm px-3 py-2 ring-1 ring-rose-100">
-                    {{ $changeReq->decision_notes }}
-                  </div>
-                </div>
-              @endif
             </div>
           </section>
         @endif
@@ -342,7 +317,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         Swal.fire({
           title: 'Approve change request?',
-          text: 'This will clear the current counselor and move this appointment back to Pending so you can assign a new counselor.',
+          text: 'This will approve the student\'s request and move the appointment to their preferred counselor if available. If not, you will be asked to assign a different counselor.',
           icon: 'question',
           showCancelButton: true,
           confirmButtonText: 'Yes, approve',
@@ -352,51 +327,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }).then((result) => {
           if (result.isConfirmed) {
             approveForm.submit();
-          }
-        });
-      });
-    }
-  }
-
-  // ----- Decline with note -----
-  const declineForm = document.querySelector('form[data-cr-action="decline"]');
-  if (declineForm) {
-    const declineBtn  = declineForm.querySelector('.js-cr-decline-btn');
-    const declineNote = declineForm.querySelector('input[name="decline_note"]');
-
-    if (declineBtn && declineNote) {
-      declineBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-
-        Swal.fire({
-          title: 'Decline change request?',
-          text: 'The student will be notified that their request was declined.',
-          icon: 'warning',
-          input: 'textarea',
-          inputLabel: 'Note for the student',
-          inputPlaceholder: 'Briefly explain why this request is being declined...',
-          inputAttributes: {
-            rows: 4,
-          },
-          showCancelButton: true,
-          confirmButtonText: 'Submit',
-          cancelButtonText: 'Cancel',
-          reverseButtons: true,
-          preConfirm: (value) => {
-            if (!value || !value.trim()) {
-              Swal.showValidationMessage('Please add a short note for the student.');
-              return false;
-            }
-            if (value.length > 4000) {
-              Swal.showValidationMessage('Note is too long (max 4000 characters).');
-              return false;
-            }
-            return value.trim();
-          },
-        }).then((result) => {
-          if (result.isConfirmed && result.value) {
-            declineNote.value = result.value;
-            declineForm.submit();
           }
         });
       });

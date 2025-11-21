@@ -11,7 +11,8 @@
   $bookedAt = $appointment->created_at ? Carbon::parse($appointment->created_at) : null;
 
   $hasStarted = $now->gte($dt);
-  $status     = strtolower((string)$appointment->status);
+  $rawStatus  = strtolower((string)$appointment->status);
+  $status     = !empty($isHistory) ? 'reassigned' : $rawStatus;
   $isOngoing  = ($status === 'ongoing');
 
   // human countdown / since
@@ -33,22 +34,24 @@
       : 'End this session';
 
   // chips
-  $badgeMap = [
-    'pending'   => 'bg-amber-100 text-amber-800',
-    'confirmed' => 'bg-blue-100 text-blue-800',
-    'canceled'  => 'bg-rose-100 text-rose-800',
-    'completed' => 'bg-emerald-100 text-emerald-800',
-    'no_show'   => 'bg-rose-100 text-rose-800',
-    'ongoing'   => 'bg-indigo-100 text-indigo-800',
+   $badgeMap = [
+    'pending'    => 'bg-amber-100 text-amber-800',
+    'confirmed'  => 'bg-blue-100 text-blue-800',
+    'canceled'   => 'bg-rose-100 text-rose-800',
+    'completed'  => 'bg-emerald-100 text-emerald-800',
+    'no_show'    => 'bg-rose-100 text-rose-800',
+    'ongoing'    => 'bg-indigo-100 text-indigo-800',
+    'reassigned' => 'bg-slate-100 text-slate-800',
   ];
   $dotMap = [
-    'pending'   => 'bg-amber-500',
-    'confirmed' => 'bg-blue-500',
-    'canceled'  => 'bg-rose-500',
-    'completed' => 'bg-emerald-500',
-    'no_show'   => 'bg-rose-500',
-    'ongoing'   => 'bg-indigo-600',
-  ];
+    'pending'    => 'bg-amber-500',
+    'confirmed'  => 'bg-blue-500',
+    'canceled'   => 'bg-rose-500',
+    'completed'  => 'bg-emerald-500',
+    'no_show'    => 'bg-rose-500',
+    'ongoing'    => 'bg-indigo-600',
+    'reassigned' => 'bg-slate-500',  
+  ];         
   $cls = $badgeMap[$status] ?? 'bg-slate-200 text-slate-700';
   $dot = $dotMap[$status] ?? 'bg-slate-500';
 
@@ -201,6 +204,11 @@
         </header>
         <div class="p-4">
           <div class="font-medium text-slate-900">{{ $appointment->student_name }}</div>
+
+          @if(!empty($appointment->student_program_year))
+            <div class="text-sm text-slate-600">{{ $appointment->student_program_year }}</div>
+          @endif
+
           @if(!empty($appointment->student_email))
             <div class="text-sm text-slate-600">{{ $appointment->student_email }}</div>
           @endif
