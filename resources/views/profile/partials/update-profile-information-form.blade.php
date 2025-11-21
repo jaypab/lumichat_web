@@ -50,17 +50,17 @@
 
       <div class="row">
         <dt>Course</dt>
-        <dd class="title-dynamic">{{ $reg->course ?? '—' }}</dd>
+        <dd class="title-dynamic">{{ $user->course ?? '—' }}</dd>
       </div>
 
       <div class="row">
         <dt>Year level</dt>
-        <dd class="title-dynamic">{{ $reg->year_level ?? '—' }}</dd>
+        <dd class="title-dynamic">{{ $user->year_level ?? '—' }}</dd>
       </div>
 
       <div class="row">
         <dt>Contact number</dt>
-        <dd class="title-dynamic">{{ $reg->contact_number ?? '—' }}</dd>
+        <dd class="title-dynamic">{{ $user->contact_number ?? '—' }}</dd>
       </div>
     </dl>
   </section>
@@ -124,11 +124,11 @@
             class="mt-1 w-full input-dynamic"
             aria-invalid="{{ $errors->has('course') ? 'true' : 'false' }}"
           >
-            <option value="" disabled {{ old('course', $reg->course ?? '') === '' ? 'selected' : '' }}>
+            <option value="" disabled {{ old('course', $user->course ?? '') === '' ? 'selected' : '' }}>
               Select your course
             </option>
             @foreach($courses as $value => $label)
-              <option value="{{ $value }}" {{ old('course', $reg->course ?? '') === $value ? 'selected' : '' }}>
+              <option value="{{ $value }}" {{ old('course', $user->course ?? '') === $value ? 'selected' : '' }}>
                 {{ $label }}
               </option>
             @endforeach
@@ -147,11 +147,11 @@
             class="mt-1 w-full input-dynamic"
             aria-invalid="{{ $errors->has('year_level') ? 'true' : 'false' }}"
           >
-            <option value="" disabled {{ old('year_level', $reg->year_level ?? '') === '' ? 'selected' : '' }}>
+            <option value="" disabled {{ old('year_level', $user->year_level ?? '') === '' ? 'selected' : '' }}>
               Select your year level
             </option>
             @foreach($yearLevels as $value => $label)
-              <option value="{{ $value }}" {{ old('year_level', $reg->year_level ?? '') === $value ? 'selected' : '' }}>
+              <option value="{{ $value }}" {{ old('year_level', $user->year_level ?? '') === $value ? 'selected' : '' }}>
                 {{ $label }}
               </option>
             @endforeach

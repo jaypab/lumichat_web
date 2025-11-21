@@ -35,9 +35,9 @@ class ProfileController extends Controller
 
         // Link registration by email (fallback by name)
         $registration = Registration::query()
-            ->where('email', $user->email)
-            ->orWhere('full_name', $user->name)
-            ->first();
+        ->where('email', $user->email)
+        ->orWhere('full_name', $user->name)
+        ->first();
 
         return view(self::VIEW_EDIT, [
             'user'         => $user,
@@ -70,22 +70,6 @@ class ProfileController extends Controller
 
                 $user->save();
 
-                // Upsert Registration by email (schema without user_id)
-                Registration::updateOrCreate(
-                    ['email' => $user->email],
-                    [
-                        'full_name'      => $user->name,
-                        'email'          => $user->email,
-                        'course'         => $data['course']      ?? null,
-                        'year_level'     => $data['year_level']  ?? null,
-                        'contact_number' => $data['contact_number'], // required by FormRequest
-                    ]
-                );
-
-                // Clean any stale row left under the old email
-                if ($originalEmail !== $user->email) {
-                    Registration::where('email', $originalEmail)->delete();
-                }
             });
 
             return Redirect::route(self::ROUTE_EDIT)
