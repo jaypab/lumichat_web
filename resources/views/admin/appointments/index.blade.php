@@ -375,25 +375,48 @@
 {{-- ========= Helpers ========= --}}
 <script>
   document.addEventListener('DOMContentLoaded', () => {
-    const aq = document.getElementById('appt-q');
-    const af = document.getElementById('apptSearchForm');
-    let at = null;
+    const form         = document.getElementById('apptSearchForm');
+    const qInput       = document.getElementById('appt-q');
+    const statusSelect = document.querySelector('select[name="status"]');
+    const periodSelect = document.querySelector('select[name="period"]');
 
-    if (aq) {
-      // Always refocus search bar after reload + put caret at the end
-      aq.focus();
-      const len = aq.value.length;
-      try {
-        aq.setSelectionRange(len, len);
-      } catch (e) {}
+    if (!form) return;
 
-      // Auto-submit on typing (live search)
-      if (af) {
-        aq.addEventListener('input', function () {
-          if (at) clearTimeout(at);
-          at = setTimeout(function () { af.submit(); }, 300);
-        });
+    // Helper: clear paginator page then submit
+    function submitWithResetPage() {
+      let pageInput = form.querySelector('input[name="page"]');
+      if (!pageInput) {
+        pageInput = document.createElement('input');
+        pageInput.type = 'hidden';
+        pageInput.name = 'page';
+        form.appendChild(pageInput);
       }
+      pageInput.value = ''; // back to first page
+      form.submit();
+    }
+
+    // SEARCH: submit only when user presses Enter (walang auto-refresh habang nagta-type)
+    if (qInput) {
+      qInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          submitWithResetPage();
+        }
+      });
+    }
+
+    // STATUS: auto-submit on change (focus stays on dropdown)
+    if (statusSelect) {
+      statusSelect.addEventListener('change', () => {
+        submitWithResetPage();
+      });
+    }
+
+    // DATE RANGE: auto-submit on change (focus stays on dropdown)
+    if (periodSelect) {
+      periodSelect.addEventListener('change', () => {
+        submitWithResetPage();
+      });
     }
   });
 
@@ -402,3 +425,4 @@
   }
 </script>
 @endsection
+

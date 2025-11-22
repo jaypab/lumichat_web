@@ -38,8 +38,8 @@
 
 <div class="max-w-7xl mx-auto p-6 space-y-6">
 
-{{-- ======= Page Header (gradient band + KPI) ======= --}}
-<section class="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm screen-only">
+  {{-- ======= Page Header (gradient band + KPI) ======= --}}
+  <section class="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm screen-only">
     <div class="p-5 sm:p-6">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -73,8 +73,10 @@
         <span class="text-xs font-medium text-slate-500 mr-1.5">Date:</span>
         @foreach($datePresets as $key => $label)
           @php $active = $dateKey === $key; @endphp
-          <button name="date" value="{{ $key }}" class="inline-flex items-center h-8 px-3 rounded-lg text-xs font-medium
-                 {{ $active ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100' }}">
+          <button name="date" value="{{ $key }}"
+                  class="inline-flex items-center h-8 px-3 rounded-lg text-xs font-medium
+                         {{ $active ? 'bg-indigo-600 text-white shadow-sm'
+                                    : 'bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100' }}">
             {{ $label }}
           </button>
         @endforeach
@@ -104,7 +106,8 @@
             <input id="qInput" type="text" name="q" value="{{ $q }}" autocomplete="off"
                    placeholder="Search student, counselor, or note text"
                    class="w-full h-10 bg-white border border-slate-200 rounded-xl pl-10 pr-9 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"/>
-            <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                 viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <circle cx="11" cy="11" r="7" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke-width="2" stroke-linecap="round"/>
             </svg>
             @if($q!=='')
@@ -116,16 +119,12 @@
           </div>
         </div>
 
-        {{-- Actions --}}
-        <div class="md:col-span-2 flex items-end gap-2">
+        {{-- Actions (Reset only, no Apply) --}}
+        <div class="md:col-span-2 flex items-end gap-2 justify-end">
           <a href="{{ route('admin.case-notes.index') }}"
              class="h-10 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 active:scale-[.99]">
             Reset
           </a>
-          <button type="submit"
-                  class="h-10 inline-flex items-center justify-center px-5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm text-sm">
-            Apply
-          </button>
         </div>
       </div>
     </div>
@@ -225,3 +224,57 @@
   #case-print-root tbody td:last-child { display:none !important; visibility:hidden !important; }
 </style>
 @endsection
+
+@push('scripts')
+<script>
+  (function () {
+    const form      = document.querySelector('form[action="{{ route('admin.case-notes.index') }}"]');
+    if (!form) return;
+
+    const qInput    = document.getElementById('qInput');
+    const fromInput = form.querySelector('input[name="from"]');
+    const toInput   = form.querySelector('input[name="to"]');
+
+    // ensure we send date=range for custom range auto-submit
+    const ensureRangeDateField = () => {
+      let hidden = form.querySelector('input[name="date"][type="hidden"]');
+      if (!hidden) {
+        hidden = document.createElement('input');
+        hidden.type  = 'hidden';
+        hidden.name  = 'date';
+        form.appendChild(hidden);
+      }
+      hidden.value = 'range';
+    };
+
+    // keep focus on search + caret at the end after reload
+    window.addEventListener('load', () => {
+      if (!qInput) return;
+      qInput.focus();
+      const val = qInput.value || '';
+      if (typeof qInput.setSelectionRange === 'function') {
+        qInput.setSelectionRange(val.length, val.length);
+      }
+    });
+
+    // search: submit only when pressing Enter
+    if (qInput) {
+      qInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          form.submit();
+        }
+      });
+    }
+
+    // custom range: auto-submit on change (and force date=range)
+    const handleRangeChange = () => {
+      ensureRangeDateField();
+      form.submit();
+    };
+
+    if (fromInput) fromInput.addEventListener('change', handleRangeChange);
+    if (toInput)   toInput.addEventListener('change', handleRangeChange);
+  })();
+</script>
+@endpush

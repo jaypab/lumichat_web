@@ -19,94 +19,100 @@
 @section('content')
 <div class="max-w-7xl mx-auto p-6 space-y-6">
 
-{{-- Header band (gradient) --}}
-<section class="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm screen-only">
-  <div class="p-5 sm:p-6">
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <h2 class="text-xl sm:text-2xl font-bold tracking-tight">Chatbot Sessions</h2>
-        <p class="text-white/80 text-sm mt-0.5">View conversation histories and emotional trends from chatbot sessions.</p>
-      </div>
+  {{-- Header band (gradient) --}}
+  <section class="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm screen-only">
+    <div class="p-5 sm:p-6">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 class="text-xl sm:text-2xl font-bold tracking-tight">Chatbot Sessions</h2>
+          <p class="text-white/80 text-sm mt-0.5">View conversation histories and emotional trends from chatbot sessions.</p>
+        </div>
 
-      <div class="flex items-center gap-2">
-        <span class="inline-flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm ring-1 ring-white/20">
-          <svg class="h-4 w-4 opacity-90" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1a7 7 0 0 0-7 7v3.126a4 4 0 0 1-.832 2.4L2.6 16.6A1 1 0 0 0 3.4 18h17.2a1 1 0 0 0 .8-1.6l-1.568-3.074A4 4 0 0 1 19 11.126V8a7 7 0 0 0-7-7Zm0 22a3 3 0 0 0 3-3H9a3 3 0 0 0 3 3Z"/></svg>
-          <strong class="font-semibold">{{ $total }}</strong><span class="opacity-90">sessions</span>
-        </span>
+        <div class="flex items-center gap-2">
+          <span class="inline-flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm ring-1 ring-white/20">
+            <svg class="h-4 w-4 opacity-90" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1a7 7 0 0 0-7 7v3.126a4 4 0 0 1-.832 2.4L2.6 16.6A1 1 0 0 0 3.4 18h17.2a1 1 0 0 0 .8-1.6l-1.568-3.074A4 4 0 0 1 19 11.126V8a7 7 0 0 0-7-7Zm0 22a3 3 0 0 0 3-3H9a3 3 0 0 0 3 3Z"/></svg>
+            <strong class="font-semibold">{{ $total }}</strong><span class="opacity-90">sessions</span>
+          </span>
 
-        <a href="{{ route('admin.chatbot-sessions.export.pdf', request()->only('date','q','sort')) }}"
-           target="_blank" rel="noopener"
-           class="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
-          </svg>
-          Download PDF
-        </a>
-      </div>
-    </div>
-  </div>
-</section>
-
- {{-- Filters --}}
-<form method="GET" action="{{ route('admin.chatbot-sessions.index') }}" class="screen-only" id="filterForm">
-  <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3 mt-2">
-
-    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-      {{-- Date --}}
-      <div class="md:col-span-3 min-w-0">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Date Range</label>
-        <select name="date"
-          class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-          <option value="all"    @selected($dateKey==='all')>All Dates</option>
-          <option value="7d"     @selected($dateKey==='7d')>Last 7 days</option>
-          <option value="30d"    @selected($dateKey==='30d')>Last 30 days</option>
-          <option value="month"  @selected($dateKey==='month')>This month</option>
-        </select>
-      </div>
-
-      {{-- Search --}}
-      <div class="md:col-span-4 min-w-0">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Search</label>
-        <div class="relative">
-          <input type="text" name="q" value="{{ $q }}" placeholder="Search student or session ID"
-            class="w-full h-10 bg-white border border-slate-200 rounded-xl pl-10 pr-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-          <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <circle cx="11" cy="11" r="7" stroke-width="2"/>
-            <path d="M21 21l-4.3-4.3" stroke-width="2" stroke-linecap="round"/>
-          </svg>
+          <a href="{{ route('admin.chatbot-sessions.export.pdf', request()->only('date','q','sort')) }}"
+             target="_blank" rel="noopener"
+             class="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+            </svg>
+            Download PDF
+          </a>
         </div>
       </div>
+    </div>
+  </section>
 
-      {{-- Sort --}}
-      <div class="md:col-span-3 min-w-0">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Sort by</label>
-        <select name="sort" id="sortSelect"
-                class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-          <option value="newest"        @selected($sort==='newest')>Newest</option>
-          <option value="oldest"        @selected($sort==='oldest')>Oldest</option>
-          <option value="risk"          @selected($sort==='risk')>High risk first</option>
-          <option value="unresolved"    @selected($sort==='unresolved')>Unresolved first</option>
-          <option value="handled"       @selected($sort==='handled')>Handled/Completed first</option>
-          <option value="student_asc"   @selected($sort==='student_asc')>Student A→Z</option>
-          <option value="session_asc"   @selected($sort==='session_asc')>Session ID ↑</option>
-          <option value="session_desc"  @selected($sort==='session_desc')>Session ID ↓</option>
-        </select>
-      </div>
+  {{-- Filters --}}
+  <form method="GET"
+        action="{{ route('admin.chatbot-sessions.index') }}"
+        class="screen-only"
+        id="cbFilterForm">
+    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3 mt-2">
 
-      {{-- Actions --}}
-      <div class="md:col-span-2 flex items-end justify-end gap-2">
-        <a href="{{ route('admin.chatbot-sessions.index') }}"
-           class="h-10 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
-          Reset
-        </a>
-        <button class="h-10 inline-flex items-center justify-center px-5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm text-sm">
-          Apply
-        </button>
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+        {{-- Date --}}
+        <div class="md:col-span-3 min-w-0">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Date Range</label>
+          <select name="date" id="dateSelect"
+            class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+            <option value="all"    @selected($dateKey==='all')>All Dates</option>
+            <option value="7d"     @selected($dateKey==='7d')>Last 7 days</option>
+            <option value="30d"    @selected($dateKey==='30d')>Last 30 days</option>
+            <option value="month"  @selected($dateKey==='month')>This month</option>
+          </select>
+        </div>
+
+        {{-- Search --}}
+        <div class="md:col-span-4 min-w-0">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Search</label>
+          <div class="relative">
+            <input id="cb-q"
+                   type="text"
+                   name="q"
+                   value="{{ $q }}"
+                   placeholder="Search student or session ID"
+                   class="w-full h-10 bg-white border border-slate-200 rounded-xl pl-10 pr-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+            <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                 viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <circle cx="11" cy="11" r="7" stroke-width="2"/>
+              <path d="M21 21l-4.3-4.3" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+        </div>
+
+        {{-- Sort --}}
+        <div class="md:col-span-3 min-w-0">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Sort by</label>
+          <select name="sort" id="sortSelect"
+                  class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+            <option value="newest"        @selected($sort==='newest')>Newest</option>
+            <option value="oldest"        @selected($sort==='oldest')>Oldest</option>
+            <option value="risk"          @selected($sort==='risk')>High risk first</option>
+            <option value="unresolved"    @selected($sort==='unresolved')>Unresolved first</option>
+            <option value="handled"       @selected($sort==='handled')>Handled/Completed first</option>
+            <option value="student_asc"   @selected($sort==='student_asc')>Student A→Z</option>
+            <option value="session_asc"   @selected($sort==='session_asc')>Session ID ↑</option>
+            <option value="session_desc"  @selected($sort==='session_desc')>Session ID ↓</option>
+          </select>
+        </div>
+
+        {{-- Actions --}}
+        <div class="md:col-span-2 flex items-end justify-end gap-2">
+          <a href="{{ route('admin.chatbot-sessions.index') }}"
+             class="h-10 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
+            Reset
+          </a>
+          {{-- Apply button removed – filters auto-submit --}}
+        </div>
       </div>
     </div>
-  </div>
-</form>
+  </form>
 
   {{-- Table --}}
   <div id="cb-print-root" class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden mt-3">
@@ -318,13 +324,17 @@
 </style>
 
 <script>
-  // Auto-submit on Sort change & clear pagination
-  (function(){
-    const form = document.getElementById('filterForm');
-    const sortSelect = document.getElementById('sortSelect');
-    if (!form || !sortSelect) return;
+  // Smooth filters: Search on Enter, keep focus + value
+  (function () {
+    const form       = document.getElementById('cbFilterForm');
+    if (!form) return;
 
-    sortSelect.addEventListener('change', () => {
+    const qInput     = document.getElementById('cb-q');
+    const dateSelect = document.getElementById('dateSelect');
+    const sortSelect = document.getElementById('sortSelect');
+
+    // Common submit helper (also reset pagination)
+    const submitWithReset = () => {
       let pageInput = form.querySelector('input[name="page"]');
       if (!pageInput) {
         pageInput = document.createElement('input');
@@ -332,8 +342,33 @@
         pageInput.name = 'page';
         form.appendChild(pageInput);
       }
-      pageInput.value = ''; // clear paginator page
+      pageInput.value = ''; // back to page 1
       form.submit();
+    };
+
+    // --- Search: only submit when user presses Enter ---
+    if (qInput) {
+      // Keep focus + caret at the end after every reload
+      setTimeout(() => {
+        qInput.focus();
+        const val = qInput.value;
+        if (typeof qInput.setSelectionRange === 'function') {
+          qInput.setSelectionRange(val.length, val.length);
+        }
+      }, 0);
+
+      qInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();   // wag yung default submit
+          submitWithReset();    // controlled submit
+        }
+      });
+    }
+
+    // --- Date + Sort: submit immediately on change ---
+    [dateSelect, sortSelect].forEach((sel) => {
+      if (!sel) return;
+      sel.addEventListener('change', submitWithReset);
     });
   })();
 </script>

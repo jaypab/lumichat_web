@@ -223,22 +223,26 @@
 </div>
 
 <script>
-  // Auto-search + keep focus on the search bar
   document.addEventListener('DOMContentLoaded', () => {
-    const qInput = document.getElementById('q-input');
     const form   = document.getElementById('filterForm');
-    let timer    = null;
+    const qInput = document.getElementById('q-input');
 
-    if (qInput && form) {
-      qInput.focus();
+    if (!form || !qInput) return;
 
-      qInput.addEventListener('input', function () {
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(function () {
-          form.submit();
-        }, 300); // debounce
-      });
-    }
+    // Focus + cursor sa dulo ng existing text
+    qInput.focus();
+    const len = qInput.value.length;
+    try {
+      qInput.setSelectionRange(len, len);
+    } catch (e) {}
+
+    // Mag-submit lang pag ENTER
+    qInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();   // wag mag line break
+        form.submit();
+      }
+    });
   });
 
   function copyToClipboard(text) {
