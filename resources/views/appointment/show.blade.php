@@ -3,20 +3,30 @@
 @section('title', 'Appointment #'.$appointment->id)
 
 @section('content')
-<div class="max-w-3xl mx-auto py-8 px-4">
-@if(session('success'))
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      Swal.fire({
-        icon: 'success',
-        title: 'Success',
-        text: @json(session('success')),
-        timer: 2200,
-        showConfirmButton: false
+  <div class="max-w-3xl mx-auto py-8 px-4">
+  @if(session('success'))
+    @php
+      $confirmedAt = \Carbon\Carbon::parse($appointment->scheduled_at);
+    @endphp
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        Swal.fire({
+          icon: 'success',
+          title: 'Appointment confirmed',
+          html: `
+            <div style="text-align:left;font-size:14px;">
+              <p>{{ e(session('success')) }}</p>
+              <div style="margin-top:10px;">
+                <div><strong>Date:</strong> {{ $confirmedAt->format('l, M d, Y') }}</div>
+                <div><strong>Time:</strong> {{ $confirmedAt->format('g:i A') }}</div>
+              </div>
+            </div>
+          `,
+          confirmButtonText: 'OK'
+        });
       });
-    });
-  </script>
-@endif
+    </script>
+  @endif
  
   {{-- Card --}}
   <div id="appointmentCard" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
@@ -213,24 +223,43 @@
     </div>
   </div>
 
-  {{-- Actions --}}
-  @php
-    $isFuture  = \Carbon\Carbon::parse($appointment->scheduled_at)->gt(now());
-    $canCancel = ($appointment->status === 'pending') && $isFuture;
-    $cannotReason = match (true) {
-      $appointment->status !== 'pending' => 'Only pending appointments can be canceled.',
-      !$isFuture => 'This appointment has already started/passed.',
-      default => 'Cancel not available.',
-    };
+    {{-- Actions --}}
+    @php
+      $isFuture  = \Carbon\Carbon::parse($appointment->scheduled_at)->gt(now());
+      $canCancel = ($appointment->status === 'pending') && $isFuture;
+      $cannotReason = match (true) {
+        $appointment->status !== 'pending' => 'Only pending appointments can be canceled.',
+        !$isFuture => 'This appointment has already started/passed.',
+        default => 'Cancel not available.',
+      };
 
-    $hasCounselor = !empty($appointment->counselor_id);
-    $isFuture24   = \Carbon\Carbon::parse($appointment->scheduled_at)->gt(now()->addHours(24));
+      $hasCounselor = !empty($appointment->counselor_id);
+      $isFuture24   = \Carbon\Carbon::parse($appointment->scheduled_at)->gt(now()->addHours(24));
 
-    // ONLY confirmed appointments can request counselor change
-    $eligibleForChange = ($appointment->status === 'confirmed')
-                        && $hasCounselor
-                        && $isFuture24;
+      // ONLY confirmed appointments can request counselor change
+      $eligibleForChange = ($appointment->status === 'confirmed')
+                          && $hasCounselor
+                          && $isFuture24;
+    @endphp
+
+    @php
+      $canConfirm = $appointment->status === 'pending'
+          && \Carbon\Carbon::parse($appointment->scheduled_at)->isFuture();
   @endphp
+
+  @if ($canConfirm)
+      <form method="POST"
+            action="{{ route('appointment.confirm', $appointment->id) }}"
+            onsubmit="return confirmStudentConfirm(event, this)"
+            class="inline-flex">
+          @csrf
+          @method('PATCH')
+          <button type="submit"
+                  class="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-700">
+              Confirm appointment
+          </button>
+      </form>
+  @endif
 
   <div class="mt-6">
     <div class="flex flex-wrap items-center gap-3">
@@ -447,6 +476,23 @@ function confirmStudentCancel(e, form) {
     reverseButtons: true,
     focusCancel: true
   }).then(res => { if (res.isConfirmed) form.submit(); });
+  return false;
+}
+
+function confirmStudentConfirm(e, form) {
+  e.preventDefault();
+  Swal.fire({
+    icon: 'question',
+    title: 'Confirm this appointment?',
+    text: 'Once confirmed, the counseling office will be notified.',
+    showCancelButton: true,
+    confirmButtonText: 'Yes, confirm',
+    cancelButtonText: 'No, not yet',
+    reverseButtons: true,
+    focusCancel: true,
+  }).then(res => {
+    if (res.isConfirmed) form.submit();
+  });
   return false;
 }
 

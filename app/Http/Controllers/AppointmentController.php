@@ -11,6 +11,10 @@ use App\Notifications\SimpleDatabaseNotification;
 use App\Models\User; 
 use App\Support\Notify;
 
+// ⬇️ ADD THESE
+use App\Models\Appointment;
+use Illuminate\Http\RedirectResponse;
+
 class AppointmentController extends Controller
 {
     /** Minutes per slot (now hourly) */
@@ -968,4 +972,35 @@ class AppointmentController extends Controller
             ->with('success', 'Your request was submitted and is now under review. We’ll notify you once the admin decides.');
     }
 
+    public function studentConfirm(Appointment $appointment, Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        // must belong to this student
+        if ((int)$appointment->student_id !== (int)$user->id) {
+            abort(403);
+        }
+
+        // only pending + future can be confirmed
+        if ($appointment->status !== 'pending') {
+            return back()->with('status', 'Only pending appointments can be confirmed.');
+        }
+
+        if (Carbon::parse($appointment->scheduled_at)->isPast()) {
+            return back()->with('status', 'This appointment has already started or passed.');
+        }
+
+        $appointment->status = 'confirmed';
+        // optional columns:
+        // $appointment->confirmed_at = now();
+        // $appointment->confirmed_by = 'student';
+        $appointment->save();
+
+        // ✅ flash success for SweetAlert
+        return redirect()
+            ->route('appointment.view', $appointment->id)
+            ->with('success', 'Your guidance appointment for ' .
+                Carbon::parse($appointment->scheduled_at)->format('M d, Y · g:i A') .
+                ' has been confirmed.');
+    }
 }

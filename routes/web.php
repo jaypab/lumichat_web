@@ -9,6 +9,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\AppointmentController;
+
 use App\Http\Controllers\FeaturesController;
 use App\Http\Controllers\SelfAssessmentController;
 use App\Http\Controllers\AboutController;
@@ -126,6 +127,8 @@ Route::middleware('auth' , 'tos')->group(function () {
     Route::get('/appointment/slots-pooled', [AppointmentController::class, 'slotsPooled'])->name('appointment.slots.pooled');
     Route::get('/appointment/view/{id}', [AppointmentController::class, 'show'])->name('appointment.view');
     Route::patch('/appointment/{id}/cancel', [AppointmentController::class, 'cancel'])->name('appointment.cancel');
+    Route::patch('/appointment/{appointment}/confirm', [AppointmentController::class, 'studentConfirm'])
+    ->name('appointment.confirm');
 
     /* ------------------------ Self-Assessment ------------------------ */
     Route::get('/self-assessment',        [SelfAssessmentController::class,'create'])->name('self-assessment.create');
