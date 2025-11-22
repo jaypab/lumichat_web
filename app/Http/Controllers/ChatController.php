@@ -1151,23 +1151,53 @@ public function store(Request $request)
         return $m[0] ?? [];
     }
 
-    /** Soft matcher: exact word OR edit distance <=1 for short terms (<=10 chars). */
     private function hasAnyWord(string $text, array $terms): bool
-    {
-        $toks = $this->tokens($text);
-        if (empty($toks)) return false;
-        foreach ($terms as $term) {
-            $term = mb_strtolower($term);
-            $len  = mb_strlen($term);
-            foreach ($toks as $tok) {
-                if ($tok === $term) return true;
-                if ($len <= 10 && abs($len - mb_strlen($tok)) <= 1) {
-                    if (levenshtein($tok, $term) <= 1) return true; // tolerate a single typo
+{
+    $toks = $this->tokens($text);
+    if (empty($toks)) return false;
+
+    foreach ($terms as $term) {
+        $term      = mb_strtolower($term);
+        $len       = mb_strlen($term);
+        $firstChar = mb_substr($term, 0, 1);
+
+        foreach ($toks as $tok) {
+            $tok = mb_strtolower($tok);
+
+            // Exact match
+            if ($tok === $term) {
+                return true;
+            }
+
+            // Fuzzy match: only allow if same first letter and within edit distance 1
+            $tokLen = mb_strlen($tok);
+            if ($len <= 10 && abs($len - $tokLen) <= 1) {
+                if (mb_substr($tok, 0, 1) !== $firstChar) {
+                    continue; // 👈 prevents "sad" matching "mad"
+                }
+                if (levenshtein($tok, $term) <= 1) {
+                    return true;
                 }
             }
         }
-        return false;
     }
+
+    return false;
+}
+private function hasAnyWordExact(string $text, array $terms): bool
+{
+    $tokens = $this->tokens($text); // all lowercased a–z words
+    if (empty($tokens)) return false;
+    $tokens = array_map('mb_strtolower', $tokens);
+
+    foreach ($terms as $term) {
+        $term = mb_strtolower($term);
+        if (in_array($term, $tokens, true)) {
+            return true;
+        }
+    }
+    return false;
+}
 
     /** Regex builder allowing spaces/hyphens between words and minor letter swaps. */
     private function flex(string $phrase): string
