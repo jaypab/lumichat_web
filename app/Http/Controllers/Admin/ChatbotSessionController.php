@@ -377,6 +377,14 @@ class ChatbotSessionController extends Controller
     /** JSON: counselor-wise slots + pooled capacity for a date (Mon–Fri) */
     public function slots(int $id, Request $request): JsonResponse
     {
+        // ---- 0. Resolve session + student ----
+        $session = $this->sessions->findById($id, ['user']);
+        if (!$session || empty($session->user_id)) {
+            return response()->json(['message' => 'Session not found.'], 404);
+        }
+        $studentId = (int) $session->user_id;
+
+        // ---- 1. Validate date ----
         $dateStr = (string) $request->query('date', '');
         if (!$dateStr || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateStr)) {
             return response()->json(['message' => 'Provide date=YYYY-MM-DD.'], 422);
@@ -385,14 +393,22 @@ class ChatbotSessionController extends Controller
         $date   = Carbon::parse($dateStr)->startOfDay();
         $now    = now();
         $dowIso = $date->isoWeekday(); // 1..7 (Mon..Sun)
+
         if ($dowIso < 1 || $dowIso > 5) {
             return response()->json([
-                'counselors' => [], 'slots' => [], 'pooled' => [],
-                'occupied_by'=> [],
-                'message'    => 'Appointments are available Monday to Friday only.'
+                'counselors'  => [],
+                'slots'       => [],
+                'pooled'      => [],
+                'occupiedBy'  => [],
+                'occupied_by' => [],
+                'current_time'=> null,
+                'ref_time'    => null,
+                'suggest'     => null,
+                'message'     => 'Appointments are available Monday to Friday only.',
             ]);
         }
 
+        // ---- 2. Active counselors ----
         $counselors = DB::table('tbl_counselors')
             ->where('is_active', 1)
             ->orderBy('name')
@@ -400,48 +416,71 @@ class ChatbotSessionController extends Controller
 
         if ($counselors->isEmpty()) {
             return response()->json([
-                'counselors'=>[], 'slots'=>[], 'pooled'=>[], 'occupied_by'=>[],
-                'message'=>'No active counselors.'
+                'counselors'  => [],
+                'slots'       => [],
+                'pooled'      => [],
+                'occupiedBy'  => [],
+                'occupied_by' => [],
+                'current_time'=> null,
+                'ref_time'    => null,
+                'suggest'     => null,
+                'message'     => 'No active counselors.',
             ]);
         }
 
-        // Your UI shows hour pills: 09,10,11,13,14,15
+        // Pills shown in UI (hour headers)
         $hourStarts = ['09:00','10:00','11:00','13:00','14:00','15:00'];
 
+        // Align step to 30 mins
         $snap = function (Carbon $dt): Carbon {
             $m = (int) floor($dt->minute / 30) * 30;
             return $dt->copy()->setTime($dt->hour, $m, 0);
         };
 
         $slotsByCounselor = [];
-        $occupiedBy       = [];           // NEW: per-counselor fully-booked hours
-        $allTimes         = [];
+        $occupiedBy       = [];  // [counselor_id => ['09:00','10:00',...]]
+        $allTimes         = [];  // all HH:MM that appear anywhere (for pooled capacity)
 
+        // ---- 3. Build slots per counselor using availability + appointments ----
         foreach ($counselors as $c) {
-            // Track how many free half-hours exist inside each display hour
-            $hourFreeCounts = array_fill_keys($hourStarts, 0);
+            $hourFreeCounts      = []; // future + free half-hours per hour
+            $hourPotentialCounts = []; // ALL half-hours (past+future, free+taken) per hour
+            $col                 = [];
 
+            // availability for this weekday
             $ranges = DB::table('tbl_counselor_availabilities')
                 ->where('counselor_id', $c->id)
                 ->where('weekday', $dowIso)
                 ->orderBy('start_time')
                 ->get(['start_time','end_time']);
 
-            $col = [];
             foreach ($ranges as $r) {
-                if (!is_string($r->start_time) || !is_string($r->end_time) || $r->start_time==='' || $r->end_time==='') {
+                if (!is_string($r->start_time) || !is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') {
                     continue;
                 }
+
                 $cursor = $snap(Carbon::parse($date->toDateString().' '.$r->start_time)->second(0));
                 $end    = Carbon::parse($date->toDateString().' '.$r->end_time)->second(0);
 
                 while ($cursor->lt($end)) {
                     $slot = $snap($cursor);
                     $next = $slot->copy()->addMinutes(30);
-                    if ($next->gt($end)) break;
+                    if ($next->gt($end)) {
+                        break;
+                    }
+
+                    $hhmm      = $slot->format('H:i');       // e.g. 10:30
+                    $hourLabel = substr($hhmm, 0, 2).':00'; // e.g. 10:00
+
+                    // mark that there is *some* capacity in this hour
+                    if (!isset($hourPotentialCounts[$hourLabel])) {
+                        $hourPotentialCounts[$hourLabel] = 0;
+                    }
+                    $hourPotentialCounts[$hourLabel]++;
 
                     $isPast = $date->isSameDay($now) && $slot->lte($now);
 
+                    // any blocking appointment at this exact 30-min slot
                     $taken = DB::table('tbl_appointments')
                         ->where('counselor_id', $c->id)
                         ->where('scheduled_at', $slot)
@@ -449,17 +488,17 @@ class ChatbotSessionController extends Controller
                         ->exists();
 
                     if (!$taken && !$isPast) {
-                        $hhmm = $slot->format('H:i');
+                        // free + future → available slot in UI
+                        if (!isset($hourFreeCounts[$hourLabel])) {
+                            $hourFreeCounts[$hourLabel] = 0;
+                        }
+                        $hourFreeCounts[$hourLabel]++;
+
                         $col[] = [
                             'value'    => $hhmm,
                             'label'    => $slot->format('g:i A'),
                             'disabled' => false,
                         ];
-                        // Count free half-hours into hour bucket (e.g., 10:30 -> 10:00)
-                        $hourLabel = substr($hhmm, 0, 2).':00';
-                        if (isset($hourFreeCounts[$hourLabel])) {
-                            $hourFreeCounts[$hourLabel]++;
-                        }
                         $allTimes[$hhmm] = true;
                     }
 
@@ -467,19 +506,21 @@ class ChatbotSessionController extends Controller
                 }
             }
 
-            // Determine which display hours are fully booked (no free half-hour)
-            $occupied = [];
-            foreach ($hourFreeCounts as $hour => $freeCount) {
-                if ($freeCount === 0) {
-                    $occupied[] = $hour;
+            // Hours that are fully booked for this counselor:
+            // there is capacity (potential > 0) but 0 free slots
+            $occupiedHours = [];
+            foreach ($hourPotentialCounts as $hour => $potentialCount) {
+                $freeCount = $hourFreeCounts[$hour] ?? 0;
+                if ($potentialCount > 0 && $freeCount === 0) {
+                    $occupiedHours[] = $hour; // e.g. "10:00"
                 }
             }
 
             $slotsByCounselor[$c->id] = collect($col)->unique('value')->sortBy('value')->values()->all();
-            $occupiedBy[$c->id]       = $occupied; // NEW
+            $occupiedBy[$c->id]       = $occupiedHours;
         }
 
-        // Pooled capacity per HH:MM (as you had)
+        // ---- 4. Pooled capacity per HH:MM (existing behavior) ----
         $repo   = app(AppointmentRepositoryInterface::class);
         $pooled = [];
         foreach (array_keys($allTimes) as $hhmm) {
@@ -487,159 +528,198 @@ class ChatbotSessionController extends Controller
             $pooled[$hhmm] = count($repo->counselorIdsFreeAt($t));
         }
 
+        // ---- 5. Student's current appointment time (for this session's student) ----
+        $currentTime = null;
+        $studentAppt = DB::table('tbl_appointments')
+            ->where('student_id', $studentId)
+            ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
+            ->orderBy('scheduled_at')
+            ->first();
+
+        if ($studentAppt) {
+            $scheduled = Carbon::parse($studentAppt->scheduled_at);
+            if ($scheduled->isSameDay($date)) {
+                // "HH:MM" (e.g. "10:00") → UI can use this for "CURRENT" pill
+                $currentTime = $scheduled->format('H:i');
+            }
+        }
+
+        // ---- 6. Simple suggestion/ref_time for UI (first hour that is NOT fully booked) ----
+        $refTime = null;
+        $suggest = null;
+
+        // either ?counselor_id or first counselor
+        $targetCounselorId = (int) $request->query('counselor_id', $counselors->first()->id ?? 0);
+
+        if ($targetCounselorId && isset($occupiedBy[$targetCounselorId])) {
+            $busy = $occupiedBy[$targetCounselorId] ?? [];
+            foreach ($hourStarts as $h) {
+                if (!in_array($h, $busy, true)) {
+                    $refTime = $h;    // e.g. "09:00"
+                    $suggest = $h;
+                    break;
+                }
+            }
+        }
+
+        // ---- 7. Final JSON ----
         return response()->json([
-            'counselors' => $counselors->map(fn($r)=>['id'=>$r->id,'name'=>$r->name])->values(),
-            'slots'      => $slotsByCounselor,   // unchanged
-            'pooled'     => $pooled,             // unchanged
-            'occupied_by'=> $occupiedBy,         // NEW
+            'counselors'  => $counselors->map(fn($r) => ['id' => $r->id, 'name' => $r->name])->values(),
+            'slots'       => $slotsByCounselor,
+            'pooled'      => $pooled,
+            'occupiedBy'  => $occupiedBy,   // keep both camel + snake for safety
+            'occupied_by' => $occupiedBy,
+            'current_time'=> $currentTime,  // NEW: student’s active appt time on this date (HH:MM) or null
+            'ref_time'    => $refTime,      // NEW: first non-fully-booked hour for selected counselor
+            'suggest'     => $suggest,      // NEW: same as ref_time, for your "suggested" pill
         ]);
     }
 
     /** Admin books appointment for the session’s student with counselor+time */
-public function book(int $id, Request $request): JsonResponse
-{
-    $session = $this->sessions->findWithOrderedChats($id);
-    if (!$session || empty($session->user_id)) {
-        return response()->json(['message'=>'Session not found.'], 404);
-    }
-    $studentId = (int) $session->user_id;
+    public function book(int $id, Request $request): JsonResponse
+    {
+        $session = $this->sessions->findWithOrderedChats($id);
+        if (!$session || empty($session->user_id)) {
+            return response()->json(['message'=>'Session not found.'], 404);
+        }
+        $studentId = (int) $session->user_id;
 
-    // block if the student already has ANY active appointment (pending/confirmed)
-    $hasActiveForStudent = DB::table('tbl_appointments')
-        ->where('student_id', $studentId)
-        ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
-        ->exists();
-    if ($hasActiveForStudent) {
-        return response()->json(['message' => 'Student already has an active appointment.'], 409);
-    }
+        // block if the student already has ANY active appointment (pending/confirmed)
+        $hasActiveForStudent = DB::table('tbl_appointments')
+            ->where('student_id', $studentId)
+            ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
+            ->exists();
+        if ($hasActiveForStudent) {
+            return response()->json(['message' => 'Student already has an active appointment.'], 409);
+        }
 
-    $validated = $request->validate([
-        'date'         => ['required','date_format:Y-m-d'],
-        'time'         => ['required','regex:/^\d{2}:\d{2}$/'],
-        'counselor_id' => ['required','integer','exists:tbl_counselors,id'],
-    ]);
+        $validated = $request->validate([
+            'date'         => ['required','date_format:Y-m-d'],
+            'time'         => ['required','regex:/^\d{2}:\d{2}$/'],
+            'counselor_id' => ['required','integer','exists:tbl_counselors,id'],
+        ]);
 
-    $raw  = Carbon::parse($validated['date'].' '.$validated['time'].':00')->second(0);
-    $slot = (function(Carbon $dt){ $m=(int)floor($dt->minute/30)*30; return $dt->copy()->setTime($dt->hour,$m,0);} )($raw);
-    if ($raw->ne($slot)) {
-        return response()->json(['message'=>'Please choose a 30-minute step time (e.g., 09:00, 09:30).'], 422);
-    }
+        $raw  = Carbon::parse($validated['date'].' '.$validated['time'].':00')->second(0);
+        $slot = (function(Carbon $dt){ $m=(int)floor($dt->minute/30)*30; return $dt->copy()->setTime($dt->hour,$m,0);} )($raw);
+        if ($raw->ne($slot)) {
+            return response()->json(['message'=>'Please choose a 30-minute step time (e.g., 09:00, 09:30).'], 422);
+        }
 
-    $dowIso = $slot->isoWeekday();
-    if ($dowIso < 1 || $dowIso > 5) {
-        return response()->json(['message'=>'Appointments are available Monday to Friday only.'], 422);
-    }
-    if ($slot->lte(now())) {
-        return response()->json(['message'=>'Please choose a future time.'], 422);
-    }
+        $dowIso = $slot->isoWeekday();
+        if ($dowIso < 1 || $dowIso > 5) {
+            return response()->json(['message'=>'Appointments are available Monday to Friday only.'], 422);
+        }
+        if ($slot->lte(now())) {
+            return response()->json(['message'=>'Please choose a future time.'], 422);
+        }
 
-    $counselorId   = (int) $validated['counselor_id'];
-    $counselorName = DB::table('tbl_counselors')->where('id',$counselorId)->value('name') ?? null;
-    $note          = $this->composeBookingNote($session, $slot, $counselorName);
+        $counselorId   = (int) $validated['counselor_id'];
+        $counselorName = DB::table('tbl_counselors')->where('id',$counselorId)->value('name') ?? null;
+        $note          = $this->composeBookingNote($session, $slot, $counselorName);
 
-    $createdId = null;
+        $createdId = null;
 
-    try {
-        DB::transaction(function () use ($studentId, $counselorId, $slot, $session, $note, &$createdId) {
-            // re-check for race
-            $activeNowForStudent = DB::table('tbl_appointments')
-                ->where('student_id', $studentId)
-                ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
-                ->lockForUpdate()
-                ->exists();
-            if ($activeNowForStudent) throw new \RuntimeException('STUDENT_ACTIVE');
+        try {
+            DB::transaction(function () use ($studentId, $counselorId, $slot, $session, $note, &$createdId) {
+                // re-check for race
+                $activeNowForStudent = DB::table('tbl_appointments')
+                    ->where('student_id', $studentId)
+                    ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
+                    ->lockForUpdate()
+                    ->exists();
+                if ($activeNowForStudent) throw new \RuntimeException('STUDENT_ACTIVE');
 
-            $taken = DB::table('tbl_appointments')
-                ->where('counselor_id', $counselorId)
-                ->where('scheduled_at', $slot)
-                ->whereIn('status', self::BLOCKING_STATUSES)
-                ->lockForUpdate()
-                ->exists();
-            if ($taken) throw new \RuntimeException('TAKEN');
+                $taken = DB::table('tbl_appointments')
+                    ->where('counselor_id', $counselorId)
+                    ->where('scheduled_at', $slot)
+                    ->whereIn('status', self::BLOCKING_STATUSES)
+                    ->lockForUpdate()
+                    ->exists();
+                if ($taken) throw new \RuntimeException('TAKEN');
 
-            $createdId = DB::table('tbl_appointments')->insertGetId([
-                'student_id'         => $studentId,
-                'counselor_id'       => $counselorId,
-                'scheduled_at'       => $slot,
-                'status'             => 'confirmed',
-                'note'               => $note,
-                'chatbot_session_id' => $session->id,
-                'created_at'         => now(),
-                'updated_at'         => now(),
-            ]);
-
-            // optional notification (unchanged) ...
-            if (Schema::hasTable('tbl_notifications')) {
-                DB::table('tbl_notifications')->insert([
-                    'user_id'    => $studentId,
-                    'title'      => 'Appointment Scheduled',
-                    'body'       => $note,
-                    'type'       => 'appointment',
-                    'created_at' => now(),
-                    'updated_at' => now(),
+                $createdId = DB::table('tbl_appointments')->insertGetId([
+                    'student_id'         => $studentId,
+                    'counselor_id'       => $counselorId,
+                    'scheduled_at'       => $slot,
+                    'status'             => 'confirmed',
+                    'note'               => $note,
+                    'chatbot_session_id' => $session->id,
+                    'created_at'         => now(),
+                    'updated_at'         => now(),
                 ]);
-            }
-        });
-    } catch (\RuntimeException $e) {
-        if ($e->getMessage() === 'TAKEN')
-            return response()->json(['message'=>'That counselor/time just filled. Pick another slot.'], 409);
-        if ($e->getMessage() === 'STUDENT_ACTIVE')
-            return response()->json(['message'=>'This student already has an active appointment (pending/confirmed).'], 409);
-        throw $e;
-    }
 
-    // 🔔 NEW: broadcast to all admins that an admin booked an appointment
-    try {
-        $studentName   = (string) ($session->user->name ?? ('#'.$studentId));
-        $whenNice      = $slot->format('M d, Y g:i A');
-        $counselorNice = $counselorName ?: '—';
+                // optional notification (unchanged) ...
+                if (Schema::hasTable('tbl_notifications')) {
+                    DB::table('tbl_notifications')->insert([
+                        'user_id'    => $studentId,
+                        'title'      => 'Appointment Scheduled',
+                        'body'       => $note,
+                        'type'       => 'appointment',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            });
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage() === 'TAKEN')
+                return response()->json(['message'=>'That counselor/time just filled. Pick another slot.'], 409);
+            if ($e->getMessage() === 'STUDENT_ACTIVE')
+                return response()->json(['message'=>'This student already has an active appointment (pending/confirmed).'], 409);
+            throw $e;
+        }
 
-        Notify::admins(
-            'Appointment booked by admin',
-            "Student: {$studentName}\nCounselor: {$counselorNice}\nWhen: {$whenNice}",
-            route('admin.appointments.show', $createdId)
-        );
-    } catch (\Throwable $e) {
-        \Log::warning('Notify::admins (booked by admin) failed', [
-            'appt_id' => $createdId,
-            'e'       => $e->getMessage(),
+        // 🔔 NEW: broadcast to all admins that an admin booked an appointment
+        try {
+            $studentName   = (string) ($session->user->name ?? ('#'.$studentId));
+            $whenNice      = $slot->format('M d, Y g:i A');
+            $counselorNice = $counselorName ?: '—';
+
+            Notify::admins(
+                'Appointment booked by admin',
+                "Student: {$studentName}\nCounselor: {$counselorNice}\nWhen: {$whenNice}",
+                route('admin.appointments.show', $createdId)
+            );
+        } catch (\Throwable $e) {
+            \Log::warning('Notify::admins (booked by admin) failed', [
+                'appt_id' => $createdId,
+                'e'       => $e->getMessage(),
+            ]);
+        }
+
+        $start = $slot->copy()->second(0);
+        $rel   = $start->isFuture()
+            ? 'in '.$start->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW])
+            : 'Started '.$start->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW]);
+
+        return response()->json([
+            'ok' => true,
+            'appointment' => [
+                'id'                => $createdId,
+                'scheduled_at_iso'  => $start->toIso8601String(),
+                'date_label'        => $start->format('M d, Y'),
+                'time_label'        => $start->format('g:i A'),
+                'rel_label'         => $rel,                  // e.g., "in 11h 2m"
+                'counselor_name'    => $counselorName,        // may be null
+            ],
+            'html' => sprintf(
+                '
+                <div class="kv-grid">
+                <div class="kv"><span class="label">Student:</span>   <span class="value">%s</span></div>
+                <div class="kv"><span class="label">Counselor:</span> <span class="value">%s</span></div>
+                <div class="kv"><span class="label">Date:</span>      <span class="value">%s</span></div>
+                <div class="kv"><span class="label">Time:</span>      <span class="value">%s</span></div>
+                </div>
+                <div style="margin:6px 0 2px"><b>Note sent to student:</b></div>
+                <div style="white-space:pre-wrap">%s</div>
+                ',
+                e($session->user->name ?? ('#'.$studentId)),
+                e($counselorName ?? '—'),
+                e($start->format('M d, Y')),
+                e($start->format('g:i A')),
+                e($note)
+            ),
         ]);
     }
-
-    $start = $slot->copy()->second(0);
-    $rel   = $start->isFuture()
-        ? 'in '.$start->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW])
-        : 'Started '.$start->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW]);
-
-    return response()->json([
-        'ok' => true,
-        'appointment' => [
-            'id'                => $createdId,
-            'scheduled_at_iso'  => $start->toIso8601String(),
-            'date_label'        => $start->format('M d, Y'),
-            'time_label'        => $start->format('g:i A'),
-            'rel_label'         => $rel,                  // e.g., "in 11h 2m"
-            'counselor_name'    => $counselorName,        // may be null
-        ],
-        'html' => sprintf(
-            '
-            <div class="kv-grid">
-            <div class="kv"><span class="label">Student:</span>   <span class="value">%s</span></div>
-            <div class="kv"><span class="label">Counselor:</span> <span class="value">%s</span></div>
-            <div class="kv"><span class="label">Date:</span>      <span class="value">%s</span></div>
-            <div class="kv"><span class="label">Time:</span>      <span class="value">%s</span></div>
-            </div>
-            <div style="margin:6px 0 2px"><b>Note sent to student:</b></div>
-            <div style="white-space:pre-wrap">%s</div>
-            ',
-            e($session->user->name ?? ('#'.$studentId)),
-            e($counselorName ?? '—'),
-            e($start->format('M d, Y')),
-            e($start->format('g:i A')),
-            e($note)
-        ),
-    ]);
-}
 
     private function composeBookingNote(object $session, Carbon $slot, ?string $counselorName = null): string
     {
