@@ -179,56 +179,39 @@ class ChatController extends Controller
      * =========================================================================*/
 
     public function index(Request $request)
-    {
-        $userId = Auth::id();
+{
+    $userId  = Auth::id();
 
-        // If we were asked to start fresh (via New Chat), we just respect it.
-        // DO NOT clear it here; let store()/activate() clear it when a session is really chosen.
-        $startFresh = (bool) session('start_fresh', false);
+    // 👇 Only use whatever is explicitly in the session.
+    // Do NOT auto-attach the latest session anymore.
+    $activeId = session('chat_session_id');
 
-        $activeId = session('chat_session_id');
+    // If there's no active session, we show the greeting/blank state.
+    $showGreeting = !$activeId;
 
-        // Auto-attach latest session ONLY if:
-        // - there is no activeId
-        // - and we are NOT explicitly in "fresh" mode from New Chat
-        if (!$activeId && !$startFresh) {
-            $latest = ChatSession::where('user_id', $userId)
-                ->latest('updated_at')
-                ->first();
-
-            if ($latest) {
-                session(['chat_session_id' => $latest->id]);
-                $activeId = $latest->id;
-            }
-        }
-
-        // Show greeting page if there is no active session
-        $showGreeting = !$activeId;
-
-        $chats = collect();
-        if ($activeId) {
-            $chats = Chat::where('chat_session_id', $activeId)
-                ->orderBy('sent_at')
-                ->orderBy('id')
-                ->get()
-                ->map(function ($chat) {
-                    try {
-                        $chat->message = Crypt::decryptString($chat->message);
-                    } catch (\Throwable $e) {
-                        $chat->message = '[Encrypted]';
-                    }
-                    return $chat;
-                });
-        }
-
-        // you don't actually use $thread in the blade, so either remove or keep if needed
-        $thread = null;
-
-        // also pass $isLocked if you still use it for the banner
-        $isLocked = false;
-
-        return view('chat', compact('chats', 'showGreeting', 'thread', 'isLocked'));
+    $chats = collect();
+    if ($activeId) {
+        $chats = Chat::where('chat_session_id', $activeId)
+            ->orderBy('sent_at')
+            ->orderBy('id')
+            ->get()
+            ->map(function ($chat) {
+                try {
+                    $chat->message = Crypt::decryptString($chat->message);
+                } catch (\Throwable $e) {
+                    $chat->message = '[Encrypted]';
+                }
+                return $chat;
+            });
     }
+
+    // you don't actually use $thread in the blade, so either remove or keep if needed
+    $thread  = null;
+    $isLocked = false;
+
+    return view('chat', compact('chats', 'showGreeting', 'thread', 'isLocked'));
+}
+
 
     public function newChat(Request $request)
     {
