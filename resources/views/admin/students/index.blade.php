@@ -58,7 +58,7 @@
             value="{{ old('q', request('q')) }}"
             placeholder="Search student"
             autocomplete="off"
-            class="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-10 text-sm
+            class="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm
                    focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
           />
           <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400"
@@ -84,7 +84,7 @@
         {{-- spacer pushes buttons to the right --}}
         <div class="sm:ml-auto"></div>
 
-        {{-- right side: Reset / Apply --}}
+        {{-- right side: Reset only --}}
         <div class="flex items-center gap-2">
           <a href="{{ route('admin.students.index') }}"
              class="h-11 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200
@@ -94,15 +94,9 @@
             </svg>
             Reset
           </a>
-
-          <button type="submit"
-                  class="h-11 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 text-white shadow-sm
-                         hover:bg-indigo-700 active:scale-[.99] transition">
-            Apply
-          </button>
         </div>
-      </div> {{-- end: inner flex row --}}
-    </div>   {{-- end: card wrapper --}}
+      </div>
+    </div>
   </form>
 
   {{-- ========= TABLE ========= --}}
@@ -111,16 +105,18 @@
       <div class="relative overflow-x-auto">
         <table class="min-w-full text-sm leading-6 table-auto">
           <colgroup>
-            <col style="width:24%">
-            <col style="width:25%">
-            <col style="width:18%">
-            <col style="width:15%">
-            <col style="width:15%">
-            <col class="col-action" style="width:0">
+            <col style="width:10%">  {{-- SIS --}}
+            <col style="width:22%"> {{-- Student Name --}}
+            <col style="width:25%"> {{-- Email --}}
+            <col style="width:18%"> {{-- Contact --}}
+            <col style="width:13%"> {{-- Course --}}
+            <col style="width:12%"> {{-- Year --}}
+            <col class="col-action" style="width:0"> {{-- Actions --}}
           </colgroup>
 
           <thead class="bg-slate-100 border-b border-slate-200 text-slate-700 sticky top-0 z-10">
             <tr class="align-middle">
+              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">SIS</th>
               <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Student Name</th>
               <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Email</th>
               <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Contact No.</th>
@@ -133,9 +129,27 @@
           <tbody class="divide-y divide-slate-100">
             @forelse ($students as $s)
               <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition">
-                <td class="px-6 py-4 whitespace-nowrap font-semibold text-slate-900">{{ $s->name }}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $s->email }}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $s->contact_number ?? '—' }}</td>
+                {{-- SIS --}}
+                <td class="px-6 py-4 whitespace-nowrap text-slate-700">
+                  {{ $s->sis ?? '—' }}
+                </td>
+
+                {{-- Student Name --}}
+                <td class="px-6 py-4 whitespace-nowrap font-semibold text-slate-900">
+                  {{ $s->name }}
+                </td>
+
+                {{-- Email --}}
+                <td class="px-6 py-4 whitespace-nowrap text-slate-700">
+                  {{ $s->email }}
+                </td>
+
+                {{-- Contact --}}
+                <td class="px-6 py-4 whitespace-nowrap text-slate-700">
+                  {{ $s->contact_number ?? '—' }}
+                </td>
+
+                {{-- Course --}}
                 <td class="px-6 py-4 whitespace-nowrap">
                   @if($s->course)
                     <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200">
@@ -145,6 +159,8 @@
                     <span class="text-slate-400">—</span>
                   @endif
                 </td>
+
+                {{-- Year Level --}}
                 <td class="px-6 py-4 whitespace-nowrap">
                   @if($s->year_level)
                     <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs bg-violet-50 text-violet-700 ring-1 ring-violet-200">
@@ -154,6 +170,8 @@
                     <span class="text-slate-400">—</span>
                   @endif
                 </td>
+
+                {{-- Actions --}}
                 <td class="px-6 py-4 text-right">
                   <div class="flex items-center justify-end gap-2 whitespace-nowrap">
                     <a href="{{ route('admin.students.show', $s->id) }}"
@@ -188,7 +206,7 @@
               </tr>
             @empty
               <tr>
-                <td colspan="6" class="px-6 py-10 text-center text-slate-500">No students found.</td>
+                <td colspan="7" class="px-6 py-10 text-center text-slate-500">No students found.</td>
               </tr>
             @endforelse
           </tbody>
@@ -204,12 +222,36 @@
   </div>
 </div>
 
-{{-- No auto-submit, no print JS --}}
 <script>
+  // Auto-search + keep focus on the search bar
+  document.addEventListener('DOMContentLoaded', () => {
+    const qInput = document.getElementById('q-input');
+    const form   = document.getElementById('filterForm');
+    let timer    = null;
+
+    if (qInput && form) {
+      qInput.focus();
+
+      qInput.addEventListener('input', function () {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(function () {
+          form.submit();
+        }, 300); // debounce
+      });
+    }
+  });
+
   function copyToClipboard(text) {
     navigator.clipboard.writeText(text).then(function () {
       if (window.Swal) {
-        Swal.fire({ toast:true, position:'top-end', icon:'success', title:'Email copied', showConfirmButton:false, timer:1500 });
+        Swal.fire({
+          toast: true,
+          position: 'top-end',
+          icon: 'success',
+          title: 'Email copied',
+          showConfirmButton: false,
+          timer: 1500
+        });
       }
     });
   }

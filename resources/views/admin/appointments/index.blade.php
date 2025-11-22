@@ -97,8 +97,15 @@
         <div class="md:col-span-3 min-w-0">
           <label class="block text-xs font-medium text-slate-600 mb-1">Search</label>
           <div class="relative">
-            <input id="appt-q" type="text" name="q" value="{{ $q }}" placeholder="Search counselor or student"
-                   class="w-full h-10 bg-white border border-slate-200 rounded-xl pl-10 pr-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"/>
+            <input
+                id="appt-q"
+                type="text"
+                name="q"
+                value="{{ $q }}"
+                placeholder="Search counselor or student"
+                @if($q !== '') autofocus @endif
+                class="w-full h-10 bg-white border border-slate-200 rounded-xl pl-10 pr-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            />
             <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <circle cx="11" cy="11" r="7" stroke-width="2"/>
               <path d="M21 21l-4.3-4.3" stroke-width="2" stroke-linecap="round"/>
@@ -108,29 +115,28 @@
 
         <div class="md:col-span-3 flex items-end justify-end gap-2">
           <a href="{{ route('admin.appointments.index') }}"
-             class="h-10 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 hover:ring-slate-300 active:scale-[.99] transition">
+            class="h-10 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 hover:ring-slate-300 active:scale-[.99] transition">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h7M4 10h16M4 16h10"/>
             </svg>
             Reset
           </a>
-          <button class="h-10 inline-flex items-center justify-center px-5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm text-sm">
-            Apply
-          </button>
         </div>
       </div>
 
-      {{-- Small legend under filters --}}
-      <div class="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
-        <span class="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2 py-0.5 ring-1 ring-violet-200">
-          <svg class="w-3.5 h-3.5 text-violet-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M7 7h10l-3-3m3 3l-3 3M17 17H7l3 3m-3-3l3-3" />
-          </svg>
-          <span class="font-semibold text-violet-700">Re-assigned from …</span>
-        </span>
-        <span>means this appointment was moved from a previous counselor.</span>
-      </div>
+      {{-- Small legend under filters (only when "Re-assigned only" is selected) --}}
+      @if ($status === 'reassigned')
+        <div class="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
+          <span class="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2 py-0.5 ring-1 ring-violet-200">
+            <svg class="w-3.5 h-3.5 text-violet-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M7 7h10l-3-3m3 3l-3 3M17 17H7l3 3m-3-3l3-3" />
+            </svg>
+            <span class="font-semibold text-violet-700">Re-assigned from …</span>
+          </span>
+          <span>means this appointment was moved from a previous counselor.</span>
+        </div>
+      @endif
     </div>
   </form>
 
@@ -368,15 +374,31 @@
 
 {{-- ========= Helpers ========= --}}
 <script>
-  const aq = document.getElementById('appt-q');
-  const af = document.getElementById('apptSearchForm');
-  let at = null;
-  if (aq && af) {
-    aq.addEventListener('input', function () {
-      if (at) clearTimeout(at);
-      at = setTimeout(function () { af.submit(); }, 300);
-    });
+  document.addEventListener('DOMContentLoaded', () => {
+    const aq = document.getElementById('appt-q');
+    const af = document.getElementById('apptSearchForm');
+    let at = null;
+
+    if (aq) {
+      // Always refocus search bar after reload + put caret at the end
+      aq.focus();
+      const len = aq.value.length;
+      try {
+        aq.setSelectionRange(len, len);
+      } catch (e) {}
+
+      // Auto-submit on typing (live search)
+      if (af) {
+        aq.addEventListener('input', function () {
+          if (at) clearTimeout(at);
+          at = setTimeout(function () { af.submit(); }, 300);
+        });
+      }
+    }
+  });
+
+  function printAppointments() {
+    window.print();
   }
-  function printAppointments(){ window.print(); }
 </script>
 @endsection

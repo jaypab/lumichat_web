@@ -40,151 +40,139 @@ class AppointmentController extends Controller
 
     /** List appointments with optional filters + search (counselor name). */
     public function index(Request $r): View
-    {
-        $status = \in_array($r->query('status'), self::STATUSES, true) ? $r->query('status') : self::STATUS_ALL;
-        $period = \in_array($r->query('period'), self::PERIODS, true)   ? $r->query('period') : self::PERIOD_ALL;
-        $q      = \trim((string) $r->query('q', ''));
+{
+    $status = \in_array($r->query('status'), self::STATUSES, true) ? $r->query('status') : self::STATUS_ALL;
+    $period = \in_array($r->query('period'), self::PERIODS, true)   ? $r->query('period') : self::PERIOD_ALL;
+    $q      = \trim((string) $r->query('q', ''));
 
-        $now = now();
+    $now   = now();
+    $table = (new \App\Models\Appointment)->getTable(); // normally "tbl_appointments"
 
-        // ✅ Eloquent + eager loading to avoid N+1
-        $table = (new \App\Models\Appointment)->getTable(); 
+    // 🚫 NO alias here, just the normal table
+    $query = \App\Models\Appointment::query()
+        ->with(['student','counselor'])
+        ->select($table.'.*')
+        ->addSelect([
+            'cr_status' => \DB::table('counselor_change_requests')
+                ->select('status')
+                ->whereColumn('appointment_id', $table.'.id')
+                ->orderByDesc('id')
+                ->limit(1),
+            'cr_created_at' => \DB::table('counselor_change_requests')
+                ->select('created_at')
+                ->whereColumn('appointment_id', $table.'.id')
+                ->orderByDesc('id')
+                ->limit(1),
+        ]);
 
-        // alias the table to 'a' so we can whereColumn() cleanly
-        $query = \App\Models\Appointment::from($table.' as a')
-            ->with(['student','counselor'])
-            ->select('a.*')
-            ->addSelect([
-                // latest counselor-change request for this appointment (if any)
-                'cr_status' => \DB::table('counselor_change_requests')
-                    ->select('status')
-                    ->whereColumn('appointment_id','a.id')
-                    ->orderByDesc('id')
-                    ->limit(1),
-                'cr_created_at' => \DB::table('counselor_change_requests')
-                    ->select('created_at')
-                    ->whereColumn('appointment_id','a.id')
-                    ->orderByDesc('id')
-                    ->limit(1),
+    // ---- status filter ----
+    if ($status !== self::STATUS_ALL && $status !== 'reassigned') {
+        // normal statuses: pending / confirmed / completed / canceled / no_show
+        $query->where($table.'.status', $status);
+    }
+
+    // special: "Re-assigned only" → appointments that have history rows
+    if ($status === 'reassigned' && \Schema::hasTable('tbl_appointment_counselor_history')) {
+        $query->whereExists(function ($sub) use ($table) {
+            $sub->from('tbl_appointment_counselor_history as h')
+                ->whereColumn('h.appointment_id', $table.'.id')
+                ->where('h.status', 'reassigned');
+        });
+    }
+
+    // ---- period filter ----
+    switch ($period) {
+        case 'today':
+            $query->whereDate($table.'.scheduled_at', $now->toDateString());
+            break;
+
+        case 'upcoming':
+            $query->where($table.'.scheduled_at', '>=', $now);
+            break;
+
+        case 'this_week':
+            $query->whereBetween($table.'.scheduled_at', [
+                $now->copy()->startOfWeek(),
+                $now->copy()->endOfWeek(),
+            ]);
+            break;
+
+        case 'this_month':
+            $query->whereBetween($table.'.scheduled_at', [
+                $now->copy()->startOfMonth(),
+                $now->copy()->endOfMonth(),
+            ]);
+            break;
+
+        case 'past':
+            $query->where($table.'.scheduled_at', '<', $now);
+            break;
+
+        default:
+            // 'all' → no date filter
+            break;
+    }
+
+    // ---- search by student or counselor name ----
+    if ($q !== '') {
+        $query->where(function ($w) use ($q) {
+            $w->whereHas('student', function ($s) use ($q) {
+                $s->where('name', 'like', "%{$q}%");
+            })->orWhereHas('counselor', function ($c) use ($q) {
+                $c->where('name', 'like', "%{$q}%");
+            });
+        });
+    }
+
+    // ---- ordering: completed at bottom + date-aware ordering ----
+    $query->orderByRaw("CASE WHEN {$table}.status = 'completed' THEN 1 ELSE 0 END ASC");
+
+    if ($period === 'past') {
+        $query->orderBy($table.'.scheduled_at', 'desc');
+    } elseif (\in_array($period, ['today','upcoming','this_week','this_month'], true)) {
+        $query->orderBy($table.'.scheduled_at', 'asc');
+    } else {
+        $query
+            ->orderByRaw("CASE WHEN {$table}.scheduled_at >= ? THEN 0 ELSE 1 END", [$now])
+            ->orderByRaw("CASE WHEN {$table}.scheduled_at >= ? THEN {$table}.scheduled_at END ASC",  [$now])
+            ->orderByRaw("CASE WHEN {$table}.scheduled_at <  ? THEN {$table}.scheduled_at END DESC", [$now])
+            ->orderByRaw("CASE WHEN {$table}.status = 'completed' THEN {$table}.scheduled_at END DESC");
+    }
+
+    // paginate + keep filters
+    $appointments = $query->paginate(10)->withQueryString();
+
+    // 🔎 counselor re-assignment history for all listed appointments
+    $historyByAppt = [];
+    if ($appointments->count() > 0 && \Schema::hasTable('tbl_appointment_counselor_history')) {
+        $ids = $appointments->pluck('id')->all();
+
+        $rowsHist = \DB::table('tbl_appointment_counselor_history as h')
+            ->leftJoin('tbl_counselors as c', 'c.id', '=', 'h.counselor_id')
+            ->whereIn('h.appointment_id', $ids)
+            ->orderBy('h.changed_at')
+            ->get([
+                'h.appointment_id',
+                'h.counselor_id',
+                'h.status',
+                'h.changed_at',
+                'c.name as counselor_name',
             ]);
 
-        // ---- status filter ----
-        if ($status !== self::STATUS_ALL) {
-            if ($status === 'reassigned') {
-                // virtual filter: show only appointments that have counselor history
-                $query->whereExists(function ($q) {
-                    $q->from('tbl_appointment_counselor_history as h')
-                    ->whereColumn('h.appointment_id', 'a.id')
-                    ->where('h.status', 'reassigned');
-                });
-            } elseif ($status !== self::STATUS_ALL) {
-                // normal statuses: pending / confirmed / completed / canceled / no_show
-                $query->where('status', $status);
-            }
+        foreach ($rowsHist as $h) {
+            $historyByAppt[$h->appointment_id][] = $h;
         }
-
-        // special: "Re-assigned only" → appointments that have history rows
-        if ($status === 'reassigned' && \Schema::hasTable('tbl_appointment_counselor_history')) {
-            $query->whereExists(function ($sub) {
-                $sub->from('tbl_appointment_counselor_history as h')
-                    ->whereColumn('h.appointment_id', 'a.id')
-                    ->where('h.status', 'reassigned');
-            });
-        }
-
-        // ---- period filter (same logic as exportPdf) ----
-        switch ($period) {
-            case 'today':
-                $query->whereDate('a.scheduled_at', $now->toDateString());
-                break;
-
-            case 'upcoming':
-                $query->where('a.scheduled_at', '>=', $now);
-                break;
-
-            case 'this_week':
-                $query->whereBetween('a.scheduled_at', [
-                    $now->copy()->startOfWeek(),
-                    $now->copy()->endOfWeek(),
-                ]);
-                break;
-
-            case 'this_month':
-                $query->whereBetween('a.scheduled_at', [
-                    $now->copy()->startOfMonth(),
-                    $now->copy()->endOfMonth(),
-                ]);
-                break;
-
-            case 'past':
-                $query->where('a.scheduled_at', '<', $now);
-                break;
-
-            default:
-                // 'all' → no date filter
-                break;
-        }
-
-        // ---- search by student or counselor name ----
-        if ($q !== '') {
-            $query->where(function ($w) use ($q) {
-                $w->whereHas('student', function ($s) use ($q) {
-                    $s->where('name', 'like', "%{$q}%");
-                })->orWhereHas('counselor', function ($c) use ($q) {
-                    $c->where('name', 'like', "%{$q}%");
-                });
-            });
-        }
-
-        // ---- ordering: completed at bottom + date-aware ordering ----
-        $query->orderByRaw("CASE WHEN a.status = 'completed' THEN 1 ELSE 0 END ASC");
-
-        if ($period === 'past') {
-            $query->orderBy('a.scheduled_at', 'desc');
-        } elseif (\in_array($period, ['today','upcoming','this_week','this_month'], true)) {
-            $query->orderBy('a.scheduled_at', 'asc');
-        } else {
-            $query
-                ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN 0 ELSE 1 END", [$now])
-                ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN a.scheduled_at END ASC",  [$now])
-                ->orderByRaw("CASE WHEN a.scheduled_at <  ? THEN a.scheduled_at END DESC", [$now])
-                ->orderByRaw("CASE WHEN a.status = 'completed' THEN a.scheduled_at END DESC");
-        }
-
-        // paginate + keep filters in the query string
-        $appointments = $query->paginate(10)->withQueryString();
-
-        // 🔎 counselor re-assignment history for all listed appointments
-        $historyByAppt = [];
-
-        if ($appointments->count() > 0 && \Schema::hasTable('tbl_appointment_counselor_history')) {
-            $ids = $appointments->pluck('id')->all();
-
-            $rowsHist = \DB::table('tbl_appointment_counselor_history as h')
-                ->leftJoin('tbl_counselors as c', 'c.id', '=', 'h.counselor_id')
-                ->whereIn('h.appointment_id', $ids)
-                ->orderBy('h.changed_at')          // oldest → newest
-                ->get([
-                    'h.appointment_id',
-                    'h.counselor_id',
-                    'h.status',
-                    'h.changed_at',
-                    'c.name as counselor_name',
-                ]);
-
-            foreach ($rowsHist as $h) {
-                $historyByAppt[$h->appointment_id][] = $h;
-            }
-        }
-
-        return view('admin.appointments.index', compact(
-            'appointments',
-            'status',
-            'period',
-            'q',
-            'historyByAppt'
-        ));
     }
+
+    return view('admin.appointments.index', compact(
+        'appointments',
+        'status',
+        'period',
+        'q',
+        'historyByAppt'
+    ));
+}
+
 
     public function show(int $id): \Illuminate\View\View
     {

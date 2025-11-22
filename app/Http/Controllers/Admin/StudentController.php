@@ -29,53 +29,52 @@ class StudentController extends Controller
      */
 
 
-        public function index(Request $request): View
-        {
-            $q    = trim((string) $request->input('q', ''));
-            $year = $request->input('year');
+    public function index(Request $request): View
+    {
+        $q    = trim((string) $request->input('q', ''));
+        $year = $request->input('year');
 
-            $query = User::query()
-                ->select([
-                    'id',
-                    'name',
-                    'email',
-                    'course',
-                    'year_level',
-                    'contact_number',
-                    'email_verified_at',
-                    'created_at',
-                ])                      // ✅ no SELECT *, only needed columns
-                ->where('role', 'student');
+        $query = User::query()
+            ->select([
+                'id',
+                'sis',              // ✅ include SIS so Blade can use $s->sis
+                'name',
+                'email',
+                'course',
+                'year_level',
+                'contact_number',
+                'email_verified_at',
+                'created_at',
+            ])
+            ->where('role', 'student');
 
-            if ($q !== '') {
-                $query->where(function ($w) use ($q) {
-                    $w->where('name', 'like', "%{$q}%")
-                    ->orWhere('email', 'like', "%{$q}%")
-                    ->orWhere('course', 'like', "%{$q}%");
-                });
-            }
-
-            if ($year !== null && $year !== '') {
-                $query->where('year_level', $year);
-            }
-
-            $students = $query
-                ->orderBy('created_at', 'desc')
-                ->paginate(self::PER_PAGE)      // e.g. 10 or 25, no deep paging
-                ->withQueryString();
-
-            // you can still reuse your repo just to get distinct year levels
-            $yearLevels = $this->students->distinctYearLevels();
-
-            return view(self::VIEW_INDEX, [
-                'students'   => $students,
-                'q'          => $q,
-                'year'       => $year,
-                'yearLevels' => $yearLevels,
-            ]);
+        if ($q !== '') {
+            $query->where(function ($w) use ($q) {
+                $w->where('name', 'like', "%{$q}%")
+                ->orWhere('email', 'like', "%{$q}%")
+                ->orWhere('course', 'like', "%{$q}%")
+                ->orWhere('sis', 'like', "%{$q}%");   // 🔎 optional: allow searching by SIS
+            });
         }
 
+        if ($year !== null && $year !== '') {
+            $query->where('year_level', $year);
+        }
 
+        $students = $query
+            ->orderBy('created_at', 'desc')
+            ->paginate(self::PER_PAGE)
+            ->withQueryString();
+
+        $yearLevels = $this->students->distinctYearLevels();
+
+        return view(self::VIEW_INDEX, [
+            'students'   => $students,
+            'q'          => $q,
+            'year'       => $year,
+            'yearLevels' => $yearLevels,
+        ]);
+}
     /**
      * Show a student's appointment stats and chart for a selected year.
      * NOTE: We still type-hint App\Models\User for route-model binding.
