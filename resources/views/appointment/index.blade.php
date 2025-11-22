@@ -68,7 +68,7 @@
           <ul class="list-inside list-disc space-y-1">
             <li>Arrive 15 minutes early.</li>
             <li>Bring student ID for verification.</li>
-            <li>Reschedule via Appointment History.</li>
+            <li>Cancel via Appointment History [View].</li>
           </ul>
         </div>
       </div>
@@ -269,16 +269,17 @@
 @endsection
 
 @push('scripts')
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   /* -------------------- Elements -------------------- */
-  const formEl     = document.querySelector('form[action="{{ route('appointment.store') }}"]');
-  const dateInput  = document.getElementById('dateInput');
-  const dateChip   = document.getElementById('dateChip');
+  const formEl       = document.querySelector('form[action="{{ route('appointment.store') }}"]');
+  const dateInput    = document.getElementById('dateInput');
+  const dateChip     = document.getElementById('dateChip');
   const dateChipText = document.getElementById('dateChipText');
-  const reqDate    = document.getElementById('reqDate');
-  const reqTime    = document.getElementById('reqTime');
-  const submitBtn  = document.getElementById('submitBtn');
+  const reqDate      = document.getElementById('reqDate');
+  const reqTime      = document.getElementById('reqTime');
+  const submitBtn    = document.getElementById('submitBtn');
 
   const timeSel    = document.getElementById('timeSelect');
   const timeGrid   = document.getElementById('timeGrid');
@@ -307,7 +308,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateSubmitState(){
     const hasDate = !!dateInput.value;
     const hasTime = !!timeSel.value;
-    submitBtn.disabled = !(hasDate && hasTime);
+    if (submitBtn) submitBtn.disabled = !(hasDate && hasTime);
   }
 
   /* -------------------- Date chip helpers -------------------- */
@@ -320,7 +321,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     const d = new Date(dateInput.value + 'T00:00:00');
-    const label = new Intl.DateTimeFormat(undefined,{ weekday:'short', month:'short', day:'2-digit', year:'numeric' }).format(d);
+    const label = new Intl.DateTimeFormat(undefined,{
+      weekday:'short', month:'short', day:'2-digit', year:'numeric'
+    }).format(d);
     dateChipText.textContent = label;
     dateChip.classList.remove('date-chip--empty');
     dateChip.classList.add('date-chip--filled');
@@ -330,7 +333,8 @@ document.addEventListener('DOMContentLoaded', () => {
   /* -------------------- Time slots -------------------- */
   function clearTimeUI(placeholder='available slots'){
     timeSel.innerHTML = '';
-    const opt = document.createElement('option'); opt.value=''; opt.textContent = placeholder;
+    const opt = document.createElement('option');
+    opt.value=''; opt.textContent = placeholder;
     timeSel.appendChild(opt);
     timeGrid.innerHTML = '';
     emptyEl.classList.add('hidden');
@@ -363,7 +367,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btn.disabled) return;
         timeSel.value = o.value;
         hideError('time');
-        document.querySelectorAll('.time-pill--selected').forEach(el => el.classList.remove('time-pill--selected'));
+        document.querySelectorAll('.time-pill--selected')
+          .forEach(el => el.classList.remove('time-pill--selected'));
         btn.classList.add('time-pill--selected');
         reqTime.classList.add('hidden');
         updateSubmitState();
@@ -375,13 +380,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function isWeekend(dateStr){
-    const d = new Date(dateStr + 'T00:00:00'); const w = d.getDay();
+    const d = new Date(dateStr + 'T00:00:00');
+    const w = d.getDay();
     return w === 0 || w === 6;
   }
 
   async function loadSlots(){
     const date = dateInput.value;
-    if (!date){ clearTimeUI('pick a date'); if (timeHint) timeHint.textContent='Times will appear after you choose a date.'; return; }
+    if (!date){
+      clearTimeUI('pick a date');
+      if (timeHint) timeHint.textContent='Times will appear after you choose a date.';
+      return;
+    }
     if (isWeekend(date)){
       clearTimeUI('closed (Mon–Fri only)');
       if (timeHint) timeHint.textContent = 'Closed on weekends. Please choose a weekday.';
@@ -395,18 +405,28 @@ document.addEventListener('DOMContentLoaded', () => {
     try{
       const url = `${slotsBase}?date=${encodeURIComponent(date)}`;
       const res = await fetch(url, { headers:{'X-Requested-With':'XMLHttpRequest'} });
-      if(!res.ok){ clearTimeUI('unable to load'); if (timeHint) timeHint.textContent='Unable to load slots. Try again.'; return; }
+      if(!res.ok){
+        clearTimeUI('unable to load');
+        if (timeHint) timeHint.textContent='Unable to load slots. Try again.';
+        return;
+      }
 
       const data = await res.json();
 
       timeSel.innerHTML = '';
-      const ph = document.createElement('option'); ph.value=''; ph.textContent='Choose a preferred time *'; timeSel.appendChild(ph);
+      const ph = document.createElement('option');
+      ph.value=''; ph.textContent='Choose a preferred time *';
+      timeSel.appendChild(ph);
 
       if (Array.isArray(data.slots) && data.slots.length){
         data.slots.forEach(s => {
           const opt = document.createElement('option');
           opt.value = s.value;
-          opt.textContent = s.available === 0 ? `${s.label}  (Full)` : (s.available === 1 ? `${s.label}  (1 slot)` : `${s.label}  (${s.available} slots)`);
+          opt.textContent = s.available === 0
+            ? `${s.label}  (Full)`
+            : (s.available === 1
+              ? `${s.label}  (1 slot)`
+              : `${s.label}  (${s.available} slots)`);
           opt.dataset.available = String(s.available);
           timeSel.appendChild(opt);
         });
@@ -484,7 +504,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const firstDow     = new Date(view.getFullYear(), view.getMonth(), 1).getDay();
     const daysInMonth  = new Date(view.getFullYear(), view.getMonth()+1, 0).getDate();
 
-    // leading spacers
     for (let i=0; i<firstDow; i++){
       const s = document.createElement('div');
       s.className = 'cal-spacer';
@@ -512,7 +531,11 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.title = weekend ? 'Closed (Sat–Sun)' : 'Past date';
       } else {
         btn.addEventListener('click', () => { pickup = cell; highlightSelection(); btnUse.disabled = false; });
-        btn.addEventListener('keydown', (e) => { if (e.key==='Enter' || e.key===' ') { e.preventDefault(); pickup = cell; highlightSelection(); btnUse.disabled = false; }});
+        btn.addEventListener('keydown', (e) => {
+          if (e.key==='Enter' || e.key===' ') {
+            e.preventDefault(); pickup = cell; highlightSelection(); btnUse.disabled = false;
+          }
+        });
       }
       calGrid.appendChild(btn);
     }
@@ -583,10 +606,82 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   /* -------------------- Initial states -------------------- */
-  reqDate.classList.add('req'); reqTime.classList.add('req');
+  reqDate.classList.add('req');
+  reqTime.classList.add('req');
   if (dateInput.value){ updateDateChip(); loadSlots(); }
   else { updateDateChip(); if (timeHint) timeHint.textContent = 'Times will appear after you choose a date.'; }
   updateSubmitState();
+
+  /* -------------------- Final confirmation before submit -------------------- */
+  if (formEl) {
+    formEl.addEventListener('submit', function (e) {
+      if (!dateInput.value || !timeSel.value) return;        // let server validation handle it
+      if (typeof Swal === 'undefined') return;               // fallback if walang Swal
+
+      e.preventDefault();
+
+      const dateLabel = dateChipText ? dateChipText.textContent : dateInput.value;
+      let timeLabel = '';
+      if (timeSel.selectedIndex >= 0) {
+        const opt = timeSel.options[timeSel.selectedIndex];
+        timeLabel = opt.textContent.replace(/\s*\(.*\)$/, '');
+      }
+
+      Swal.fire({
+        icon: 'question',
+        title: 'Confirm this appointment?',
+        width: 520,
+        html: `
+        <div style="text-align:left;font-size:.92rem;line-height:1.5;">
+          <div style="margin-bottom:.6rem;">
+            <div><strong>Date:</strong> ${dateLabel || '—'}</div>
+            <div><strong>Time:</strong> ${timeLabel || '—'}</div>
+          </div>
+
+          <hr style="border:none;border-top:1px solid #e5e7eb;margin:.4rem 0 .8rem;">
+
+          <p style="margin:0 0 .4rem;color:#374151;">
+            Before you confirm, please make sure that:
+          </p>
+
+          <ul style="margin:0 0 .6rem;padding-left:0;color:#4b5563;list-style:none;">
+            <li style="display:flex;gap:.45rem;align-items:flex-start;">
+              <span style="margin-top:.15rem;font-size:.9rem;">•</span>
+              <span>You are available on this date and time.</span>
+            </li>
+            <li style="display:flex;gap:.45rem;align-items:flex-start;margin-top:.15rem;">
+              <span style="margin-top:.15rem;font-size:.9rem;">•</span>
+              <span>You can arrive on time and complete the session.</span>
+            </li>
+          </ul>
+
+          <p style="margin:0;color:#b91c1c;font-weight:600;">
+            Once you confirm, you will not be able to reschedule this appointment inside LumiCHAT.
+          </p>
+
+          <p style="margin:.5rem 0 0;color:#6b7280;font-size:.86rem;">
+            If you really need to change the schedule, you can still cancel your appointment
+            from Appointment History [View] as long as no counselor has been assigned yet.
+          </p>
+        </div>
+      `,
+        showCancelButton: true,
+        confirmButtonText: 'Yes, confirm',
+        cancelButtonText: 'Go back',
+        reverseButtons: true,
+        focusConfirm: false,
+        customClass: {
+          popup: 'rounded-2xl shadow-xl',
+          confirmButton: 'swal2-confirm btn-primary-ghost'
+        }
+      }).then((result) => {
+        if (result.isConfirmed) {
+          formEl.submit(); // real submit here
+        }
+      });
+    });
+  }
 });
 </script>
 @endpush
+
