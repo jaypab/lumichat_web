@@ -400,6 +400,34 @@ public function store(Request $request)
             }
         } catch (\Throwable $e) {}
     }
+    // ===== 3.c) BOT INTRO / CAPABILITIES ANSWER (short-circuit) =====
+    if ($flags['asks_capabilities'] ?? false) {
+        $introText = "Im lumichat your mental health companion what can i help with you today?";
+
+        $bot = Chat::create([
+            'user_id'         => $userId,
+            'chat_session_id' => $sessionId,
+            'sender'          => 'bot',
+            'message'         => Crypt::encryptString($introText),
+            'sent_at'         => now(),
+        ]);
+
+        return response()->json([
+            'user_message' => [
+                'text'       => $storedText,
+                'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+                'sent_at'    => now()->toIso8601String(),
+            ],
+            'bot_reply' => [[
+                'id'         => $bot->id,
+                'text'       => $introText,
+                'buttons'    => [],
+                'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+                'sent_at'    => $bot->sent_at->toIso8601String(),
+            ]],
+            'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+        ]);
+    }
 
     // ===== 4) Decline-referral (SOFT RESET – no lock, keep chat open) =====
     $declinedReferral = (function (string $s): bool {
@@ -1302,130 +1330,156 @@ public function store(Request $request)
 
 
     /** Intent classification (English only) with typo coverage + question guard. */
-    private function classifyIntents(string $raw): array
-    {
-        $t = $this->nluNormalize($raw);
+private function classifyIntents(string $raw): array
+{
+    $t = $this->nluNormalize($raw);
 
-        // ---------------- Appointment intent ----------------
-        // Primary rule: action + counselor/therapist/advisor
-        $action  = '(appoint(?:ment)?|apointment|schedule|schedual|book(?:ing)?|bok|reserve|set\s*up)';
-        $role    = '(counsel(?:or|ler)|counsellor|councelor|counslor|therap(?:ist|y)|advisor|someone to talk)';
+    // ---------------- Bot intro / capabilities ----------------
+    $asksCapabilities = false;
 
-        $wantsAppt = (bool) (
-            (preg_match('/\b'.$action.'\b/iu', $t) && preg_match('/\b'.$role.'\b/iu', $t))
-            || preg_match('/\bsee\s+(?:a\s+)?'.$role.'\b/iu', $t)
-        );
+    // Common patterns like:
+    //  - what can you do
+    //  - what can this bot do
+    //  - what is lumichat
+    //  - who are you / what are you
+    //  - how can you help me
+    if (preg_match(
+        '/\b('
+            .'what\s+can\s+(you|u)\s+do'
+            .'|what\s+do\s+you\s+do'
+            .'|what\s+can\s+this\s+(bot|chatbot|app)\s+do'
+            .'|what\s+is\s+(lumichat|this\s+bot|this\s+chatbot)'
+            .'|who\s+are\s+you'
+            .'|what\s+are\s+you'
+            .'|how\s+can\s+you\s+help\s+me'
+            .'|what\s+can\s+you\s+help\s+me\s+with'
+        .')\b/iu',
+        $t
+    )) {
+        $asksCapabilities = true;
+    }
 
-        // Fallback for LumiCHAT context:
-        // Things like "i want to book", "can I book", "i want to schedule"
-        if (!$wantsAppt) {
-            $hasBookingVerb = (bool) preg_match(
-                '/\b(appoint(?:ment)?|apointment|schedule|schedual|book(?:ing)?|bok|reserve)\b/iu',
-                $t
-            );
+    // ---------------- Appointment intent ----------------
+    // Primary rule: action + counselor/therapist/advisor
+    $action  = '(appoint(?:ment)?|apointment|schedule|schedual|book(?:ing)?|bok|reserve|set\s*up)';
+    $role    = '(counsel(?:or|ler)|counsellor|councelor|counslor|therap(?:ist|y)|advisor|someone to talk)';
 
-            $hasRequestPhrase = (bool) preg_match(
-                '/\b(i\s+want|i\'d\s+like|i\s+like\s+to|can\s+i|could\s+i|please)\b/iu',
-                $t
-            );
+    $wantsAppt = (bool) (
+        (preg_match('/\b'.$action.'\b/iu', $t) && preg_match('/\b'.$role.'\b/iu', $t))
+        || preg_match('/\bsee\s+(?:a\s+)?'.$role.'\b/iu', $t)
+    );
 
-            $shortBookingOnly = (bool) preg_match('/\bi\s+want\s+to\s+book\b/iu', $t)
-                             || (preg_match('/\bbook\b/iu', $t) && mb_strlen($t) <= 40);
-
-            if (($hasBookingVerb && $hasRequestPhrase) || $shortBookingOnly) {
-                $wantsAppt = true;
-            }
-        }
-
-        // ---------------- Coping tips/help ----------------
-        $coping = [
-            'coping tips','cope tips','help me cope','ways to cope',
-            'how to deal','how do i deal','how to handle','how do i handle',
-            'advice for this','what can i do','give me tips','share tips','show tips',
-            'grounding','breathing exercise','breath exercise'
-        ];
-        $wantsCoping = false;
-        foreach ($coping as $p) {
-            if (preg_match('/\b'.$this->flex($p).'\b/u', $t)) {
-                $wantsCoping = true;
-                break;
-            }
-        }
-
-        // ---------------- Question detection ----------------
-        $hasQmark = str_contains($t, '?');
-        $startsWh = (bool) preg_match('/^\s*(how|what|why|can|should|where|when|who|which)\b/u', $t);
-        $dontKnow = (bool) preg_match('/\bi\s*(don\'?t|do\s+not)\s+know\s+(why|what|how)\b/u', $t);
-        $isQuestion = ($hasQmark || $startsWh) && !$dontKnow;
-
-        // ---------------- Refuse to share ----------------
-        $refuseShare = (bool) preg_match(
-            '/\b(i\s*(?:don\'?t|do\s*not)\s*(?:want|feel like)\s*(?:to\s*)?(talk|share|say)'
-            .'|prefer\s*not\s*to\s*(say|share|talk)'
-            .'|not\s*now|maybe\s*later|not\s*ready|skip|pass)\b/u',
+    // Fallback for LumiCHAT context:
+    // Things like "i want to book", "can I book", "i want to schedule"
+    if (!$wantsAppt) {
+        $hasBookingVerb = (bool) preg_match(
+            '/\b(appoint(?:ment)?|apointment|schedule|schedual|book(?:ing)?|bok|reserve)\b/iu',
             $t
         );
 
-        // ---------------- Yes / No ----------------
-        $yes = (bool) preg_match('/\b(yes|yeah|yup|sure|ok(?:ay)?|go ahead|proceed|please)\b/u', $t);
-        $no  = (bool) preg_match('/\b(no|nope|not now|later|pass)\b/u', $t);
+        $hasRequestPhrase = (bool) preg_match(
+            '/\b(i\s+want|i\'d\s+like|i\s+like\s+to|can\s+i|could\s+i|please)\b/iu',
+            $t
+        );
 
-        // ---------------- Done (finished coping / conversation for now) ----------------
-        $done = false;
+        $shortBookingOnly = (bool) preg_match('/\bi\s+want\s+to\s+book\b/iu', $t)
+                         || (preg_match('/\bbook\b/iu', $t) && mb_strlen($t) <= 40);
 
-        // Rasa-style payloads, e.g. /coping_done or /done_coping
-        if (preg_match('~/(coping_done|done_coping|finish_coping)~i', $t)) {
+        if (($hasBookingVerb && $hasRequestPhrase) || $shortBookingOnly) {
+            $wantsAppt = true;
+        }
+    }
+
+    // ---------------- Coping tips/help ----------------
+    $coping = [
+        'coping tips','cope tips','help me cope','ways to cope',
+        'how to deal','how do i deal','how to handle','how do i handle',
+        'advice for this','what can i do','give me tips','share tips','show tips',
+        'grounding','breathing exercise','breath exercise'
+    ];
+    $wantsCoping = false;
+    foreach ($coping as $p) {
+        if (preg_match('/\b'.$this->flex($p).'\b/u', $t)) {
+            $wantsCoping = true;
+            break;
+        }
+    }
+
+    // ---------------- Question detection ----------------
+    $hasQmark = str_contains($t, '?');
+    $startsWh = (bool) preg_match('/^\s*(how|what|why|can|should|where|when|who|which)\b/u', $t);
+    $dontKnow = (bool) preg_match('/\bi\s*(don\'?t|do\s+not)\s+know\s+(why|what|how)\b/u', $t);
+    $isQuestion = ($hasQmark || $startsWh) && !$dontKnow;
+
+    // ---------------- Refuse to share ----------------
+    $refuseShare = (bool) preg_match(
+        '/\b(i\s*(?:don\'?t|do\s*not)\s*(?:want|feel like)\s*(?:to\s*)?(talk|share|say)'
+        .'|prefer\s*not\s*to\s*(say|share|talk)'
+        .'|not\s*now|maybe\s*later|not\s*ready|skip|pass)\b/u',
+        $t
+    );
+
+    // ---------------- Yes / No ----------------
+    $yes = (bool) preg_match('/\b(yes|yeah|yup|sure|ok(?:ay)?|go ahead|proceed|please)\b/u', $t);
+    $no  = (bool) preg_match('/\b(no|nope|not now|later|pass)\b/u', $t);
+
+    // ---------------- Done (finished coping / conversation for now) ----------------
+    $done = false;
+
+    // Rasa-style payloads, e.g. /coping_done or /done_coping
+    if (preg_match('~/(coping_done|done_coping|finish_coping)~i', $t)) {
+        $done = true;
+    }
+
+    // Natural language: "done", "done for now", "I'm okay now", "that's enough", etc.
+    if (!$done) {
+        $done = (bool) preg_match(
+            '/\b('
+                .'done for now'
+                .'|i\'?m done'
+                .'|im done'
+                .'|that\'?s enough'
+                .'|that is enough'
+                .'|that\'?s all'
+                .'|that is all'
+                .'|i\'?m okay now'
+                .'|im okay now'
+                .'|i am okay now'
+                .'|i\'?m fine now'
+                .'|im fine now'
+                .'|i am fine now'
+            .')\b/u',
+            $t
+        );
+    }
+
+    // Extra: treat very short "done" messages as done
+    if (!$done) {
+        $short = trim($t);
+        if (in_array($short, ['done'], true)) {
             $done = true;
         }
-
-        // Natural language: "done", "done for now", "I'm okay now", "that's enough", etc.
-        if (!$done) {
-            $done = (bool) preg_match(
-                '/\b('
-                    .'done for now'
-                    .'|i\'?m done'
-                    .'|im done'
-                    .'|that\'?s enough'
-                    .'|that is enough'
-                    .'|that\'?s all'
-                    .'|that is all'
-                    .'|i\'?m okay now'
-                    .'|im okay now'
-                    .'|i am okay now'
-                    .'|i\'?m fine now'
-                    .'|im fine now'
-                    .'|i am fine now'
-                .')\b/u',
-                $t
-            );
-        }
-
-        // Extra: treat very short "done" messages as done
-        if (!$done) {
-            $short = trim($t);
-            if (in_array($short, ['done'], true)) {
-                $done = true;
-            }
-        }
-
-        return [
-            'flags' => [
-                'wants_appointment' => $wantsAppt,
-                'wants_coping'      => $wantsCoping,
-                'is_question'       => $isQuestion,
-                'refused_to_share'  => $refuseShare,
-                'yes'               => $yes,
-                'no'                => $no,
-                'done'              => $done,
-            ],
-            'score' => [
-                'length'            => mb_strlen($t),
-                'wants_appointment' => $wantsAppt ? 1.0 : 0.0,
-                'wants_coping'      => $wantsCoping ? 1.0 : 0.0,
-                'is_question'       => $isQuestion ? 1.0 : 0.0,
-            ],
-        ];
     }
+
+    return [
+        'flags' => [
+            'wants_appointment' => $wantsAppt,
+            'wants_coping'      => $wantsCoping,
+            'is_question'       => $isQuestion,
+            'refused_to_share'  => $refuseShare,
+            'yes'               => $yes,
+            'no'                => $no,
+            'done'              => $done,
+            'asks_capabilities' => $asksCapabilities,  // 👈 NEW FLAG
+        ],
+        'score' => [
+            'length'            => mb_strlen($t),
+            'wants_appointment' => $wantsAppt ? 1.0 : 0.0,
+            'wants_coping'      => $wantsCoping ? 1.0 : 0.0,
+            'is_question'       => $isQuestion ? 1.0 : 0.0,
+        ],
+    ];
+}
 
     /** Coarse last-bot-intent for contextual "yes" handling. */
     private function lastBotIntent(int $sessionId): string
@@ -1452,6 +1506,18 @@ public function store(Request $request)
 /** Detect clearly non–mental-health topics (games, homework, general info, etc.). */
 private function isNonMentalTopic(string $norm, array $labels, array $riskStruct, array $flags): bool
 {
+     // Capability / intro questions should always be answered by Lumi,
+    // not treated as non-mental.
+    if ($flags['asks_capabilities'] ?? false) {
+        return false;
+    }
+
+    $risk = $riskStruct['level'] ?? 'low';
+
+    // 0) YES/NO/DONE replies are always contextual → NEVER treat as non-mental.
+    if (($flags['yes'] ?? false) || ($flags['no'] ?? false) || ($flags['done'] ?? false)) {
+        return false;
+    }
     $risk = $riskStruct['level'] ?? 'low';
 
     // 0) YES/NO/DONE replies are always contextual → NEVER treat as non-mental.
