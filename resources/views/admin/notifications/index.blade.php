@@ -95,8 +95,17 @@
                 {{ $n->created_at->diffForHumans() }}
               </div>
 
+              {{-- Open button: mark as read THEN navigate --}}
               @if($url)
-                <a href="{{ $url }}" class="mt-1 inline-block text-xs underline">Open</a>
+                <button
+                  type="button"
+                  class="mt-1 inline-block text-xs underline text-indigo-700 hover:text-indigo-900"
+                  data-open
+                  data-id="{{ $n->id }}"
+                  data-url="{{ $url }}"
+                >
+                  Open
+                </button>
               @endif
             </div>
           </div>
@@ -131,10 +140,13 @@
         body
       });
       if(!res.ok) throw new Error('Request failed');
-      return res.json();
+      // some mark routes may return empty 204; guard for that:
+      let json = null;
+      try { json = await res.json(); } catch {}
+      return json ?? { ok: true };
     }
 
-    // mark as read
+    // Mark-only button
     document.addEventListener('click', async (e) => {
       const btn = e.target.closest('[data-mark]');
       if(!btn) return;
@@ -162,6 +174,25 @@
           else { badge.textContent = next > 9 ? '9+' : String(next); }
         }
       } catch(err){ console.error(err); }
+    });
+
+    // Open button → mark then navigate
+    document.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-open]');
+      if(!btn) return;
+      e.preventDefault();
+
+      const id  = btn.getAttribute('data-id');
+      const url = btn.getAttribute('data-url');
+      if (!url) return;
+
+      try {
+        await post(NB_MARK_URL_TEMPLATE.replace('__ID__', id));
+      } catch(err) {
+        // Even if mark fails, still navigate to avoid blocking UX
+        console.warn('Mark read failed, continuing to navigate', err);
+      }
+      window.location.assign(url);
     });
 
     document.getElementById('nb-refresh')?.addEventListener('click', () => location.reload());
