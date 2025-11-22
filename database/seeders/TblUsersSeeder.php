@@ -214,6 +214,56 @@ class TblUsersSeeder extends Seeder
                 'created_at' => $now,
                 'updated_at' => $now,
             ],
+            [
+                'email' => 'lorenzmanillasaldivar@gmail.com',
+                'sis'   => '2025009',
+                'name'  => 'Lorenz Saldivar',
+                'course' => 'BSIT',
+                'year_level' => '4th Year',
+                'contact_number' => '09676142138',
+                'email_verified_at' => $now,             // set to null if you prefer unverified
+                'password' => Hash::make('12345678'),
+
+                'role' => 'student',
+                'appointments_enabled' => 0,             // disabled
+
+                'remember_token' => Str::random(40),
+
+                // TOS NOT ACCEPTED
+                'tos_version' => 0,
+                'tos_accepted_at' => null,
+                'tos_ip' => null,
+                'tos_user_agent' => null,
+
+                'last_seen_appt_at' => null,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+             [
+                'email' => 'ondoxsaldivar@gmail.com',
+                'sis'   => '2025010',
+                'name'  => 'Justine Nabunturan',
+                'course' => 'EDUC',
+                'year_level' => '2nd Year',
+                'contact_number' => '09676142138',
+                'email_verified_at' => $now,             // set to null if you prefer unverified
+                'password' => Hash::make('12345678'),
+
+                'role' => 'student',
+                'appointments_enabled' => 0,             // disabled
+
+                'remember_token' => Str::random(40),
+
+                // TOS NOT ACCEPTED
+                'tos_version' => 0,
+                'tos_accepted_at' => null,
+                'tos_ip' => null,
+                'tos_user_agent' => null,
+
+                'last_seen_appt_at' => null,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
 
         ];
 
