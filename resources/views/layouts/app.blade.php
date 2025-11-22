@@ -404,7 +404,9 @@
               <span class="text-[13px] font-semibold text-gray-800 dark:text-gray-100 truncate max-w-[8rem]">
                 @auth {{ Auth::user()->name }} @endauth
               </span>
-              <span class="text-[11px] text-gray-500 dark:text-gray-400">Student</span>
+              <span class="text-[11px] text-gray-500 dark:text-gray-400">
+                @auth {{ Auth::user()->sis }} @endauth
+              </span>
             </div>
           </button>
 

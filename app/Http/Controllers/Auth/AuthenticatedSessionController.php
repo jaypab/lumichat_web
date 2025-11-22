@@ -42,20 +42,40 @@ class AuthenticatedSessionController extends Controller
         $maxAttempts  = 5;
         $decaySeconds = 120;
 
-        $email       = Str::lower((string) $request->input('email'));
-        $throttleKey = $email.'|'.$request->ip();
+        // 👉 This field can now be email OR SIS
+        $rawIdentifier = (string) $request->input('email');
+        $identifier    = trim($rawIdentifier);
+
+        // For throttling, normalize to lowercase (safe for numeric SIS)
+        $normalized    = Str::lower($identifier);
+        $throttleKey   = $normalized.'|'.$request->ip();
 
         if (RateLimiter::tooManyAttempts($throttleKey, $maxAttempts)) {
             $seconds = RateLimiter::availableIn($throttleKey);
 
             return back()
                 ->withInput($request->only('email','remember'))
-                ->with('cooldown', $seconds)                      // 👈 pass seconds to the view
+                ->with('cooldown', $seconds)
                 ->withErrors(['email' => 'Too many login attempts. Please try again later.']);
         }
 
-        if (! Auth::attempt(['email' => $email, 'password' => (string)$request->input('password')], (bool)$request->boolean('remember'))) {
+        $remember  = (bool) $request->boolean('remember');
+        $password  = (string) $request->input('password');
+
+        // Decide which column to use based on format
+        $credentials = ['password' => $password];
+
+        if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
+            // Looks like an email
+            $credentials['email'] = $normalized;
+        } else {
+            // Treat as SIS
+            $credentials['sis'] = $identifier;
+        }
+
+        if (! Auth::attempt($credentials, $remember)) {
             RateLimiter::hit($throttleKey, $decaySeconds);
+
             return back()
                 ->withInput($request->only('email','remember'))
                 ->withErrors(['email' => 'Invalid credentials.']);

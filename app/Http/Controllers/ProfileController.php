@@ -52,16 +52,18 @@ class ProfileController extends Controller
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
         $user = $request->user();
-        $data = $request->validated(); // phone is REQUIRED here
+        $data = $request->validated(); // already sanitized in ProfileUpdateRequest
 
         try {
-            DB::transaction(function () use ($user, $data) {
+           DB::transaction(function () use ($user, $data) {
                 $originalEmail = $user->email;
 
-                // Update Users table
+                // Update Users table – name is LOCKED, do not touch it
                 $user->fill([
-                    'name'  => $data['name'],
-                    'email' => $data['email'],
+                    'email'          => $data['email'],
+                    'course'         => $data['course']         ?? $user->course,
+                    'year_level'     => $data['year_level']     ?? $user->year_level,
+                    'contact_number' => $data['contact_number'] ?? $user->contact_number,
                 ]);
 
                 if ($user->isDirty('email')) {
@@ -69,18 +71,25 @@ class ProfileController extends Controller
                 }
 
                 $user->save();
-
             });
 
             return Redirect::route(self::ROUTE_EDIT)
                 ->with(self::FLASH_STATUS, self::MSG_UPDATED_KEY)
                 ->with(self::FLASH_SUCCESS, self::MSG_UPDATED);
+
         } catch (\Throwable $e) {
-            Log::error('Profile update failed', ['user_id' => $user->id, 'err' => $e]);
+            // LOG THE REAL ERROR (check storage/logs/laravel.log)
+            Log::error('Profile update failed', [
+                'user_id'  => $user->id,
+                'message'  => $e->getMessage(),
+                'trace'    => $e->getTraceAsString(),
+            ]);
 
             return back()
                 ->withInput()
-                ->with('error', self::MSG_SAVE_ERROR);
+                ->with('error', config('app.debug')
+                    ? 'Could not save profile: ' . $e->getMessage()
+                    : self::MSG_SAVE_ERROR);
         }
     }
 

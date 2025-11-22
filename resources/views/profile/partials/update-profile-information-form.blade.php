@@ -44,6 +44,11 @@
       </div>
 
       <div class="row">
+        <dt>Student ID (SIS)</dt>
+        <dd class="title-dynamic">{{ $user->sis ?? '—' }}</dd>
+      </div>
+
+      <div class="row">
         <dt>Email</dt>
         <dd class="title-dynamic break-all">{{ $user->email }}</dd>
       </div>
@@ -78,24 +83,23 @@
     <form method="POST" action="{{ route('profile.update') }}" class="space-y-6" novalidate>
       @csrf
       @method('PUT')
-
       <div class="grid gap-5 sm:grid-cols-2">
-        {{-- Name --}}
+       {{-- Name (read-only) --}}
         <div>
           <label for="edit-name" class="block text-sm font-medium title-dynamic">Name</label>
           <input
             id="edit-name"
             name="name"
             type="text"
-            class="mt-1 w-full input-dynamic"
-            value="{{ old('name', $user->name) }}"
-            required minlength="2" maxlength="100"
-            autocomplete="name" autocapitalize="words"
-            aria-invalid="{{ $errors->has('name') ? 'true' : 'false' }}"
+            class="mt-1 w-full input-dynamic bg-gray-50 text-gray-600 cursor-not-allowed"
+            value="{{ $user->name }}"
+            disabled
+            readonly
+            title="Your name is managed by the school (SIS) and cannot be changed here."
           >
-          @error('name')
-            <p class="text-sm text-rose-500 mt-1 server-error" data-error-for="name">{{ $message }}</p>
-          @enderror
+          <p class="muted-dynamic text-xs mt-1">
+            Your name is managed by the school (SIS) and cannot be changed here.
+          </p>
         </div>
 
         {{-- Email --}}
@@ -113,6 +117,23 @@
           @error('email')
             <p class="text-sm text-rose-500 mt-1 server-error" data-error-for="email">{{ $message }}</p>
           @enderror
+        </div>
+
+        {{-- SIS (read-only) --}}
+        <div class="sm:col-span-2">
+          <label for="edit-sis" class="block text-sm font-medium title-dynamic">Student ID (SIS)</label>
+          <input
+            id="edit-sis"
+            type="text"
+            class="mt-1 w-full input-dynamic bg-gray-50 text-gray-600 cursor-not-allowed"
+            value="{{ $user->sis ?? 'Not set' }}"
+            disabled
+            readonly
+            title="Your SIS ID is managed by the school and cannot be changed here."
+          >
+          <p class="muted-dynamic text-xs mt-1">
+            Your SIS ID is managed by the school and cannot be changed here.
+          </p>
         </div>
 
         {{-- Course --}}
@@ -169,7 +190,7 @@
             name="contact_number"
             type="text"
             class="mt-1 w-full input-dynamic"
-            value="{{ old('contact_number', $reg->contact_number ?? '') }}"
+            value="{{ old('contact_number', $user->contact_number ?? ($reg->contact_number ?? '')) }}"
             inputmode="numeric" pattern="\d*" minlength="10" maxlength="15"
             aria-describedby="phone-help"
             aria-invalid="{{ $errors->has('contact_number') ? 'true' : 'false' }}"

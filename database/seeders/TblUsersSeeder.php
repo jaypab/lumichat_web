@@ -16,6 +16,7 @@ class TblUsersSeeder extends Seeder
         $rows = [
             [
                 'email' => 'earlsepida63@gmail.com',
+                'sis'   => '2025001',
                 'name'  => 'Earl Sepida',
                 'course' => 'BSIT',
                 'year_level' => '4th Year',
@@ -39,31 +40,8 @@ class TblUsersSeeder extends Seeder
                 'updated_at' => $now,
             ],
             [
-                'email' => 'jaypabua3@gmail.com',
-                'name'  => 'Test Student 02',
-                'course' => 'BSIT',
-                'year_level' => '3',
-                'contact_number' => '09170000002',
-                'email_verified_at' => $now,
-                'password' => Hash::make('12345678'),
-
-                'role' => 'student',
-                'appointments_enabled' => 0,
-
-                'remember_token' => Str::random(40),
-
-                // TOS NOT ACCEPTED
-                'tos_version' => 0,
-                'tos_accepted_at' => null,
-                'tos_ip' => null,
-                'tos_user_agent' => null,
-
-                'last_seen_appt_at' => null,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ],
-            [
                 'email' => 'faithmagayon@gmail.com',
+                'sis'   => '2025004',
                 'name'  => 'Faith Magayon',
                 'course' => 'MID',
                 'year_level' => '4th Year',
@@ -85,8 +63,10 @@ class TblUsersSeeder extends Seeder
                 'last_seen_appt_at' => null,
                 'created_at' => $now,
                 'updated_at' => $now,
-            ],[
+            ],
+            [
                 'email' => 'gideon@gmail.com',
+                'sis'   => '2025005',
                 'name'  => 'Gideon Atabelo',
                 'course' => 'HM',
                 'year_level' => '4th Year',
@@ -108,8 +88,10 @@ class TblUsersSeeder extends Seeder
                 'last_seen_appt_at' => null,
                 'created_at' => $now,
                 'updated_at' => $now,
-            ],[
+            ],
+            [
                 'email' => 'godwin@gmail.com',
+                'sis'   => '2025006',
                 'name'  => 'Godwin Atabelo',
                 'course' => 'BSIT',
                 'year_level' => '4th Year',
@@ -132,6 +114,107 @@ class TblUsersSeeder extends Seeder
                 'created_at' => $now,
                 'updated_at' => $now,
             ],
+            [
+                'email' => 'labininaycloyd5@gmail.com',
+                'sis'   => '2025002',
+                'name'  => 'Cloyd Labininay',
+                'course' => 'BSIT',
+                'year_level' => '4th Year',
+                'contact_number' => '09554330963',
+                'email_verified_at' => $now,             // set to null if you prefer unverified
+                'password' => Hash::make('12345678'),
+
+                'role' => 'student',
+                'appointments_enabled' => 0,             // disabled
+
+                'remember_token' => Str::random(40),
+
+                // TOS NOT ACCEPTED
+                'tos_version' => 0,
+                'tos_accepted_at' => null,
+                'tos_ip' => null,
+                'tos_user_agent' => null,
+
+                'last_seen_appt_at' => null,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            [
+                'email' => 'labininaycloyd777@gmail.com',
+                'sis'   => '2025007',
+                'name'  => 'Angelo Labininay',
+                'course' => 'BSIT',
+                'year_level' => '1st Year',
+                'contact_number' => '09557181684',
+                'email_verified_at' => $now,             // set to null if you prefer unverified
+                'password' => Hash::make('12345678'),
+
+                'role' => 'student',
+                'appointments_enabled' => 0,             // disabled
+
+                'remember_token' => Str::random(40),
+
+                // TOS NOT ACCEPTED
+                'tos_version' => 0,
+                'tos_accepted_at' => null,
+                'tos_ip' => null,
+                'tos_user_agent' => null,
+
+                'last_seen_appt_at' => null,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            [
+                'email' => 'lowelljaypabua@gmail.com',
+                'sis'   => '2025003',
+                'name'  => 'Jay Pabua',
+                'course' => 'HM',
+                'year_level' => '2nd Year',
+                'contact_number' => '09123456788',
+                'email_verified_at' => $now,             // set to null if you prefer unverified
+                'password' => Hash::make('12345678'),
+
+                'role' => 'student',
+                'appointments_enabled' => 0,             // disabled
+
+                'remember_token' => Str::random(40),
+
+                // TOS NOT ACCEPTED
+                'tos_version' => 0,
+                'tos_accepted_at' => null,
+                'tos_ip' => null,
+                'tos_user_agent' => null,
+
+                'last_seen_appt_at' => null,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            [
+                'email' => ' jaypabua3@gmail.com',
+                'sis'   => '2025008',
+                'name'  => 'Cloyd Labucana',
+                'course' => 'HM',
+                'year_level' => '1st Year',
+                'contact_number' => '09123456789',
+                'email_verified_at' => $now,             // set to null if you prefer unverified
+                'password' => Hash::make('12345678'),
+
+                'role' => 'student',
+                'appointments_enabled' => 0,             // disabled
+
+                'remember_token' => Str::random(40),
+
+                // TOS NOT ACCEPTED
+                'tos_version' => 0,
+                'tos_accepted_at' => null,
+                'tos_ip' => null,
+                'tos_user_agent' => null,
+
+                'last_seen_appt_at' => null,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+
         ];
 
         foreach ($rows as $row) {

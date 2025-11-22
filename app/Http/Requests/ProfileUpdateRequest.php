@@ -21,10 +21,6 @@ class ProfileUpdateRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        // Name: strip tags + collapse whitespace
-        $name = strip_tags((string) $this->input('name', ''));
-        $name = trim(preg_replace('/\s+/u', ' ', $name));
-
         // Email: strip tags, trim, lowercase
         $email = strip_tags((string) $this->input('email', ''));
         $email = mb_strtolower(trim($email));
@@ -52,8 +48,7 @@ class ProfileUpdateRequest extends FormRequest
             $digits = substr($digits, 0, 15);
         }
 
-        $this->merge([
-            'name'           => $name,
+       $this->merge([
             'email'          => $email,
             'course'         => $course,
             'year_level'     => $year,
@@ -66,10 +61,6 @@ class ProfileUpdateRequest extends FormRequest
         $userId = $this->user()?->id;
 
         return [
-            'name' => [
-                'bail','required','string','min:2','max:100',
-                'regex:/^[\p{L}\p{M}][\p{L}\p{M}\s\.\'\-]*$/u',
-            ],
             'email' => [
                 'bail','required','string','max:255','lowercase',
                 'email:rfc,dns',

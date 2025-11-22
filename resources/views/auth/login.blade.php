@@ -372,12 +372,14 @@
             <input
               id="login-email" name="email" aria-describedby="emailHelp"
               type="text" value="{{ old('email') }}" required placeholder=" "
-              autocomplete="username" autocapitalize="off" spellcheck="false" inputmode="email" maxlength="254"
+              autocomplete="username" autocapitalize="off" spellcheck="false" inputmode="text" maxlength="254"
               class="input peer" data-filled="false"
             />
             <label for="login-email" class="float-label">Email or Student ID</label>
           </div>
-          <p id="emailHelp" class="!mt-1 text-xs text-slate-500">Use your school-provisioned account.</p>
+          <p id="emailHelp" class="!mt-1 text-xs text-slate-500">
+            Enter your campus email or SIS ID (e.g., 2025001).
+          </p>
 
           {{-- Password --}}
           <div class="field">

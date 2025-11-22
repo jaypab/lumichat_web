@@ -21,8 +21,10 @@ class LoginRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $emailRaw = (string) $this->input('email', '');
+        // trim + strip control chars, keep same logic as before
         $email    = preg_replace('/^\s+|\s+$/u', '', $emailRaw);
         $email    = preg_replace('/\p{C}+/u', '', $email);
+        // still lowercase + sanitize; safe for SIS (numbers unchanged)
         $email    = filter_var(Str::lower($email), FILTER_SANITIZE_EMAIL);
 
         $passwordRaw = (string) $this->input('password', '');
@@ -38,19 +40,37 @@ class LoginRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'email'    => ['bail', 'required', 'string', 'max:254', 'email:rfc'],
+            // ❗ allow email OR SIS (no email:rfc rule)
+            'email'    => ['bail', 'required', 'string', 'max:254'],
             'password' => ['bail', 'required', 'string', 'min:8', 'max:72'],
             'remember' => ['sometimes', 'boolean'],
         ];
     }
 
-    /** Attempt auth with lockout protection */
+    /** Attempt auth with lockout protection (email OR SIS) */
     public function authenticate(): void
     {
         $this->ensureIsNotRateLimited();
 
-        if (! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
+        $identifier = (string) $this->input('email');
+        $identifierTrim = trim($identifier);
+        $normalized  = Str::lower($identifierTrim);
+
+        $credentials = [
+            'password' => (string) $this->input('password'),
+        ];
+
+        if (filter_var($normalized, FILTER_VALIDATE_EMAIL)) {
+            // login via email
+            $credentials['email'] = $normalized;
+        } else {
+            // login via SIS
+            $credentials['sis'] = $identifierTrim;
+        }
+
+        if (! Auth::attempt($credentials, $this->boolean('remember'))) {
             RateLimiter::hit($this->throttleKey()); // count this failure
+
             throw ValidationException::withMessages([
                 'email' => trans('auth.failed'),
             ]);
@@ -86,7 +106,6 @@ class LoginRequest extends FormRequest
         $totalWait = max(1, $baseSeconds * $multiplier);
 
         // Prolong the limiter window to reflect our total wait
-        // (This ensures the user can't retry earlier than shown.)
         RateLimiter::hit($key, $totalWait);
 
         throw ValidationException::withMessages([
@@ -100,7 +119,7 @@ class LoginRequest extends FormRequest
     /** The unique rate-limit key for this request */
     public function throttleKey(): string
     {
-        // email (normalized) + IP; Str::transliterate reduces weird chars
-        return Str::transliterate(Str::lower((string) $this->string('email'))).'|'.$this->ip();
+        // email/SIS (normalized) + IP; Str::transliterate reduces weird chars
+        return Str::transliterate(Str::lower((string) $this->string('email'))) . '|' . $this->ip();
     }
 }
