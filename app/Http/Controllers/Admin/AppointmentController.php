@@ -188,11 +188,11 @@ class AppointmentController extends Controller
 
     public function show(int $id): \Illuminate\View\View
     {
-        // Use the same detailed finder you already use in exportShowPdf, followUpForm, etc.
+        // same finder mo
         $appointment = $this->appointments->findDetailedById($id);
         abort_unless($appointment, 404);
 
-        // Optional: load counselor reassignment history for THIS appointment
+        // --- counselor history (iniwan ko as is) ---
         $history = [];
         if (\Schema::hasTable('tbl_appointment_counselor_history')) {
             $history = \DB::table('tbl_appointment_counselor_history as h')
@@ -208,16 +208,24 @@ class AppointmentController extends Controller
                 ]);
         }
 
-        // Optional: latest change-request info for this appointment
-        $latestChangeRequest = \DB::table('counselor_change_requests')
-            ->where('appointment_id', $id)
-            ->orderByDesc('id')
+        // --- LATEST change request + preferred counselor name ---
+        $changeReq = \DB::table('counselor_change_requests as cr')
+            ->leftJoin('tbl_counselors as c', 'c.id', '=', 'cr.preference_counselor_id')
+            ->where('cr.appointment_id', $id)
+            ->orderByDesc('cr.id')
+            ->select(
+                'cr.*',
+                'c.name as preferred_counselor_name'
+            )
             ->first();
 
+        $preferredCounselorName = $changeReq?->preferred_counselor_name;
+
         return view('admin.appointments.show', [
-            'appointment'         => $appointment,
-            'history'             => $history,
-            'latestChangeRequest' => $latestChangeRequest,
+            'appointment'           => $appointment,
+            'history'               => $history,
+            'changeReq'             => $changeReq,            // ✅ ito na ang gagamitin ng Blade
+            'preferredCounselorName'=> $preferredCounselorName,
         ]);
     }
 

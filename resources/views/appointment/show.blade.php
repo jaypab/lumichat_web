@@ -31,37 +31,53 @@
   {{-- Card --}}
   <div id="appointmentCard" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
 
-    <div class="flex items-start justify-between">
+    @php
+      $styles = [
+        'pending'   => ['chip'=>'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200','dot'=>'bg-amber-500','pulse'=>true],
+        'confirmed' => ['chip'=>'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200','dot'=>'bg-blue-500','pulse'=>false],
+        'canceled'  => ['chip'=>'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200','dot'=>'bg-rose-500','pulse'=>false],
+        'completed' => ['chip'=>'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200','dot'=>'bg-emerald-500','pulse'=>false],
+      ];
+      $s = $styles[$appointment->status] ?? ['chip'=>'bg-gray-100 text-gray-700','dot'=>'bg-gray-400','pulse'=>false];
+
+      $now   = \Carbon\Carbon::now();
+      $start = \Carbon\Carbon::parse($appointment->scheduled_at);
+      $mins  = $now->diffInMinutes($start, false);
+      $abs   = abs($mins);
+      $d     = intdiv($abs, 1440); $r=$abs%1440; $h=intdiv($r,60); $m=$r%60;
+      $parts = []; if ($d) $parts[] = "{$d}d"; if ($h) $parts[] = "{$h}h"; if (!$d && $m) $parts[] = "{$m}m";
+      $countdown = $mins === 0 ? 'Starting now' : ($mins > 0 ? ('Starts in '.implode(' ', $parts)) : (implode(' ', $parts).' ago'));
+      $countColor = $mins >= 0 ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200'
+                               : 'bg-gray-100 text-gray-700 dark:bg-gray-700/40 dark:text-gray-200';
+
+      $noCounselor = empty($appointment->counselor_name);
+    @endphp
+
+    {{-- Header row: title + actions (PDF + status pill) --}}
+    <div class="flex items-start justify-between gap-4">
       <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
         Appointment #{{ $appointment->id }}
       </h2>
 
-      @php
-        $styles = [
-          'pending'   => ['chip'=>'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200','dot'=>'bg-amber-500','pulse'=>true],
-          'confirmed' => ['chip'=>'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200','dot'=>'bg-blue-500','pulse'=>false],
-          'canceled'  => ['chip'=>'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200','dot'=>'bg-rose-500','pulse'=>false],
-          'completed' => ['chip'=>'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200','dot'=>'bg-emerald-500','pulse'=>false],
-        ];
-        $s = $styles[$appointment->status] ?? ['chip'=>'bg-gray-100 text-gray-700','dot'=>'bg-gray-400','pulse'=>false];
+      <div class="flex items-center gap-3">
+        {{-- Download PDF (top-right) --}}
+        <a href="{{ route('appointment.show.export.pdf', $appointment->id) }}"
+           target="_blank" rel="noopener"
+           class="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 shadow-sm
+                  hover:bg-emerald-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/>
+          </svg>
+          Download PDF
+        </a>
 
-        $now   = \Carbon\Carbon::now();
-        $start = \Carbon\Carbon::parse($appointment->scheduled_at);
-        $mins  = $now->diffInMinutes($start, false);
-        $abs   = abs($mins);
-        $d     = intdiv($abs, 1440); $r=$abs%1440; $h=intdiv($r,60); $m=$r%60;
-        $parts = []; if ($d) $parts[] = "{$d}d"; if ($h) $parts[] = "{$h}h"; if (!$d && $m) $parts[] = "{$m}m";
-        $countdown = $mins === 0 ? 'Starting now' : ($mins > 0 ? ('Starts in '.implode(' ', $parts)) : (implode(' ', $parts).' ago'));
-        $countColor = $mins >= 0 ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200'
-                                 : 'bg-gray-100 text-gray-700 dark:bg-gray-700/40 dark:text-gray-200';
-
-        $noCounselor = empty($appointment->counselor_name);
-      @endphp
-
-      <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium {{ $s['chip'] }}">
-        <span class="h-1.5 w-1.5 rounded-full {{ $s['dot'] }} {{ $s['pulse'] ? 'animate-pulse' : '' }}"></span>
-        {{ ucfirst($appointment->status) }}
-      </span>
+        {{-- Status pill --}}
+        <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium {{ $s['chip'] }}">
+          <span class="h-1.5 w-1.5 rounded-full {{ $s['dot'] }} {{ $s['pulse'] ? 'animate-pulse' : '' }}"></span>
+          {{ ucfirst($appointment->status) }}
+        </span>
+      </div>
     </div>
 
     <div class="mt-3">
@@ -223,14 +239,14 @@
     </div>
   </div>
 
-    {{-- Actions --}}
-    @php
+  {{-- Actions --}}
+  @php
       $isFuture  = \Carbon\Carbon::parse($appointment->scheduled_at)->gt(now());
       $canCancel = ($appointment->status === 'pending') && $isFuture;
       $cannotReason = match (true) {
-        $appointment->status !== 'pending' => 'Only pending appointments can be canceled.',
-        !$isFuture => 'This appointment has already started/passed.',
-        default => 'Cancel not available.',
+          $appointment->status !== 'pending' => 'Only pending appointments can be canceled.',
+          !$isFuture => 'This appointment has already started/passed.',
+          default => 'Cancel not available.',
       };
 
       $hasCounselor = !empty($appointment->counselor_id);
@@ -240,29 +256,31 @@
       $eligibleForChange = ($appointment->status === 'confirmed')
                           && $hasCounselor
                           && $isFuture24;
-    @endphp
 
-    @php
+      // Student can confirm only when pending + future
       $canConfirm = $appointment->status === 'pending'
           && \Carbon\Carbon::parse($appointment->scheduled_at)->isFuture();
   @endphp
 
-  @if ($canConfirm)
-      <form method="POST"
-            action="{{ route('appointment.confirm', $appointment->id) }}"
-            onsubmit="return confirmStudentConfirm(event, this)"
-            class="inline-flex">
+  <div class="mt-6">
+    <div class="flex flex-wrap items-center gap-3">
+
+      {{-- Confirm appointment (only when pending + future) --}}
+      @if ($canConfirm)
+        <form method="POST"
+              action="{{ route('appointment.confirm', $appointment->id) }}"
+              onsubmit="return confirmStudentConfirm(event, this)"
+              class="inline-flex">
           @csrf
           @method('PATCH')
           <button type="submit"
                   class="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-700">
-              Confirm appointment
+            Confirm appointment
           </button>
-      </form>
-  @endif
+        </form>
+      @endif
 
-  <div class="mt-6">
-    <div class="flex flex-wrap items-center gap-3">
+      {{-- Close --}}
       <a id="btn-appt-close"
          href="{{ route('appointment.history') }}"
          aria-label="Back to appointment history"
@@ -270,11 +288,15 @@
         Close
       </a>
 
+      {{-- Cancel --}}
       @if ($canCancel)
-        <form method="POST" action="{{ route('appointment.cancel', $appointment->id) }}" onsubmit="return confirmStudentCancel(event, this)">
+        <form method="POST"
+              action="{{ route('appointment.cancel', $appointment->id) }}"
+              onsubmit="return confirmStudentCancel(event, this)">
           @csrf
           @method('PATCH')
-          <button type="submit" class="inline-flex items-center rounded-lg bg-rose-600 px-4 py-2 text-white hover:bg-rose-700">
+          <button type="submit"
+                  class="inline-flex items-center rounded-lg bg-rose-600 px-4 py-2 text-white hover:bg-rose-700">
             Cancel
           </button>
         </form>
@@ -284,19 +306,6 @@
           Cancel
         </button>
       @endif
-
-      {{-- Single appointment -> PDF --}}
-      <a href="{{ route('appointment.show.export.pdf', $appointment->id) }}"
-         target="_blank" rel="noopener"
-         class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-white shadow-sm
-                hover:bg-emerald-700 active:scale-[.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-         title="Download appointment as PDF" aria-label="Download appointment as PDF">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/>
-        </svg>
-        Download PDF
-      </a>
 
       {{-- Request different counselor button (only when NO existing change request) --}}
       @if(!isset($changeRequest) || !$changeRequest)
@@ -314,6 +323,7 @@
           </button>
         @endif
       @endif
+
     </div>
   </div>
 
@@ -420,7 +430,6 @@
 @endsection
 
 @push('scripts')
-
 {{-- Dialog open/close + backdrop click + ESC --}}
 <script>
 (function () {
@@ -529,7 +538,6 @@ function printAppointmentCard() {
 </script>
 
 {{-- Change-request form validation + SweetAlert confirm --}}
-{{-- Change-request form validation + SweetAlert confirm --}}
 <script>
 (function () {
   const reason    = document.getElementById('crReason');
@@ -558,21 +566,17 @@ function printAppointmentCard() {
 
     let ok = false;
 
-    // must have reason + counselor
     if (!reasonVal || !counselorVal) {
       ok = false;
     } else if (reasonVal === 'other') {
-      // "Other" => explanation required (min 10 chars)
       ok = trimmed.length >= 10;
     } else {
-      // All other reasons => explanation optional
       ok = true;
     }
 
     submit.disabled   = !ok;
     count.textContent = text.value.length + '/300';
 
-    // update label dynamically
     if (labelEl) {
       if (reasonVal === 'other') {
         labelEl.innerHTML = 'Additional explanation <span class="text-rose-600">*</span>';
@@ -596,13 +600,12 @@ function printAppointmentCard() {
   reason.addEventListener('change', validate);
   counselor.addEventListener('change', validate);
 
-    form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', (e) => {
     e.preventDefault();
 
     const reasonVal    = reason.value.trim();
     const counselorVal = counselor.value.trim();
 
-    // Guard: reason required
     if (!reasonVal) {
       Swal.fire({
         icon: 'warning',
@@ -612,7 +615,6 @@ function printAppointmentCard() {
       return;
     }
 
-    // Guard: counselor required
     if (!counselorVal) {
       Swal.fire({
         icon: 'warning',
@@ -625,7 +627,6 @@ function printAppointmentCard() {
     let v = text.value.replace(/\s{2,}/g, ' ').trim();
     text.value = v.slice(0, 300);
 
-    // Extra guard for "Other"
     if (reasonVal === 'other' && text.value.length < 10) {
       Swal.fire({
         icon: 'warning',
@@ -663,7 +664,6 @@ function printAppointmentCard() {
     });
   });
 
-  // Initial state
   validate();
 })();
 </script>
@@ -697,5 +697,4 @@ function printAppointmentCard() {
     transition: transform .14s ease-in, opacity .14s ease-in;
   }
 </style>
-
 @endpush

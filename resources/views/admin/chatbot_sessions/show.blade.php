@@ -1110,58 +1110,96 @@
     calPrev?.addEventListener('click',()=>{ if (!sameYM(view,today)) { view.setMonth(view.getMonth()-1); renderCalendar(); }});
     calNext?.addEventListener('click',()=>{ view.setMonth(view.getMonth()+1); renderCalendar(); });
 
-    async function loadSlots(forceCounselorId=null){
-      const date = iDate.value; if (!date) return;
-      try{
-        const url = new URL(epSlots, window.location.origin);
-        url.searchParams.set('date', date);
+    async function loadSlots(forceCounselorId = null) {
+  const date = iDate.value;
+  if (!date) return;
 
-        const cid = forceCounselorId || iCoun.value || '';
-        if (cid) url.searchParams.set('counselor_id', cid);
+  try {
+    const url = new URL(epSlots, window.location.origin);
+    url.searchParams.set('date', date);
 
-        const res = await fetch(url, { headers:{'X-Requested-With':'XMLHttpRequest'} });
-        const j   = await res.json();
+    const cid = forceCounselorId || iCoun.value || '';
+    if (cid) url.searchParams.set('counselor_id', cid);
 
-        iCoun.innerHTML = '';
-        (j.counselors||[]).forEach(c => iCoun.add(new Option(c.name, c.id)));
-        if (!iCoun.options.length){
-          timePills.innerHTML='';
-          noSlotsHint.textContent='No active counselors available for booking.';
-          noSlotsHint.classList.remove('hidden');
-          return;
-        }
+    const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    const j   = await res.json();
 
-        // Try to keep using the forced / preferred counselor if present
-        if (cid && [...iCoun.options].some(o => o.value===cid)) {
-          iCoun.value = cid;
-        }
+    // ===== Build counselor list =====
+    const rawList = Array.isArray(j.counselors) ? j.counselors : [];
+    const prefId  = preferredCounselorId ? String(preferredCounselorId) : null;
 
-        const occBy   = j.occupied_by || {};
-        const slots   = j.slots || {};
-        const current = (j.current_time || '').trim();
-        const ref     = j.ref_time || j.suggest || null;
+    let counselorList = rawList;
 
-        const activeCid = iCoun.value;
+    // If may assigned counselor → show ONLY that one
+    if (prefId) {
+      const filtered = rawList.filter(c => {
+        const id = c.id ?? c.counselor_id;
+        return String(id) === prefId;
+      });
 
-        const extractTime = (s) => {
-          const m = /(\d{2}:\d{2})(?::\d{2})?/.exec(String(s).trim());
-          return m ? m[1] : String(s).trim();
-        };
-
-        const occRaw  = occBy[activeCid] || [];
-        const occNorm = occRaw.map(extractTime);
-
-        fillTimes(activeCid, slots, { occupied: occNorm, current, ref, date });
-
-        iCoun.onchange = () => loadSlots(iCoun.value);
-      }catch(e){
-        iCoun.innerHTML='';
-        iTime.innerHTML='';
-        timePills && (timePills.innerHTML='');
-        noSlotsHint && noSlotsHint.classList.add('hidden');
-        console.error(e);
+      // Only if match exists – otherwise fallback to full list
+      if (filtered.length) {
+        counselorList = filtered;
       }
     }
+
+    // Clear & repopulate select
+    iCoun.innerHTML = '';
+    counselorList.forEach(c => {
+      const id = c.id ?? c.counselor_id;
+      if (id == null) return;
+      iCoun.add(new Option(c.name, id));
+    });
+
+    if (!iCoun.options.length) {
+      timePills.innerHTML = '';
+      noSlotsHint.textContent = 'No active counselors available for booking.';
+      noSlotsHint.classList.remove('hidden');
+      return;
+    }
+
+    // ===== Lock / unlock dropdown =====
+    if (prefId) {
+      // Student already assigned → lock to that counselor
+      iCoun.value    = prefId;
+      iCoun.disabled = true;
+    } else {
+      // No assignment → behave normally
+      iCoun.disabled = false;
+      if (cid && [...iCoun.options].some(o => o.value === String(cid))) {
+        iCoun.value = String(cid);
+      }
+    }
+
+    // ===== Build time slots for the active counselor =====
+    const occBy   = j.occupied_by || {};
+    const slots   = j.slots || {};
+    const current = (j.current_time || '').trim();
+    const ref     = j.ref_time || j.suggest || null;
+
+    const activeCid = iCoun.value;
+
+    const extractTime = (s) => {
+      const m = /(\d{2}:\d{2})(?::\d{2})?/.exec(String(s).trim());
+      return m ? m[1] : String(s).trim();
+    };
+
+    const occRaw  = occBy[activeCid] || [];
+    const occNorm = occRaw.map(extractTime);
+
+    fillTimes(activeCid, slots, { occupied: occNorm, current, ref, date });
+
+    // If locked, no onchange; if not locked, changing counselor reloads slots
+    iCoun.onchange = prefId ? null : () => loadSlots(iCoun.value);
+
+  } catch (e) {
+    iCoun.innerHTML = '';
+    iTime.innerHTML = '';
+    timePills && (timePills.innerHTML = '');
+    noSlotsHint && noSlotsHint.classList.add('hidden');
+    console.error(e);
+  }
+}
 
     function fillTimes(counselorId, slotsByCounselor, extras = {}) {
       const occ = Array.isArray(extras.occupied) ? extras.occupied.map(String) : [];
