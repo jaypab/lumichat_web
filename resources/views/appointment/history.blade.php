@@ -81,69 +81,65 @@
   @endphp
 
   {{-- ======= Filters (enhanced) ======= --}}
-<form id="studentApptFilters" method="GET" action="{{ route('appointment.history') }}" class="screen-only">
-  <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+  <form id="studentApptFilters" method="GET" action="{{ route('appointment.history') }}" class="screen-only">
+    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
 
-    {{-- Quick period chips (Today / This Week / etc.) --}}
-    <div class="flex flex-wrap items-center gap-2">
-      <span class="text-xs font-medium text-slate-500 mr-1.5">Date:</span>
-      @foreach($periodOptions as $key => $label)
-        @php $active = $period === $key; @endphp
-        <button name="period" value="{{ $key }}"
-          class="inline-flex items-center h-8 px-3 rounded-lg text-xs font-medium
-                 {{ $active ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100' }}">
-          {{ $label }}
-        </button>
-      @endforeach
-      {{-- keep other params when switching period --}}
-      <input type="hidden" name="status" value="{{ $status }}">
-      <input type="hidden" name="q" value="{{ $q }}">
-    </div>
-
-    {{-- Controls row --}}
-    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-      {{-- Status (== width with Search) --}}
-      <div class="md:col-span-5 min-w-0">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Status</label>
-        <select name="status"
-                class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-          @foreach($statusOptions as $val => $label)
-            <option value="{{ $val }}" @selected($status===$val)>{{ $label }}</option>
-          @endforeach
-        </select>
+      {{-- Quick period chips (Today / This Week / etc.) --}}
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-xs font-medium text-slate-500 mr-1.5">Date:</span>
+        @foreach($periodOptions as $key => $label)
+          @php $active = $period === $key; @endphp
+          <button name="period" value="{{ $key }}"
+            class="inline-flex items-center h-8 px-3 rounded-lg text-xs font-medium
+                  {{ $active ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100' }}">
+            {{ $label }}
+          </button>
+        @endforeach
+        {{-- keep other params when switching period --}}
+        <input type="hidden" name="status" value="{{ $status }}">
+        <input type="hidden" name="q" value="{{ $q }}">
       </div>
 
-      {{-- Search (== width with Status) --}}
-      <div class="md:col-span-5 min-w-0">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Search</label>
-        <div class="relative">
-          <input id="student-appt-q" type="text" name="q" value="{{ $q }}" autocomplete="off" 
-                placeholder="Search counselor"
-                class="w-full h-10 bg-white border border-slate-200 rounded-xl pl-10 pr-9 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"/>
-          <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <circle cx="11" cy="11" r="7" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-          @if($q!=='')
-            <a href="{{ route('appointment.history', array_filter(['status'=>$status,'period'=>$period])) }}"
-              class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" title="Clear">✕</a>
-          @endif
+      {{-- Controls row --}}
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
+        {{-- Status --}}
+        <div class="md:col-span-4 min-w-0">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Status</label>
+          <select name="status"
+                  class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+            @foreach($statusOptions as $val => $label)
+              <option value="{{ $val }}" @selected($status===$val)>{{ $label }}</option>
+            @endforeach
+          </select>
+        </div>
+
+        {{-- Search --}}
+        <div class="md:col-span-4 min-w-0">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Search</label>
+          <div class="relative">
+            <input id="student-appt-q" type="text" name="q" value="{{ $q }}" autocomplete="off"
+                  placeholder="Search counselor"
+                  class="w-full h-10 bg-white border border-slate-200 rounded-xl pl-10 pr-9 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"/>
+            <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <circle cx="11" cy="11" r="7" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            @if($q!=='')
+              <a href="{{ route('appointment.history', array_filter(['status'=>$status,'period'=>$period])) }}"
+                class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" title="Clear">✕</a>
+            @endif
+          </div>
+        </div>
+
+        {{-- Actions --}}
+        <div class="md:col-span-4 flex items-end justify-end gap-2">
+          <a href="{{ route('appointment.history') }}"
+            class="h-10 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 active:scale-[.99]">
+            Reset
+          </a>
         </div>
       </div>
-
-      {{-- Actions --}}
-      <div class="md:col-span-2 flex items-end justify-end gap-2">
-        <a href="{{ route('appointment.history') }}"
-          class="h-10 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 active:scale-[.99]">
-          Reset
-        </a>
-        <button type="submit"
-                class="h-10 inline-flex items-center justify-center px-5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm text-sm">
-          Apply
-        </button>
-      </div>
     </div>
-  </div>
-</form>
+  </form>
 
   {{-- Table --}}
   <div class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
@@ -300,12 +296,20 @@
 </div>
 
 {{-- SweetAlert + search debounce --}}
+
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-  const successMsg = @json(session('success') ?? session('status'));
+const successMsg = @json(session('success') ?? session('status'));
   if (successMsg) {
     Swal.fire({ icon:'success', title:'Success', text: successMsg, timer:2200, showConfirmButton:false });
+  }
+
+  const f = document.getElementById('studentApptFilters');
+  const statusSelect = document.querySelector('#studentApptFilters select[name="status"]');
+
+  if (statusSelect && f) {
+    statusSelect.addEventListener('change', () => f.submit());
   }
 
   const errs = @json($errors->all());
@@ -317,7 +321,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // debounce search
   const q = document.getElementById('student-appt-q');
-  const f = document.getElementById('studentApptFilters');
   let t = null;
   if (q && f) {
     q.addEventListener('input', function () {
