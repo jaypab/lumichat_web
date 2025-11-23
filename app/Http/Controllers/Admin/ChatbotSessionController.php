@@ -638,14 +638,17 @@ class ChatbotSessionController extends Controller
                 if ($taken) throw new \RuntimeException('TAKEN');
 
                 $createdId = DB::table('tbl_appointments')->insertGetId([
-                    'student_id'         => $studentId,
-                    'counselor_id'       => $counselorId,
-                    'scheduled_at'       => $slot,
-                    'status'             => 'confirmed',
-                    'note'               => $note,
-                    'chatbot_session_id' => $session->id,
-                    'created_at'         => now(),
-                    'updated_at'         => now(),
+                    'student_id'               => $studentId,
+                    'counselor_id'             => $counselorId,
+                    'scheduled_at'             => $slot,
+                    // 🔽 huwag auto-confirm; kailangan muna ng student confirmation
+                    'status'                   => 'pending',
+                    'student_confirm_required' => true,
+                    'student_confirmed_at'     => null,
+                    'note'                     => $note,
+                    'chatbot_session_id'       => $session->id,
+                    'created_at'               => now(),
+                    'updated_at'               => now(),
                 ]);
 
                 // optional notification (unchanged) ...
@@ -733,12 +736,13 @@ class ChatbotSessionController extends Controller
 
         return "Hi {$firstName},\n\n"
             . "LumiCHAT noticed you might be going through a lot, and we want to support you. "
-            . "We’ve set a confidential check-in for you:\n\n"
+            . "We’ve scheduled a confidential guidance appointment for you:\n\n"
             . "📅 {$niceDate} • ⏰ {$niceTime}\n"
             . "👤 {$who}\n"
             . "📍 {$location}\n\n"
-            . "This is 100% confidential and judgment-free. Please arrive ~10 minutes early and bring your school ID if possible. "
-            . "If you need to reschedule, just reply to this message or visit the Guidance Office.\n\n"
+            . "This session is confidential and judgment-free. Please arrive about 10 minutes early and bring your school ID if possible.\n\n"
+            . "If this schedule does not work for you, you can cancel this appointment in your LumiCHAT appointment page "
+            . "and book a new time using the appointment booking page when you are ready.\n\n"
             . "We’re here for you. One step at a time—you are not alone.";
     }
 
@@ -931,14 +935,21 @@ class ChatbotSessionController extends Controller
                         ->exists();
                     if ($taken) throw new \RuntimeException('TAKEN');
 
-                    // move the appt
-                    DB::table('tbl_appointments')->where('id',$appt->id)->update([
-                        'counselor_id'       => $counselorId,
-                        'scheduled_at'       => $slot,
-                        'note'               => $note,
-                        'chatbot_session_id' => $session->id,
-                        'updated_at'         => now(),
-                    ]);
+                    // move the appt + require student confirmation
+                    DB::table('tbl_appointments')
+                        ->where('id', $appt->id)
+                        ->update([
+                            'counselor_id'             => $counselorId,
+                            'scheduled_at'             => $slot,
+                            'note'                     => $note,
+                            'chatbot_session_id'       => $session->id,
+                            // 🔽 para lumabas yung Confirm button sa student side
+                            'status'                   => 'pending',
+                            'student_confirm_required' => true,
+                            'student_confirmed_at'     => null,
+                            'updated_at'               => now(),
+                        ]);
+
 
                     // mark session as expedited (if columns exist)
                     if ($sessTable) {
@@ -1017,11 +1028,14 @@ class ChatbotSessionController extends Controller
         $location = 'Guidance Office, Tagoloan Community College';
 
         return "Hi {$firstName},\n\n"
-            . "Because your recent LumiCHAT session was flagged as high-risk, we moved your guidance appointment to an earlier time so we can check in with you sooner:\n\n"
+            . "Because your recent LumiCHAT session was flagged as high-risk, we moved your guidance appointment to an earlier time "
+            . "so we can check in with you sooner:\n\n"
             . "📅 {$niceDate} • ⏰ {$niceTime}\n"
             . "👤 {$who}\n"
             . "📍 {$location}\n\n"
-            . "If this time won’t work, reply to this message or visit the Guidance Office and we’ll adjust it. You’re not alone—we’re here for you.";
+            . "If this time does not work for you, you can cancel this appointment in your LumiCHAT appointment page "
+            . "and create a new appointment using the booking page at a time that works better for you.\n\n"
+            . "We’re here for you. You don’t have to go through this alone.";
     }
 
     private function sessionsTable(): ?string

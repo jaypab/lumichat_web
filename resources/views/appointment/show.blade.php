@@ -240,8 +240,8 @@
   </div>
 
   {{-- Actions --}}
-  @php
-      $isFuture  = \Carbon\Carbon::parse($appointment->scheduled_at)->gt(now());
+    @php
+      $isFuture  = \Carbon\Carbon::parse($appointment->scheduled_at)->isFuture();
       $canCancel = ($appointment->status === 'pending') && $isFuture;
       $cannotReason = match (true) {
           $appointment->status !== 'pending' => 'Only pending appointments can be canceled.',
@@ -250,22 +250,86 @@
       };
 
       $hasCounselor = !empty($appointment->counselor_id);
-      $isFuture24   = \Carbon\Carbon::parse($appointment->scheduled_at)->gt(now()->addHours(24));
 
-      // ONLY confirmed appointments can request counselor change
-      $eligibleForChange = ($appointment->status === 'confirmed')
-                          && $hasCounselor
-                          && $isFuture24;
+      // Appointments created/moved from the chatbot high-risk flow (urgent / reschedule)
+      $isFromChatbot = !empty($appointment->chatbot_session_id);
 
-      // Student can confirm only when pending + future
-      $canConfirm = $appointment->status === 'pending'
-          && \Carbon\Carbon::parse($appointment->scheduled_at)->isFuture();
+      // ---- 2-hour window after booking ----
+      $createdAt           = \Carbon\Carbon::parse($appointment->created_at);
+      $withinChangeWindow  = $createdAt->copy()->addHours(2)->isFuture();   // true = within 2 hours
+      $baseCanChange       = ($appointment->status === 'confirmed')
+                           && $hasCounselor
+                           && !$isFromChatbot
+                           && $isFuture; // optional pero magandang safety
+
+      $eligibleForChange   = $baseCanChange && $withinChangeWindow;
+
+      // reason for disabled tooltip
+      $changeDisabledReason = match (true) {
+          !$baseCanChange      => 'Available only for normal confirmed appointments with an assigned counselor.',
+          !$withinChangeWindow => 'The 2-hour request window after booking has already passed.',
+          default              => 'Request not available for this appointment.',
+      };
+
+      // flag if this appointment needs student confirmation
+      $needsStudentConfirm = (bool) ($appointment->student_confirm_required ?? false);
+
+      $canConfirm = $needsStudentConfirm
+          && $appointment->status === 'pending'
+          && $isFuture;
   @endphp
 
   <div class="mt-6">
-    <div class="flex flex-wrap items-center gap-3">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 
-      {{-- Confirm appointment (only when pending + future) --}}
+      {{-- LEFT GROUP: Close + Cancel (Cancel on the left side) --}}
+      <div class="flex flex-wrap items-center gap-3">
+        {{-- Close --}}
+        <a id="btn-appt-close"
+           href="{{ route('appointment.history') }}"
+           aria-label="Back to appointment history"
+           class="inline-flex items-center rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600">
+          Close
+        </a>
+
+        {{-- Cancel --}}
+        @if ($canCancel)
+          <form method="POST"
+                action="{{ route('appointment.cancel', $appointment->id) }}"
+                onsubmit="return confirmStudentCancel(event, this)">
+            @csrf
+            @method('PATCH')
+            <button type="submit"
+                    class="inline-flex items-center rounded-lg bg-rose-600 px-4 py-2 text-white hover:bg-rose-700">
+              Cancel
+            </button>
+          </form>
+        @else
+          <button type="button" disabled title="{{ $cannotReason }}"
+                  class="inline-flex items-center rounded-lg bg-rose-600 px-4 py-2 text-white opacity-50 cursor-not-allowed">
+            Cancel
+          </button>
+        @endif
+      </div>
+
+      {{-- Request different counselor  ✅ NORMAL BOOKING + within 2 hours only --}}
+      @if(!$isFromChatbot && (!isset($changeRequest) || !$changeRequest))
+        @if($eligibleForChange)
+          <button type="button"
+                  onclick="crOpen()"
+                  class="inline-flex items-center h-10 rounded-lg bg-violet-600 px-4 text-white hover:bg-violet-700">
+            Request different counselor
+          </button>
+        @else
+          <button type="button" disabled
+                  title="{{ $changeDisabledReason }}"
+                  class="inline-flex items-center h-10 rounded-lg bg-violet-600 px-4 text-white opacity-50 cursor-not-allowed">
+            Request different counselor
+          </button>
+        @endif
+      @endif
+
+      {{-- Confirm appointment (last on the right) --}}
       @if ($canConfirm)
         <form method="POST"
               action="{{ route('appointment.confirm', $appointment->id) }}"
@@ -280,52 +344,9 @@
         </form>
       @endif
 
-      {{-- Close --}}
-      <a id="btn-appt-close"
-         href="{{ route('appointment.history') }}"
-         aria-label="Back to appointment history"
-         class="inline-flex items-center rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600">
-        Close
-      </a>
-
-      {{-- Cancel --}}
-      @if ($canCancel)
-        <form method="POST"
-              action="{{ route('appointment.cancel', $appointment->id) }}"
-              onsubmit="return confirmStudentCancel(event, this)">
-          @csrf
-          @method('PATCH')
-          <button type="submit"
-                  class="inline-flex items-center rounded-lg bg-rose-600 px-4 py-2 text-white hover:bg-rose-700">
-            Cancel
-          </button>
-        </form>
-      @else
-        <button type="button" disabled title="{{ $cannotReason }}"
-                class="inline-flex items-center rounded-lg bg-rose-600 px-4 py-2 text-white opacity-50 cursor-not-allowed">
-          Cancel
-        </button>
-      @endif
-
-      {{-- Request different counselor button (only when NO existing change request) --}}
-      @if(!isset($changeRequest) || !$changeRequest)
-        @if($eligibleForChange)
-          <button type="button"
-                  onclick="crOpen()"
-                  class="inline-flex items-center h-10 rounded-lg bg-violet-600 px-4 text-white hover:bg-violet-700">
-            Request different counselor
-          </button>
-        @else
-          <button type="button" disabled
-                  title="Available only for confirmed appointments, ≥24h before session, with an assigned counselor."
-                  class="inline-flex items-center h-10 rounded-lg bg-violet-600 px-4 text-white opacity-50 cursor-not-allowed">
-            Request different counselor
-          </button>
-        @endif
-      @endif
-
     </div>
   </div>
+</div>
 
   {{-- Change counselor dialog --}}
   <dialog id="crModal" class="rounded-2xl p-0 w-[720px] max-w-[96vw] backdrop:bg-slate-900/60 backdrop:backdrop-blur">
@@ -476,27 +497,60 @@ function confirmStudentCancel(e, form) {
   Swal.fire({
     icon: 'warning',
     title: 'Cancel this appointment?',
-    text: 'This action cannot be undone.',
+    html: `
+      <div style="text-align:left;font-size:14px;color:#4B5563;line-height:1.5;">
+        <p style="margin-bottom:8px;"><strong>This action cannot be undone.</strong></p>
+
+        <p style="margin-bottom:6px;">Please cancel only if:</p>
+        <ul style="margin:0 0 10px 18px; padding:0; list-style:disc;">
+          <li>The date or time no longer works for you (class conflict or other plans).</li>
+          <li>You feel you do not need this counseling session anymore.</li>
+        </ul>
+
+        <p style="margin:0;">
+          If you still need support later, you can go back to the LumiCHAT
+          booking page and create a new appointment at a better time for you.
+        </p>
+      </div>
+    `,
     showCancelButton: true,
     confirmButtonText: 'Yes, cancel',
     cancelButtonText: 'No, keep it',
-    confirmButtonColor: '#dc2626',
-    cancelButtonColor: '#6b7280',
+    confirmButtonColor: '#6366F1', // violet confirm
+    cancelButtonColor: '#E5E7EB',  // light gray cancel
     reverseButtons: true,
     focusCancel: true
-  }).then(res => { if (res.isConfirmed) form.submit(); });
+  }).then(res => {
+    if (res.isConfirmed) form.submit();
+  });
   return false;
 }
+
+
 
 function confirmStudentConfirm(e, form) {
   e.preventDefault();
   Swal.fire({
     icon: 'question',
     title: 'Confirm this appointment?',
-    text: 'Once confirmed, the counseling office will be notified.',
+    html: `
+      <div style="text-align:left;font-size:14px;color:#4B5563;line-height:1.5;">
+        <p style="margin-bottom:8px;"><strong>After you confirm:</strong></p>
+        <ul style="margin:0 0 10px 18px; padding:0; list-style:disc;">
+          <li>You can no longer cancel this appointment in LumiCHAT.</li>
+          <li>You cannot change the date or time from this page.</li>
+        </ul>
+        <p style="margin:0;">
+          If you are not sure about the schedule, choose <strong>"No, not yet"</strong>,
+          cancel this appointment, and make a new appointment at a time when you are available.
+        </p>
+      </div>
+    `,
     showCancelButton: true,
     confirmButtonText: 'Yes, confirm',
     cancelButtonText: 'No, not yet',
+    confirmButtonColor: '#6366F1',
+    cancelButtonColor: '#E5E7EB',
     reverseButtons: true,
     focusCancel: true,
   }).then(res => {

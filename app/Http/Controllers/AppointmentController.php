@@ -859,7 +859,7 @@ class AppointmentController extends Controller
     {
         $userId = Auth::id();
 
-        // Load appointment the student owns
+        // 1) Load appointment owned by this student
         $ap = DB::table('tbl_appointments')
             ->where('id', $id)
             ->where('student_id', $userId)
@@ -867,13 +867,51 @@ class AppointmentController extends Controller
 
         abort_unless($ap, 404);
 
-        // Must be future and have a counselor (and >24h away)
+        $now   = now();
         $start = Carbon::parse($ap->scheduled_at);
-        if (empty($ap->counselor_id) || $start->lte(now()->addHours(24))) {
+
+        // 2) ❌ Block: appointments coming from chatbot (urgent / reschedule)
+        if (!empty($ap->chatbot_session_id)) {
             return back()->withErrors([
-                'error' => 'You can request a change only after a counselor is assigned and at least 24 hours before the session.',
+                'error' => 'Requesting a different counselor is only available for normal booked appointments.',
             ]);
         }
+
+        // 3) ❌ Must be a future, CONFIRMED appointment
+        if ($ap->status !== 'confirmed') {
+            return back()->withErrors([
+                'error' => 'You can request a change only for confirmed appointments.',
+            ]);
+        }
+
+        if ($start->isPast()) {
+            return back()->withErrors([
+                'error' => 'You can request a change only before the session starts.',
+            ]);
+        }
+
+        // 4) ❌ Must already have an assigned counselor
+        if (empty($ap->counselor_id)) {
+            return back()->withErrors([
+                'error' => 'You can request a change only after a counselor has been assigned to this appointment.',
+            ]);
+        }
+
+        // 5) ✅ Strict 2-hour window after booking
+        //    (from created_at; if gusto mo from confirmation time, palitan lang field)
+        $createdAt     = Carbon::parse($ap->created_at);
+        $windowEndsAt  = $createdAt->copy()->addHours(2);
+        $withinWindow  = $now->lte($windowEndsAt);
+
+        if (! $withinWindow) {
+            return back()->withErrors([
+                'error' => 'The 2-hour window to request a different counselor has already passed.',
+            ]);
+        }
+
+        // ---------------------------------------------------------------------
+        // 6) Validation + save (same as before)
+        // ---------------------------------------------------------------------
 
         // Reason codes aligned with the Blade <select>
         $allowedReasons = [
@@ -889,9 +927,7 @@ class AppointmentController extends Controller
         // Base validation
         $data = $request->validate([
             'reason_code'             => ['required', 'in:' . implode(',', $allowedReasons)],
-            // optional by default – only required when "other"
             'reason_text'             => ['nullable', 'string', 'max:300'],
-            // preferred counselor is required in the UI
             'preference_counselor_id' => ['required', 'integer', 'exists:tbl_counselors,id'],
         ], [], [
             'reason_code'             => 'reason',
@@ -922,10 +958,10 @@ class AppointmentController extends Controller
         };
         $data['reason_text'] = $clean($reasonText);
 
-        // Preferred counselor (double-check)
+        // Double-check preferred counselor
         $prefId = (int) $data['preference_counselor_id'];
         $exists = DB::table('tbl_counselors')->where('id', $prefId)->exists();
-        if (!$exists) {
+        if (! $exists) {
             return back()
                 ->withErrors(['preference_counselor_id' => 'Selected counselor is not valid.'])
                 ->withInput();
@@ -981,6 +1017,12 @@ class AppointmentController extends Controller
             abort(403);
         }
 
+        // this confirm flow is ONLY for appointments that were marked
+        // by admin/counselor as requiring student confirmation
+        if (! $appointment->student_confirm_required) {
+            return back()->with('status', 'This appointment does not require student confirmation.');
+        }
+
         // only pending + future can be confirmed
         if ($appointment->status !== 'pending') {
             return back()->with('status', 'Only pending appointments can be confirmed.');
@@ -990,13 +1032,13 @@ class AppointmentController extends Controller
             return back()->with('status', 'This appointment has already started or passed.');
         }
 
-        $appointment->status = 'confirmed';
-        // optional columns:
-        // $appointment->confirmed_at = now();
+        $appointment->status                  = 'confirmed';
+        $appointment->student_confirm_required = false;
+        $appointment->student_confirmed_at     = now();
+        // optional:
         // $appointment->confirmed_by = 'student';
         $appointment->save();
 
-        // ✅ flash success for SweetAlert
         return redirect()
             ->route('appointment.view', $appointment->id)
             ->with('success', 'Your guidance appointment for ' .
