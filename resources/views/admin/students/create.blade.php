@@ -50,6 +50,8 @@
     @csrf
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {{-- ROW 1: SIS ID + FULL NAME --}}
+
       {{-- SIS ID --}}
       <div>
         <label for="sis" class="block text-xs font-semibold text-slate-600 mb-1 uppercase tracking-wide">
@@ -97,8 +99,10 @@
         @enderror
       </div>
 
+      {{-- ROW 2: EMAIL + CONTACT NUMBER --}}
+
       {{-- EMAIL --}}
-      <div class="md:col-span-2">
+      <div>
         <label for="email" class="block text-xs font-semibold text-slate-600 mb-1 uppercase tracking-wide">
           Email <span class="text-rose-500">*</span>
         </label>
@@ -119,6 +123,31 @@
           <p class="mt-1 text-xs text-rose-600" data-error-for="email">{{ $message }}</p>
         @enderror
       </div>
+
+      {{-- CONTACT NUMBER --}}
+      <div>
+        <label for="contact_number" class="block text-xs font-semibold text-slate-600 mb-1 uppercase tracking-wide">
+          Contact Number
+        </label>
+        <input
+          type="text"
+          id="contact_number"
+          name="contact_number"
+          inputmode="numeric"
+          value="{{ old('contact_number') }}"
+          class="w-full h-10 rounded-xl border px-3 text-sm focus:ring-2
+            @error('contact_number')
+              border-rose-400 focus:border-rose-500 focus:ring-rose-500
+            @else
+              border-slate-200 focus:border-indigo-500 focus:ring-indigo-500
+            @enderror"
+        >
+        @error('contact_number')
+          <p class="mt-1 text-xs text-rose-600" data-error-for="contact_number">{{ $message }}</p>
+        @enderror
+      </div>
+
+      {{-- ROW 3: COURSE + YEAR LEVEL --}}
 
       {{-- COURSE --}}
       <div>
@@ -169,29 +198,6 @@
         </select>
         @error('year_level')
           <p class="mt-1 text-xs text-rose-600" data-error-for="year_level">{{ $message }}</p>
-        @enderror
-      </div>
-
-      {{-- CONTACT NUMBER --}}
-      <div>
-        <label for="contact_number" class="block text-xs font-semibold text-slate-600 mb-1 uppercase tracking-wide">
-          Contact Number
-        </label>
-        <input
-          type="text"
-          id="contact_number"
-          name="contact_number"
-          inputmode="numeric"
-          value="{{ old('contact_number') }}"
-          class="w-full h-10 rounded-xl border px-3 text-sm focus:ring-2
-            @error('contact_number')
-              border-rose-400 focus:border-rose-500 focus:ring-rose-500
-            @else
-              border-slate-200 focus:border-indigo-500 focus:ring-indigo-500
-            @enderror"
-        >
-        @error('contact_number')
-          <p class="mt-1 text-xs text-rose-600" data-error-for="contact_number">{{ $message }}</p>
         @enderror
       </div>
     </div>
