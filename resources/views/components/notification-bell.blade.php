@@ -4,6 +4,7 @@
 @endphp
 
 @props([
+  // Pass role-specific routes from each layout (admin/counselor/student)
   'indexRoute'   => route('notifications.index'),
   'feedRoute'    => route('notifications.feed'),
   'markRoute'    => route('notifications.mark', ['id' => ':id']),  // keep :id placeholder
@@ -63,13 +64,10 @@
     const INDEX_URL   = root.getAttribute('data-nb-index')   || '#';
     const CSRF        = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
-    // Helper to validate a route string
     const isValidUrl = (u) => !!u && u !== 'null' && u !== 'undefined';
 
     let open = false;
     let bootstrapped = false;
-
-    // single-flight guard
     let activeCtrl = null;
     let lastSeq = 0;
 
@@ -81,7 +79,6 @@
       if (open && !bootstrapped) {
         bootstrapped = true;
         if (!isValidUrl(FEED_URL)) {
-          // Bell rendered without proper routes — show graceful message once
           if (listEl) listEl.innerHTML = '<div class="px-4 py-4 text-sm text-gray-500">Notifications are unavailable on this page.</div>';
           return;
         }
@@ -95,9 +92,8 @@
     }
 
     async function fetchJSON(url, opts = {}, {silent} = {silent:true}){
-      if (!isValidUrl(url)) return null; // <- do not issue /null requests
+      if (!isValidUrl(url)) return null;
 
-      // cancel older request
       if (activeCtrl) activeCtrl.abort();
       const ctrl = new AbortController();
       activeCtrl = ctrl;
@@ -115,28 +111,24 @@
           signal: ctrl.signal,
           ...opts
         });
-
         let data = null;
         try { data = await res.clone().json(); } catch (_) {}
-
         if (!res.ok || data === null) throw new Error('HTTP ' + res.status);
         if (seq === lastSeq) return data;
       } catch (e){
         if (ctrl.signal.aborted) return null;
-        if (!silent && listEl) {
-          listEl.innerHTML = '<div class="px-4 py-4 text-sm text-rose-600">Couldn’t load notifications.</div>';
-        }
+        if (!silent && listEl) listEl.innerHTML = '<div class="px-4 py-4 text-sm text-rose-600">Couldn’t load notifications.</div>';
         return null;
       }
     }
 
     async function refresh({silent = true} = {}){
-      if (!isValidUrl(FEED_URL)) return; // <- no feed, no refresh
+      if (!isValidUrl(FEED_URL)) return;
       const data = await fetchJSON(FEED_URL, {}, {silent});
       if (!data) return;
 
       // Badge
-      const unread = data.unread_count || 0;
+      const unread = data.unread_count || data.unread || 0;
       if (badge){
         if (unread > 0){
           badge.textContent = unread > 9 ? '9+' : unread;
@@ -146,43 +138,67 @@
         }
       }
 
-      // If background refresh, don’t repaint panel list
       if (silent || !listEl) return;
 
-      // Panel list
       listEl.innerHTML = '';
-      if (!data.items || !data.items.length){
+      const items = Array.isArray(data.items) ? data.items : [];
+      if (!items.length){
         listEl.innerHTML = '<div class="px-4 py-6 text-sm text-gray-500">No notifications yet.</div>';
         return;
       }
 
-      for (const n of data.items){
+      for (const n of items){
+        const title   = n.title ?? 'Notification';
+        const body    = n.body ?? '';
+        const url     = n.url ?? null;              // IMPORTANT: backend must include this
+        const created = n.created_at_human ?? '';
+        const createdFull = n.created_at_human_full ?? '';
+        const read    = !!n.read_at;
+
         const row = document.createElement('div');
         row.className = 'px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/40';
         row.innerHTML = `
           <div class="flex items-start gap-3">
-            <div class="mt-0.5"><span class="inline-block w-2 h-2 rounded-full ${n.read_at ? 'bg-gray-300' : 'bg-indigo-600'}"></span></div>
+            <div class="mt-0.5"><span class="inline-block w-2 h-2 rounded-full ${read ? 'bg-gray-300' : 'bg-indigo-600'}"></span></div>
             <div class="flex-1 min-w-0">
               <div class="nb-title text-sm font-medium"></div>
               <div class="nb-body text-sm text-gray-600 dark:text-gray-300 truncate"></div>
-              <div class="text-xs text-gray-400 mt-0.5" title="${n.created_at_human_full ?? ''}">${n.created_at_human ?? ''}</div>
-              <a href="${INDEX_URL}" class="text-xs underline mt-1 inline-block">Open</a>
+              <div class="text-xs text-gray-400 mt-0.5" title="${createdFull}">${created}</div>
+              ${isValidUrl(url)
+                ? `<a href="${url}" data-open data-id="${n.id}" data-url="${url}" class="text-xs underline mt-1 inline-block">Open</a>`
+                : '' /* no fallback to index here — only show Open when an item has a real target */}
             </div>
-            ${n.read_at ? '' : '<button class="text-xs underline shrink-0" data-mark>Mark read</button>'}
+            ${read ? '' : '<button class="text-xs underline shrink-0" data-mark>Mark read</button>'}
           </div>`;
 
-        row.querySelector('.nb-title').textContent = n.title ?? 'Notification';
-        row.querySelector('.nb-body').textContent  = n.body ?? '';
+        row.querySelector('.nb-title').textContent = title;
+        row.querySelector('.nb-body').textContent  = body;
 
+        // Mark from dropdown
         const markBtn = row.querySelector('[data-mark]');
         if (markBtn && isValidUrl(MARK_URL_T)){
-            markBtn.addEventListener('click', async (e)=>{
-              e.preventDefault();
-              const markUrl = MARK_URL_T.replace(':id', String(n.id));
-              await fetchJSON(markUrl, { method:'POST' }, {silent:true});
-              refresh({silent:false});
-            });
+          markBtn.addEventListener('click', async (e)=>{
+            e.preventDefault();
+            const markUrl = MARK_URL_T.replace(':id', String(n.id));
+            await fetchJSON(markUrl, { method:'POST' }, {silent:true});
+            refresh({silent:false});
+          });
         }
+
+        // OPEN: mark-read (fire & forget) then navigate directly to the target URL
+        const openLink = row.querySelector('a[data-open]');
+        if (openLink && isValidUrl(MARK_URL_T)){
+          openLink.addEventListener('click', async (e)=>{
+            e.preventDefault();
+            const target = openLink.getAttribute('data-url');
+            const id = openLink.getAttribute('data-id');
+            if (isValidUrl(target)){
+              fetchJSON(MARK_URL_T.replace(':id', String(id)), { method:'POST' }, {silent:true}).catch(()=>{});
+              window.location.assign(target);
+            }
+          });
+        }
+
         listEl.appendChild(row);
       }
     }
@@ -192,14 +208,13 @@
     document.addEventListener('click', (e)=>{ if (open && !root.contains(e.target)) hidePanel(); });
     document.addEventListener('keydown', (e)=>{ if (open && e.key === 'Escape') hidePanel(); });
 
-    // Background badge refresh only when FEED_URL is valid
+    // Background badge refresh (role-specific via FEED_URL)
     let interval = null;
     if (isValidUrl(FEED_URL)) {
       const tick = () => { if (document.visibilityState === 'visible') refresh({silent:true}); };
       interval = setInterval(tick, 60000);
       document.addEventListener('visibilitychange', tick);
-      // Prime badge silently once
-      refresh({silent:true});
+      refresh({silent:true}); // prime badge
     }
 
     root.addEventListener('nb:dispose', () => { if (interval) clearInterval(interval); if (activeCtrl) activeCtrl.abort(); });
