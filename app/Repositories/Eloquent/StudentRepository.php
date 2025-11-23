@@ -18,25 +18,23 @@ class StudentRepository implements StudentRepositoryInterface
             ->get();
     }
 
+    /**
+     * Used by the PDF export to get ALL matching rows (no pagination).
+     */
+    public function allWithFilters(array $filters = []): Collection
+    {
+        $q = User::query()->where('role', 'student');
+
+        $this->applyFilters($q, $filters);
+
+        return $q->orderBy('name')->get();
+    }
+
     public function paginateWithFilters(array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
         $q = User::query()->where('role', 'student');
 
-        if (!empty($filters['year']) || $filters['year'] === '0') {
-            $q->where('year_level', $filters['year']);
-        }
-
-        if (!empty($filters['q'])) {
-            $term = trim((string)$filters['q']);
-            $like = "%{$term}%";
-            $q->where(function (Builder $sub) use ($like) {
-                $sub->where('name', 'like', $like)
-                    ->orWhere('email', 'like', $like)
-                    ->orWhere('contact_number', 'like', $like)
-                    ->orWhere('course', 'like', $like)
-                    ->orWhere('year_level', 'like', $like);
-            });
-        }
+        $this->applyFilters($q, $filters);
 
         return $q->orderBy('name')
                  ->paginate($perPage)
@@ -45,7 +43,9 @@ class StudentRepository implements StudentRepositoryInterface
 
     public function findById(int $id, array $with = []): ?object
     {
-        return User::with($with)->where('role', 'student')->find($id);
+        return User::with($with)
+            ->where('role', 'student')
+            ->find($id);
     }
 
     public function create(array $data): object
@@ -75,5 +75,33 @@ class StudentRepository implements StudentRepositoryInterface
             ->orderBy('year_level')
             ->pluck('year_level')
             ->toArray();
+    }
+
+    // ================== PRIVATE HELPERS ==================
+
+    /**
+     * Apply common filters (year, q) to the query.
+     */
+    private function applyFilters(Builder $q, array $filters): void
+    {
+        // Year filter
+        if (array_key_exists('year', $filters) && $filters['year'] !== '' && $filters['year'] !== null) {
+            $q->where('year_level', $filters['year']);
+        }
+
+        // Text search (includes SIS)
+        if (!empty($filters['q'])) {
+            $term = trim((string) $filters['q']);
+            $like = "%{$term}%";
+
+            $q->where(function (Builder $sub) use ($like) {
+                $sub->where('name', 'like', $like)
+                    ->orWhere('email', 'like', $like)
+                    ->orWhere('contact_number', 'like', $like)
+                    ->orWhere('course', 'like', $like)
+                    ->orWhere('year_level', 'like', $like)
+                    ->orWhere('sis', 'like', $like); // ✅ search by SIS
+            });
+        }
     }
 }
