@@ -35,6 +35,8 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
         ->parameters(['counselors' => 'counselor']);
 
     // STUDENTS
+    Route::get('/students/create', [StudentController::class, 'create'])->name('students.create');
+    Route::post('/students',        [StudentController::class, 'store'])->name('students.store');
     Route::resource('students', StudentController::class)
         ->only(['index', 'show'])
         ->parameters(['students' => 'student']);

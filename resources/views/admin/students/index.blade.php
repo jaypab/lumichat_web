@@ -31,6 +31,15 @@
             <span class="opacity-90">{{ Str::plural('student', $totalStudents) }}</span>
           </span>
 
+          {{-- NEW: Add Student --}}
+          <a href="{{ route('admin.students.create') }}"
+            class="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Add Student
+          </a>
+
           <a href="{{ route('admin.students.export.pdf', request()->only('q','year')) }}"
              target="_blank" rel="noopener"
              class="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
@@ -222,29 +231,105 @@
   </div>
 </div>
 
+{{-- SweetAlert styling for success popup --}}
+<style>
+  .lumi-swal-popup {
+      border-radius: 28px;
+      padding: 2.5rem 2.75rem 2.25rem;
+      box-shadow:
+          0 24px 60px rgba(15,23,42,0.45),
+          0 0 0 1px rgba(148,163,184,0.12);
+      backdrop-filter: blur(14px);
+  }
+
+  .lumi-swal-icon {
+      border-width: 0;
+      margin: 0 auto 0.75rem auto;
+      box-shadow: 0 0 0 6px rgba(34,197,94,0.18); /* green glow for success */
+  }
+
+  .lumi-swal-title {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #111827; /* slate-900 */
+      margin-bottom: 0.4rem;
+  }
+
+  .lumi-swal-body {
+      font-size: 0.9rem;
+      color: #4b5563; /* slate-600 */
+      text-align: center;
+  }
+
+  .lumi-swal-confirm {
+      padding: 0.65rem 2.5rem;
+      border-radius: 9999px;
+      border: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      background-image: linear-gradient(to right, #22c55e, #4ade80);
+      color: #ffffff;
+      box-shadow: 0 10px 25px rgba(34,197,94,0.45);
+      transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+  }
+
+  .lumi-swal-confirm:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.03);
+      box-shadow: 0 16px 35px rgba(34,197,94,0.6);
+  }
+
+  .lumi-swal-confirm:active {
+      transform: translateY(0);
+      box-shadow: 0 8px 18px rgba(34,197,94,0.45);
+  }
+</style>
+
+@push('scripts')
 <script>
   document.addEventListener('DOMContentLoaded', () => {
     const form   = document.getElementById('filterForm');
     const qInput = document.getElementById('q-input');
 
-    if (!form || !qInput) return;
+    // === existing search behavior ===
+    if (form && qInput) {
+      qInput.focus();
+      const len = qInput.value.length;
+      try {
+        qInput.setSelectionRange(len, len);
+      } catch (e) {}
 
-    // Focus + cursor sa dulo ng existing text
-    qInput.focus();
-    const len = qInput.value.length;
-    try {
-      qInput.setSelectionRange(len, len);
-    } catch (e) {}
+      qInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();   // wag mag line break
+          form.submit();
+        }
+      });
+    }
 
-    // Mag-submit lang pag ENTER
-    qInput.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') {
-        e.preventDefault();   // wag mag line break
-        form.submit();
-      }
-    });
+    // === SUCCESS SWEETALERT (after create) ===
+    @if(session('success'))
+      Swal.fire({
+        icon: 'success',
+        title: 'Student added',
+        html: `<p class="lumi-swal-body">{{ addslashes(session('success')) }}</p>`,
+        allowOutsideClick: true,
+        allowEscapeKey: true,
+        buttonsStyling: false,
+        backdrop: 'rgba(15,23,42,0.55)',
+        customClass: {
+          popup: 'lumi-swal-popup',
+          title: 'lumi-swal-title',
+          htmlContainer: 'lumi-swal-body',
+          confirmButton: 'lumi-swal-confirm',
+          icon: 'lumi-swal-icon'
+        },
+        confirmButtonText: 'OK'
+      });
+    @endif
   });
 
+  // === copy email toast ===
   function copyToClipboard(text) {
     navigator.clipboard.writeText(text).then(function () {
       if (window.Swal) {
@@ -254,10 +339,13 @@
           icon: 'success',
           title: 'Email copied',
           showConfirmButton: false,
-          timer: 1500
+          timer: 1500,
+          timerProgressBar: true,
+          buttonsStyling: false
         });
       }
     });
   }
 </script>
+@endpush
 @endsection

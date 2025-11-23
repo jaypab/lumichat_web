@@ -3,14 +3,18 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\User; // kept for route-model binding type-hint
+use App\Models\User; 
 use App\Repositories\Contracts\StudentRepositoryInterface;
 use App\Repositories\Contracts\AppointmentRepositoryInterface;
-use Barryvdh\DomPDF\Facade\Pdf; // <-- add this
+use Barryvdh\DomPDF\Facade\Pdf; 
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Validation\Rule;
+
 
 class StudentController extends Controller
 {
@@ -31,50 +35,124 @@ class StudentController extends Controller
 
     public function index(Request $request): View
     {
-        $q    = trim((string) $request->input('q', ''));
-        $year = $request->input('year');
+            $q    = trim((string) $request->input('q', ''));
+            $year = $request->input('year');
 
-        $query = User::query()
-            ->select([
-                'id',
-                'sis',              // ✅ include SIS so Blade can use $s->sis
-                'name',
-                'email',
-                'course',
-                'year_level',
-                'contact_number',
-                'email_verified_at',
-                'created_at',
-            ])
-            ->where('role', 'student');
+            $query = User::query()
+                ->select([
+                    'id',
+                    'sis',              // ✅ include SIS so Blade can use $s->sis
+                    'name',
+                    'email',
+                    'course',
+                    'year_level',
+                    'contact_number',
+                    'email_verified_at',
+                    'created_at',
+                ])
+                ->where('role', 'student');
 
-        if ($q !== '') {
-            $query->where(function ($w) use ($q) {
-                $w->where('name', 'like', "%{$q}%")
-                ->orWhere('email', 'like', "%{$q}%")
-                ->orWhere('course', 'like', "%{$q}%")
-                ->orWhere('sis', 'like', "%{$q}%");   // 🔎 optional: allow searching by SIS
-            });
-        }
+            if ($q !== '') {
+                $query->where(function ($w) use ($q) {
+                    $w->where('name', 'like', "%{$q}%")
+                    ->orWhere('email', 'like', "%{$q}%")
+                    ->orWhere('course', 'like', "%{$q}%")
+                    ->orWhere('sis', 'like', "%{$q}%");   // 🔎 optional: allow searching by SIS
+                });
+            }
 
-        if ($year !== null && $year !== '') {
-            $query->where('year_level', $year);
-        }
+            if ($year !== null && $year !== '') {
+                $query->where('year_level', $year);
+            }
 
-        $students = $query
-            ->orderBy('created_at', 'desc')
-            ->paginate(self::PER_PAGE)
-            ->withQueryString();
+            $students = $query
+                ->orderBy('created_at', 'desc')
+                ->paginate(self::PER_PAGE)
+                ->withQueryString();
 
-        $yearLevels = $this->students->distinctYearLevels();
+            $yearLevels = $this->students->distinctYearLevels();
 
-        return view(self::VIEW_INDEX, [
-            'students'   => $students,
-            'q'          => $q,
-            'year'       => $year,
-            'yearLevels' => $yearLevels,
+            return view(self::VIEW_INDEX, [
+                'students'   => $students,
+                'q'          => $q,
+                'year'       => $year,
+                'yearLevels' => $yearLevels,
+            ]);
+    }
+
+      /**
+     * Show form to create a new student account.
+     */
+    public function create(): View
+    {
+        return view('admin.students.create');
+    }
+
+    /**
+     * Store new student in tbl_users.
+     */
+    public function store(Request $request): RedirectResponse
+    {
+        $table = (new User)->getTable(); // should be 'tbl_users'
+
+        $validated = $request->validate([
+            'sis' => [
+                'required',
+                'digits_between:4,20',
+                'regex:/^[0-9]+$/',
+                Rule::unique($table, 'sis'),
+            ],
+            'name' => [
+                'required',
+                'string',
+                'max:120',
+                'regex:/^[A-Za-z\s\.\-]+$/',
+            ],
+            'email' => [
+                'required',
+                'string',
+                'email:filter',
+                'max:255',
+                Rule::unique($table, 'email'),
+            ],
+            'course' => [
+                'required',
+                Rule::in(['BSIT','EDUC','CAS','CRIM','BLIS','MIDWIFERY','BSHM','BSBA']),
+            ],
+            'year_level' => [
+                'required',
+                Rule::in(['1st Year','2nd Year','3rd Year','4th Year']),
+            ],
+            'contact_number' => [
+                'required',
+                'regex:/^[0-9]{10,13}$/',
+            ],
+        ], [
+            'sis.regex'               => 'The SIS ID may only contain numbers.',
+            'contact_number.regex'    => 'The contact number may only contain digits.',
+            'name.regex'              => 'The full name may only contain letters and basic punctuation.',
+            'course.required'         => 'The course field is required.',
+            'year_level.required'     => 'The year level field is required.',
+            'contact_number.required' => 'The contact number field is required.',
         ]);
-}
+
+        $user = new User();
+        $user->sis            = $validated['sis'];
+        $user->name           = $validated['name'];
+        $user->email          = $validated['email'];
+        $user->course         = $validated['course'];
+        $user->year_level     = $validated['year_level'];
+        $user->contact_number = $validated['contact_number'];
+        $user->role                 = 'student';
+        $user->appointments_enabled = 0;
+        $user->password             = Hash::make('12345678');
+        $user->save();
+
+        return redirect()
+            ->route('admin.students.index')
+            ->with('success', 'Student has been successfully added.');
+    }
+
     /**
      * Show a student's appointment stats and chart for a selected year.
      * NOTE: We still type-hint App\Models\User for route-model binding.
