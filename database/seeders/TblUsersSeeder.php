@@ -264,6 +264,26 @@ class TblUsersSeeder extends Seeder
                 'created_at' => $now,
                 'updated_at' => $now,
             ],
+            [
+                'email' => 'newstudent@example.com',
+                'sis'   => '2025011',
+                'name'  => 'New Student',
+                'course' => 'BSIT',
+                'year_level' => '1st Year',
+                'contact_number' => '09XXXXXXXXX',
+                'email_verified_at' => $now,
+                'password' => Hash::make('12345678'),
+                'role' => 'student',
+                'appointments_enabled' => 0,
+                'remember_token' => Str::random(40),
+                'tos_version' => 0,
+                'tos_accepted_at' => null,
+                'tos_ip' => null,
+                'tos_user_agent' => null,
+                'last_seen_appt_at' => null,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
 
         ];
 

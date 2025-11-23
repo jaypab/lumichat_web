@@ -44,11 +44,11 @@
     </div>
 
     {{-- RIGHT: Login card --}}
-    <div class="relative w-full max-w-lg login-panel">
-      <div class="absolute -inset-[1px] rounded-3xl bg-gradient-to-r from-violet-400/40 via-indigo-400/40 to-blue-400/40 blur opacity-60"></div>
-      <div class="relative lumi-card rounded-3xl bg-white backdrop-blur-xl shadow-2xl ring-1 ring-slate-200/60 p-8">
+    <div class="relative w-full max-w-lg login-panel rounded-3xl overflow-hidden">
+      <div class="absolute inset-0 bg-gradient-to-r from-violet-400/40 via-indigo-400/40 to-blue-400/40 blur opacity-60"></div>
+      <div class="relative lumi-card bg-white backdrop-blur-xl shadow-2xl ring-1 ring-slate-200/60 p-8">
 
-        {{-- Header --}}
+        {{-- Header --}}   
         <div class="flex flex-col items-center text-center">
           <div class="relative mb-4">
             <span class="absolute inset-0 -top-2 -left-2 -right-2 -bottom-2 rounded-full blur-2xl opacity-30"
@@ -534,17 +534,18 @@ document.addEventListener('DOMContentLoaded', () => {
 {{-- Page JS --}}
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-  const form      = document.getElementById('loginForm');
-  const email     = document.getElementById('login-email');
-  const pwd       = document.getElementById('passwordInput');
-  const toggleBtn = document.getElementById('togglePassword');
-  const toggleImg = toggleBtn ? toggleBtn.querySelector('img') : null;
-  const loginBtn  = document.getElementById('loginBtn');
-  const loading   = document.getElementById('loginLoading');
-  const capsNote  = document.getElementById('capsNote');
+  const form       = document.getElementById('loginForm');
+  const email      = document.getElementById('login-email');
+  const pwd        = document.getElementById('passwordInput');
+  const toggleBtn  = document.getElementById('togglePassword');
+  const toggleImg  = toggleBtn ? toggleBtn.querySelector('img') : null;
+  const loginBtn   = document.getElementById('loginBtn');
+  const loading    = document.getElementById('loginLoading');
+  const capsNote   = document.getElementById('capsNote');
   const loginShell = document.getElementById('loginShell');
   const loginPanel = loginShell ? loginShell.querySelector('.login-panel') : null;
 
+  // ===== Floating label filled-state =====
   function setFilled(el){ el.dataset.filled = (el.value.trim() !== '') ? 'true' : 'false'; }
   [email, pwd].forEach(el => {
     if (!el) return;
@@ -554,11 +555,13 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => setFilled(el), 1200);
   });
 
+  // ===== Enable/disable submit button =====
   function canSubmit(){ return !!(email && pwd && email.value.trim() && pwd.value.trim()); }
   function syncBtn(){ if (loginBtn) loginBtn.disabled = !canSubmit(); }
   [email, pwd].forEach(el => el && ['input','change','blur'].forEach(ev => el.addEventListener(ev, syncBtn)));
   syncBtn();
 
+  // ===== Caps Lock notice =====
   if (pwd && capsNote){
     ['keydown','keyup'].forEach(ev=>{
       pwd.addEventListener(ev, e=>{
@@ -568,6 +571,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ===== Show / hide password (NO animation trigger) =====
   if (pwd && toggleBtn && toggleImg){
     const eyeOpen   = "{{ asset('images/icons/eye.png') }}";
     const eyeClosed = "{{ asset('images/icons/eye-off.png') }}";
@@ -576,10 +580,12 @@ document.addEventListener('DOMContentLoaded', () => {
       pwd.type = showing ? 'password' : 'text';
       toggleImg.src = showing ? eyeOpen : eyeClosed;
       toggleBtn.setAttribute('aria-pressed', showing ? 'false' : 'true');
+      // keep focus on the field, but we won't use blur/focus to toggle animation anymore
       pwd.focus({preventScroll:true});
     });
   }
 
+  // ===== Submit → show loading =====
   if (form){
     form.addEventListener('submit', () => {
       const emailInput = form.querySelector('input[name="email"]');
@@ -597,42 +603,56 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /* ===== Animate shell when CLICKING / FOCUSING inputs ===== */
+  /* ===== Shell animation: only when entering/exiting the form =====
+   * - Once engaged, it stays engaged while user clicks inside (including eye button)
+   * - It only collapses back when clicking OUTSIDE the login shell
+   */
 
-  function isInputFocused() {
-    return document.activeElement === email || document.activeElement === pwd;
+  let shellEngaged = false;
+
+  function engageShell() {
+    if (!loginShell || shellEngaged) return;
+    loginShell.classList.add('engaged');
+    shellEngaged = true;
   }
 
-  function refreshShellState() {
-    if (!loginShell) return;
-    if (isInputFocused()) {
-      loginShell.classList.add('engaged');
-    } else {
-      loginShell.classList.remove('engaged');
-    }
+  function disengageShell() {
+    if (!loginShell || !shellEngaged) return;
+    loginShell.classList.remove('engaged');
+    shellEngaged = false;
   }
 
+  // Focus on email/password → engage once
   [email, pwd].forEach(el => {
     if (!el) return;
-    el.addEventListener('focus', refreshShellState);
-    el.addEventListener('blur', () => setTimeout(refreshShellState, 40));
+    el.addEventListener('focus', () => {
+      engageShell();
+    });
   });
 
-  // Click anywhere on the card to gently focus email and engage
+  // Click on the card background → focus email & engage
   if (loginPanel && email) {
     loginPanel.addEventListener('click', (e) => {
       const t = e.target;
+      // Don't interfere when clicking inputs or ANY button (including eye)
       if (t === email || t === pwd || t.closest('button')) return;
-      if (!isInputFocused()) {
-        email.focus();
-      }
+      email.focus({preventScroll:true});
+      engageShell();
     });
   }
 
-  // If fields already filled (autofill/remember me), start engaged
+  // Click OUTSIDE the login shell → collapse animation
+  document.addEventListener('click', (e) => {
+    if (!loginShell) return;
+    if (!loginShell.contains(e.target)) {
+      disengageShell();
+    }
+  });
+
+  // If fields already filled (autofill/remember), start in engaged state
   setTimeout(() => {
     if ((email && email.value.trim()) || (pwd && pwd.value.trim())) {
-      refreshShellState();
+      engageShell();
     }
   }, 300);
 });
