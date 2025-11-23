@@ -96,19 +96,38 @@
   <tr>
     <td>
       <div class="card">
-        <div class="kv"><b>Student</b><span>{{ $note->student_name ?: '—' }}</span></div>
-        <div class="kv"><b>Program &amp; Year</b><span>{{ $note->program_year ?: '—' }}</span></div>
-        <div class="kv"><b>Address</b><span>{{ $note->address ?: '—' }}</span></div>
+        <div class="kv">
+          <b>Student Name</b>
+          <span>{{ $note->student_name ?: '—' }}</span>
+        </div>
+        <br>
+         <div class="kv">
+      <b>Course / Year</b>
+      <span>{{ $appointment->student_program_year ?: ($note->program_year ?: '—') }}</span>
+    </div>
+    <br>
+        <div class="kv">
+          <b>Email</b>
+          <span>{{ $appointment->student_email ?: '—' }}</span>
+        </div>
+        <br>
+        <div class="kv">
+          <b>Address</b>
+          <span>{{ $note->address ?: '—' }}</span>
+        </div>
       </div>
     </td>
+
     <td>
       <div class="card">
         <div class="kv"><b>Case Note Date</b>
           <span>{{ $note->note_date ? \Carbon\Carbon::parse($note->note_date)->format('F d, Y') : '—' }}</span>
         </div>
+        <br>
         <div class="kv"><b>Scheduled For</b>
           <span>{{ \Carbon\Carbon::parse($appointment->scheduled_at)->format('F d, Y · g:i A') }}</span>
         </div>
+        <br>
         <div class="kv"><b>Status</b><span>{{ ucfirst($appointment->status) }}</span></div>
       </div>
     </td>

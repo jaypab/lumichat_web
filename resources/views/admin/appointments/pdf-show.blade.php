@@ -277,20 +277,7 @@
     </div>
   </div>
 
-  {{-- Final Diagnosis / Report --}}
-  <div class="box">
-    <h2>Final Diagnosis (Report)</h2>
-
-    <div class="kv">
-      <b>Diagnosis</b>
-      <span>
-        @if(isset($latestReport) && ($latestReport->diagnosis_result ?? '') !== '')
-          {!! nl2br(e($latestReport->diagnosis_result)) !!}
-        @else
-          No diagnosis has been recorded yet for this student and counselor.
-        @endif
-      </span>
-    </div>
+  
 
     @if(isset($latestReport) && ($latestReport->notes ?? '') !== '')
       <div class="kv" style="margin-top:6px;">
