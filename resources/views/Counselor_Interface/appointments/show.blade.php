@@ -197,23 +197,35 @@
 
     {{-- Two columns --}}
     <div class="px-6 py-5 grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {{-- Student --}}
+           {{-- Student --}}
       <section class="rounded-2xl ring-1 ring-slate-200 bg-white">
         <header class="px-4 py-2.5 bg-slate-50/60 rounded-t-2xl">
           <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-600">Student</h3>
         </header>
-        <div class="p-4">
-          <div class="font-medium text-slate-900">{{ $appointment->student_name }}</div>
+        <div class="p-4 space-y-3">
+          <div>
+            <div class="text-[13px] uppercase tracking-wide text-slate-500">Student Name</div>
+            <div class="font-medium text-slate-900">
+              {{ $appointment->student_name ?: '—' }}
+            </div>
+          </div>
 
-          @if(!empty($appointment->student_program_year))
-            <div class="text-sm text-slate-600">{{ $appointment->student_program_year }}</div>
-          @endif
+          <div>
+            <div class="text-[13px] uppercase tracking-wide text-slate-500">Course / Year</div>
+            <div class="text-sm text-slate-700">
+              {{ $appointment->student_program_year ?: '—' }}
+            </div>
+          </div>
 
-          @if(!empty($appointment->student_email))
-            <div class="text-sm text-slate-600">{{ $appointment->student_email }}</div>
-          @endif
+          <div>
+            <div class="text-[13px] uppercase tracking-wide text-slate-500">Email</div>
+            <div class="text-sm text-slate-700">
+              {{ $appointment->student_email ?: '—' }}
+            </div>
+          </div>
         </div>
       </section>
+
 
       {{-- Timing --}}
       <section class="rounded-2xl ring-1 ring-slate-200 bg-white">
@@ -310,13 +322,14 @@
                   <p class="mt-1 text-xs text-rose-600 hidden client-error" data-client-error-for="case_note.date"></p>
                 </div>
 
-                <div>
-                  <label class="block text-xs font-medium text-slate-600 mb-1">Program &amp; Year</label>
-                  <input type="text" name="case_note[program_year]"
-                         value="{{ old('case_note.program_year', $caseNote->program_year ?? '') }}"
-                         class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3"
-                         placeholder="e.g., BSIT - 3rd Year">
+               <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Program &amp; Year</label>
+              <input type="text" name="case_note[program_year]"
+                    value="{{ old('case_note.program_year', $caseNote->program_year ?? $appointment->student_program_year) }}"
+                    class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3"
+                    placeholder="e.g., BSIT - 3rd Year">
                 </div>
+
 
                 <div>
                   <label class="block text-xs font-medium text-slate-600 mb-1">Address</label>

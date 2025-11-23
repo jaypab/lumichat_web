@@ -544,50 +544,53 @@ class AppointmentController extends Controller
         return $pdf->stream($filename);  // Content-Disposition: inline
     }
 
-    public function exportShowPdf(Request $request, int $id)
-    {
-        $appointment = $this->appointments->findDetailedById($id);
-        abort_unless($appointment, 404);
+   public function exportShowPdf(Request $request, int $id)
+{
+    $appointment = $this->appointments->findDetailedById($id);
+    abort_unless($appointment, 404);
 
-        $latestReport = \DB::table('tbl_diagnosis_reports')
-            ->where('student_id', $appointment->student_id)
-            ->where('counselor_id', $appointment->counselor_id)
-            ->orderByDesc('id')
-            ->first();
+    // 🔹 Latest CASE NOTE for this appointment
+    $caseNote = \DB::table('tbl_case_notes')
+        ->where('appointment_id', $appointment->id)
+        ->orderByDesc('id')
+        ->first();
 
-        $logoPath = public_path('images/chatbot.png');
-        $logoData = null;
-        if (is_file($logoPath)) {
-            $mime = \Illuminate\Support\Str::endsWith(strtolower($logoPath), '.svg')
-                ? 'image/svg+xml' : 'image/png';
-            $logoData = 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($logoPath));
-        }
-
-        $pdf = app('dompdf.wrapper');
-        $pdf->setPaper('a4', 'portrait');
-        $pdf->setOptions([
-            'defaultFont'          => 'DejaVu Sans',
-            'isHtml5ParserEnabled' => true,
-            'isRemoteEnabled'      => true,
-            'chroot'               => public_path(),
-            'dpi'                  => 96,
-            'isPhpEnabled'         => true,   // ← REQUIRED for <script type="text/php">
-        ]);
-
-        $pdf->loadView('admin.appointments.pdf-show', [
-            'appointment'  => $appointment,
-            'latestReport' => $latestReport,
-            'logoData'     => $logoData,
-        ]);
-
-        $filename = 'Appointment_' . $appointment->id . '.pdf';
-
-        if ($request->boolean('download')) {
-            return $pdf->download($filename); // force download
-        }
-
-        return $pdf->stream($filename); // inline view (opens in new tab from the Blade link)
+    $logoPath = public_path('images/chatbot.png');
+    $logoData = null;
+    if (is_file($logoPath)) {
+        $mime = \Illuminate\Support\Str::endsWith(strtolower($logoPath), '.svg')
+            ? 'image/svg+xml'
+            : 'image/png';
+        $logoData = 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($logoPath));
     }
+
+    $pdf = app('dompdf.wrapper');
+    $pdf->setPaper('a4', 'portrait');
+    $pdf->setOptions([
+        'defaultFont'          => 'DejaVu Sans',
+        'isHtml5ParserEnabled' => true,
+        'isRemoteEnabled'      => true,
+        'chroot'               => public_path(),
+        'dpi'                  => 96,
+        'isPhpEnabled'         => true,   // for page numbers script
+    ]);
+
+    $pdf->loadView('admin.appointments.pdf-show', [
+        'appointment'  => $appointment,
+        'caseNote'     => $caseNote,
+        'generatedAt'  => now()->format('Y-m-d H:i'),
+        'logoData'     => $logoData,
+    ]);
+
+    $filename = 'Appointment_' . $appointment->id . '.pdf';
+
+    if ($request->boolean('download')) {
+        return $pdf->download($filename);
+    }
+
+    return $pdf->stream($filename);
+}
+
 
     // Prefer date-specific rows; fall back to recurring weekday
     private function rangesForCounselorOnDate(int $cid, Carbon $date)

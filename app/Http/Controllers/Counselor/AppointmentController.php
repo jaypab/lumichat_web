@@ -204,14 +204,13 @@ class AppointmentController extends Controller
         ]);
     }
 
-    /** Show a single appointment (must belong to this counselor) */
     public function show(int $id)
-    {
-        $cid = $this->myCounselorId();
-        abort_unless($cid, 404);
+{
+    $cid = $this->myCounselorId();
+    abort_unless($cid, 404);
 
-        // 1) Try as ACTIVE appointment (current counselor)
-        $row = DB::table('tbl_appointments as a')
+    // 1) Try as ACTIVE appointment (current counselor)
+    $row = DB::table('tbl_appointments as a')
         ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
         ->select(
             'a.*',
@@ -235,12 +234,12 @@ class AppointmentController extends Controller
         ->where('a.counselor_id', $cid)
         ->first();
 
-        $isHistory = false;
-        $historyChangedAt = null;
+    $isHistory        = false;
+    $historyChangedAt = null;
 
-        // 2) If not active, try as REASSIGNED history for this counselor
-        if (!$row && \Illuminate\Support\Facades\Schema::hasTable('tbl_appointment_counselor_history')) {
-            $hist = DB::table('tbl_appointment_counselor_history as h')
+    // 2) If not active, try as REASSIGNED history for THIS counselor + THIS appointment
+    if (!$row && Schema::hasTable('tbl_appointment_counselor_history')) {
+        $hist = DB::table('tbl_appointment_counselor_history as h')
             ->join('tbl_appointments as a', 'a.id', '=', 'h.appointment_id')
             ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
             ->select(
@@ -263,38 +262,60 @@ class AppointmentController extends Controller
                 'h.status as history_status',
                 'h.changed_at'
             )
+            ->where('h.counselor_id', $cid)   // ✅ only this counselor
+            ->where('h.appointment_id', $id)  // ✅ only this appointment
+            ->where('h.status', 'reassigned')
+            ->orderByDesc('h.changed_at')
             ->first();
 
-            if ($hist) {
-                $row = $hist;
-                $isHistory = true;
-                $historyChangedAt = $hist->changed_at;
-            }
+        if ($hist) {
+            $row              = $hist;
+            $isHistory        = true;
+            $historyChangedAt = $hist->changed_at;
         }
-
-        abort_unless($row, 404);
-
-        $caseNote = CaseNote::where('appointment_id', $row->id)->first();
-
-        return view('Counselor_Interface.appointments.show', [
-            'appointment'       => $row,
-            'caseNote'          => $caseNote,
-            'isHistory'         => $isHistory,
-            'historyChangedAt'  => $historyChangedAt,
-        ]);
     }
+
+    abort_unless($row, 404);
+
+    $caseNote = CaseNote::where('appointment_id', $row->id)->first();
+
+    return view('Counselor_Interface.appointments.show', [
+        'appointment'      => $row,
+        'caseNote'         => $caseNote,
+        'isHistory'        => $isHistory,
+        'historyChangedAt' => $historyChangedAt,
+    ]);
+}
+
 
     public function caseNotePdf(int $id)
     {
         $cid = $this->myCounselorId(); abort_unless($cid, 404);
 
-        $appointment = DB::table('tbl_appointments as a')
-            ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-            ->select('a.*',
-                DB::raw("COALESCE(s.name,'—') as student_name"),
-                DB::raw("COALESCE(s.email,'') as student_email"))
-            ->where('a.id', $id)->where('a.counselor_id', $cid)->first();
-        abort_unless($appointment, 404);
+ $appointment = DB::table('tbl_appointments as a')
+    ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
+    ->select(
+        'a.*',
+        DB::raw("COALESCE(s.name,'—') as student_name"),
+        DB::raw("COALESCE(s.email,'') as student_email"),
+        DB::raw("
+            TRIM(
+                CONCAT(
+                    COALESCE(s.course, ''),
+                    CASE 
+                        WHEN s.course IS NOT NULL AND s.year_level IS NOT NULL 
+                            THEN ' · ' 
+                        ELSE '' 
+                    END,
+                    COALESCE(s.year_level, '')
+                )
+            ) as student_program_year
+        ")
+    )
+    ->where('a.id', $id)
+    ->where('a.counselor_id', $cid)
+    ->first();
+
 
         $caseNote = \App\Models\CaseNote::where('appointment_id', $appointment->id)->first();
         abort_unless($caseNote, 404);
@@ -325,23 +346,32 @@ class AppointmentController extends Controller
     }
 
     /** Collapse whitespace and trim (registration-style) */
-    private function trimCollapse(?string $v): ?string
-    {
-        if ($v === null) return null;
+private function trimCollapse(?string $v): ?string
+{
+    if ($v === null) return null;
+
+    if (class_exists('\Normalizer')) {
         $v = \Normalizer::normalize($v, \Normalizer::FORM_KC) ?: $v; // NFKC
-        return trim(preg_replace('/\s+/u', ' ', $v));
     }
 
-    /** Digits only with optional single leading + */
-    private function tidyPhone(?string $v): ?string
-    {
-        if ($v === null) return null;
+    return trim(preg_replace('/\s+/u', ' ', $v));
+}
+
+/** Digits only with optional single leading + */
+private function tidyPhone(?string $v): ?string
+{
+    if ($v === null) return null;
+
+    if (class_exists('\Normalizer')) {
         $v = \Normalizer::normalize($v, \Normalizer::FORM_KC) ?: $v;
-        // keep digits, keep + only if it is the first char
-        $v = preg_replace('/(?!^)\+/', '', $v);           // remove extra +'s
-        $v = preg_replace('/[^\d+]/', '', $v);            // strip non-digits
-        return $v;
     }
+
+    // keep digits, keep + only if it is the first char
+    $v = preg_replace('/(?!^)\+/', '', $v); // remove extra +'s
+    $v = preg_replace('/[^\d+]/', '', $v);  // strip non-digits
+    return $v;
+}
+
 
     /** Sanitize a whole case_note payload */
     private function sanitizeCaseNote(array $in): array
@@ -614,28 +644,70 @@ class AppointmentController extends Controller
     }
 
     /** Optional: counselor’s single appointment PDF */
-    public function exportShowPdf(Request $request, int $id)
-    {
-        $cid = $this->myCounselorId(); abort_unless($cid, 404);
+   public function exportShowPdf(Request $request, int $id)
+{
+    $cid = $this->myCounselorId();
+    abort_unless($cid, 404);
 
-        $appointment = DB::table('tbl_appointments as a')
-            ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-            ->select('a.*',
-                DB::raw("COALESCE(s.name,'—') as student_name"),
-                DB::raw("COALESCE(s.email,'') as student_email"))
-            ->where('a.id', $id)
-            ->where('a.counselor_id', $cid)
-            ->first();
+    // Same appointment lookup as caseNotePdf
+    $appointment = DB::table('tbl_appointments as a')
+    ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
+    ->select(
+        'a.*',
+        DB::raw("COALESCE(s.name,'—') as student_name"),
+        DB::raw("COALESCE(s.email,'') as student_email"),
+        DB::raw("
+            TRIM(
+                CONCAT(
+                    COALESCE(s.course, ''),
+                    CASE 
+                        WHEN s.course IS NOT NULL AND s.year_level IS NOT NULL 
+                            THEN ' · ' 
+                        ELSE '' 
+                    END,
+                    COALESCE(s.year_level, '')
+                )
+            ) as student_program_year
+        ")
+    )
+    ->where('a.id', $id)
+    ->where('a.counselor_id', $cid)
+    ->first();
 
-        abort_unless($appointment, 404);
 
-        $pdf = app('dompdf.wrapper');
-        $pdf->setPaper('a4','portrait')->setOptions(['defaultFont'=>'DejaVu Sans','isHtml5ParserEnabled'=>true,'isRemoteEnabled'=>true]);
-        $pdf->loadView('Counselor_Interface.appointments.pdf-show', ['appointment'=>$appointment]);
-        $filename = 'Appointment_'.$appointment->id.'.pdf';
+    abort_unless($appointment, 404);
 
-        return $request->boolean('download') ? $pdf->download($filename) : $pdf->stream($filename);
-    }
+    // Pull the case note for this appointment
+    $caseNote = \App\Models\CaseNote::where('appointment_id', $appointment->id)->first();
+    abort_unless($caseNote, 404);
+
+    // Optional logo embed
+    $logoPath = public_path('images/chatbot.png');
+    $logoData = file_exists($logoPath)
+        ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath))
+        : null;
+
+    $pdf = app('dompdf.wrapper');
+    $pdf->setPaper('a4', 'portrait')->setOptions([
+        'defaultFont'          => 'Helvetica',
+        'isHtml5ParserEnabled' => true,
+        'isRemoteEnabled'      => true,
+    ]);
+
+    // 👉 Use the existing case-note template
+    $pdf->loadView('Counselor_Interface.appointments.pdf-case-note', [
+        'appointment' => $appointment,
+        'note'        => $caseNote,
+        'generatedAt' => now()->format('F d, Y · g:i A'),
+        'logoData'    => $logoData,
+    ]);
+
+    $filename = 'Case_Note_Appointment_'.$appointment->id.'.pdf';
+
+    return $request->boolean('download')
+        ? $pdf->download($filename)
+        : $pdf->stream($filename);
+}
 
     public function status(Request $request, int $id)
     {
