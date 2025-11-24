@@ -1031,7 +1031,8 @@
         .filter(h => h !== '12:00')
         .map(h => {
           const b = bucket.get(h) || {};
-          const computedBusy = b.busy || (!b.present && !b.current);
+        const computedBusy = b.busy;
+
           const disabled     = b.disabledAll || computedBusy || b.current;
 
           return {
@@ -1180,10 +1181,20 @@
           return m ? m[1] : String(s).trim();
         };
 
-        const occRaw  = occBy[activeCid] || [];
-        const occNorm = occRaw.map(extractTime);
+const occRaw = occBy[activeCid] || [];
+let occNorm  = [];
 
-        fillTimes(activeCid, slots, { occupied: occNorm, current, ref, date });
+// Accept both formats:
+// 1) ["09:00","10:00"]
+// 2) { "09:00": 1, "10:00": 2 }
+if (Array.isArray(occRaw)) {
+  occNorm = occRaw.map(extractTime);
+} else if (occRaw && typeof occRaw === 'object') {
+  occNorm = Object.keys(occRaw).map(extractTime);
+}
+
+fillTimes(activeCid, slots, { occupied: occNorm, current, ref, date });
+
 
         // Always allow changing counselor to reload slots
         iCoun.onchange = () => loadSlots(iCoun.value);

@@ -380,206 +380,239 @@ class ChatbotSessionController extends Controller
         return response()->json(['counts' => $counts]);
     }
 
-    /** JSON: counselor-wise slots + pooled capacity for a date (Mon–Fri) */
-    public function slots(int $id, Request $request): JsonResponse
-    {
-        // ---- 0. Resolve session + student ----
-        $session = $this->sessions->findById($id, ['user']);
-        if (!$session || empty($session->user_id)) {
-            return response()->json(['message' => 'Session not found.'], 404);
+/** JSON: counselor-wise slots + pooled capacity for a date (Mon–Fri) */
+public function slots(int $id, Request $request): JsonResponse
+{
+    // ---- 0. Resolve session + student ----
+    $session = $this->sessions->findById($id, ['user']);
+    if (!$session || empty($session->user_id)) {
+        return response()->json(['message' => 'Session not found.'], 404);
+    }
+    $studentId = (int) $session->user_id;
+
+    // ---- 1. Validate date ----
+    $dateStr = (string) $request->query('date', '');
+    if (!$dateStr || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateStr)) {
+        return response()->json(['message' => 'Provide date=YYYY-MM-DD.'], 422);
+    }
+
+    $date   = Carbon::parse($dateStr)->startOfDay();
+    $now    = now();
+    $dowIso = $date->isoWeekday(); // 1..7 (Mon..Sun)
+
+    if ($dowIso < 1 || $dowIso > 5) {
+        return response()->json([
+            'counselors'  => [],
+            'slots'       => [],
+            'pooled'      => [],
+            'occupiedBy'  => [],
+            'occupied_by' => [],
+            'current_time'=> null,
+            'ref_time'    => null,
+            'suggest'     => null,
+            'message'     => 'Appointments are available Monday to Friday only.',
+        ]);
+    }
+
+    // ---- 2. Active counselors ----
+    $counselors = DB::table('tbl_counselors')
+        ->where('is_active', 1)
+        ->orderBy('name')
+        ->get(['id','name']);
+
+    if ($counselors->isEmpty()) {
+        return response()->json([
+            'counselors'  => [],
+            'slots'       => [],
+            'pooled'      => [],
+            'occupiedBy'  => [],
+            'occupied_by' => [],
+            'current_time'=> null,
+            'ref_time'    => null,
+            'suggest'     => null,
+            'message'     => 'No active counselors.',
+        ]);
+    }
+
+    // Pills shown in UI (hour headers)
+    $hourStarts = ['09:00','10:00','11:00','13:00','14:00','15:00'];
+
+    // Align step to 30 mins
+    $snap = function (Carbon $dt): Carbon {
+        $m = (int) floor($dt->minute / 30) * 30;
+        return $dt->copy()->setTime($dt->hour, $m, 0);
+    };
+
+    // ---- 2.5. Aggregate appointments per counselor + HOUR (09:00, 10:00, ...)
+    // Any appointment in that hour will block the *whole* hour for urgent booking
+    $apptRows = DB::table('tbl_appointments')
+        ->whereDate('scheduled_at', $date)
+        ->whereIn('status', self::BLOCKING_STATUSES)
+        ->get(['counselor_id','scheduled_at']);
+
+    $busyByHour = []; // [counselor_id => ['09:00' => count, ...]]
+    foreach ($apptRows as $ap) {
+        if (!$ap->counselor_id || !$ap->scheduled_at) continue;
+
+        $cid  = (int) $ap->counselor_id;
+        $hour = Carbon::parse($ap->scheduled_at)->format('H:00'); // 09:00, 10:00
+
+        if (!isset($busyByHour[$cid])) {
+            $busyByHour[$cid] = [];
         }
-        $studentId = (int) $session->user_id;
+        $busyByHour[$cid][$hour] = ($busyByHour[$cid][$hour] ?? 0) + 1;
+    }
 
-        // ---- 1. Validate date ----
-        $dateStr = (string) $request->query('date', '');
-        if (!$dateStr || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateStr)) {
-            return response()->json(['message' => 'Provide date=YYYY-MM-DD.'], 422);
-        }
+    $slotsByCounselor = [];
+    $occupiedBy       = [];  // [counselor_id => ['09:00','10:00',...]]
+    $allTimes         = [];  // all HH:MM that appear anywhere (for pooled capacity)
 
-        $date   = Carbon::parse($dateStr)->startOfDay();
-        $now    = now();
-        $dowIso = $date->isoWeekday(); // 1..7 (Mon..Sun)
+    // ---- 3. Build slots per counselor using availability + aggregated busy hours ----
+    foreach ($counselors as $c) {
+        $hourFreeCounts      = []; // future + free half-hours per hour
+        $hourPotentialCounts = []; // ALL half-hours (past+future, free+taken) per hour
+        $col                 = [];
 
-        if ($dowIso < 1 || $dowIso > 5) {
-            return response()->json([
-                'counselors'  => [],
-                'slots'       => [],
-                'pooled'      => [],
-                'occupiedBy'  => [],
-                'occupied_by' => [],
-                'current_time'=> null,
-                'ref_time'    => null,
-                'suggest'     => null,
-                'message'     => 'Appointments are available Monday to Friday only.',
-            ]);
-        }
+        $busyHoursForThis = $busyByHour[$c->id] ?? [];
 
-        // ---- 2. Active counselors ----
-        $counselors = DB::table('tbl_counselors')
-            ->where('is_active', 1)
-            ->orderBy('name')
-            ->get(['id','name']);
+        // availability for this weekday
+        $ranges = DB::table('tbl_counselor_availabilities')
+            ->where('counselor_id', $c->id)
+            ->where('weekday', $dowIso)
+            ->orderBy('start_time')
+            ->get(['start_time','end_time']);
 
-        if ($counselors->isEmpty()) {
-            return response()->json([
-                'counselors'  => [],
-                'slots'       => [],
-                'pooled'      => [],
-                'occupiedBy'  => [],
-                'occupied_by' => [],
-                'current_time'=> null,
-                'ref_time'    => null,
-                'suggest'     => null,
-                'message'     => 'No active counselors.',
-            ]);
-        }
+        foreach ($ranges as $r) {
+            if (!is_string($r->start_time) || !is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') {
+                continue;
+            }
 
-        // Pills shown in UI (hour headers)
-        $hourStarts = ['09:00','10:00','11:00','13:00','14:00','15:00'];
+            $cursor = $snap(Carbon::parse($date->toDateString().' '.$r->start_time)->second(0));
+            $end    = Carbon::parse($date->toDateString().' '.$r->end_time)->second(0);
 
-        // Align step to 30 mins
-        $snap = function (Carbon $dt): Carbon {
-            $m = (int) floor($dt->minute / 30) * 30;
-            return $dt->copy()->setTime($dt->hour, $m, 0);
-        };
+            while ($cursor->lt($end)) {
+                $slot = $snap($cursor);
+                $next = $slot->copy()->addMinutes(30);
+                if ($next->gt($end)) {
+                    break;
+                }
 
-        $slotsByCounselor = [];
-        $occupiedBy       = [];  // [counselor_id => ['09:00','10:00',...]]
-        $allTimes         = [];  // all HH:MM that appear anywhere (for pooled capacity)
+                $hhmm      = $slot->format('H:i');       // e.g. 10:30
+                $hourLabel = substr($hhmm, 0, 2).':00'; // e.g. 10:00
 
-        // ---- 3. Build slots per counselor using availability + appointments ----
-        foreach ($counselors as $c) {
-            $hourFreeCounts      = []; // future + free half-hours per hour
-            $hourPotentialCounts = []; // ALL half-hours (past+future, free+taken) per hour
-            $col                 = [];
+                // mark that there is *some* capacity in this hour
+                if (!isset($hourPotentialCounts[$hourLabel])) {
+                    $hourPotentialCounts[$hourLabel] = 0;
+                }
+                $hourPotentialCounts[$hourLabel]++;
 
-            // availability for this weekday
-            $ranges = DB::table('tbl_counselor_availabilities')
-                ->where('counselor_id', $c->id)
-                ->where('weekday', $dowIso)
-                ->orderBy('start_time')
-                ->get(['start_time','end_time']);
+                $isPast = $date->isSameDay($now) && $slot->lte($now);
 
-            foreach ($ranges as $r) {
-                if (!is_string($r->start_time) || !is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') {
+                // NEW: treat ANY appointment in that hour as blocking the WHOLE hour
+                $hourIsBusy = !empty($busyHoursForThis[$hourLabel]);
+
+                // if hour has any appointment OR is past → NO free half-hour
+                if ($hourIsBusy || $isPast) {
+                    $cursor = $cursor->addMinutes(30);
                     continue;
                 }
 
-                $cursor = $snap(Carbon::parse($date->toDateString().' '.$r->start_time)->second(0));
-                $end    = Carbon::parse($date->toDateString().' '.$r->end_time)->second(0);
-
-                while ($cursor->lt($end)) {
-                    $slot = $snap($cursor);
-                    $next = $slot->copy()->addMinutes(30);
-                    if ($next->gt($end)) {
-                        break;
-                    }
-
-                    $hhmm      = $slot->format('H:i');       // e.g. 10:30
-                    $hourLabel = substr($hhmm, 0, 2).':00'; // e.g. 10:00
-
-                    // mark that there is *some* capacity in this hour
-                    if (!isset($hourPotentialCounts[$hourLabel])) {
-                        $hourPotentialCounts[$hourLabel] = 0;
-                    }
-                    $hourPotentialCounts[$hourLabel]++;
-
-                    $isPast = $date->isSameDay($now) && $slot->lte($now);
-
-                    // any blocking appointment at this exact 30-min slot
-                    $taken = DB::table('tbl_appointments')
-                        ->where('counselor_id', $c->id)
-                        ->where('scheduled_at', $slot)
-                        ->whereIn('status', self::BLOCKING_STATUSES)
-                        ->exists();
-
-                    if (!$taken && !$isPast) {
-                        // free + future → available slot in UI
-                        if (!isset($hourFreeCounts[$hourLabel])) {
-                            $hourFreeCounts[$hourLabel] = 0;
-                        }
-                        $hourFreeCounts[$hourLabel]++;
-
-                        $col[] = [
-                            'value'    => $hhmm,
-                            'label'    => $slot->format('g:i A'),
-                            'disabled' => false,
-                        ];
-                        $allTimes[$hhmm] = true;
-                    }
-
-                    $cursor = $cursor->addMinutes(30);
+                // free + future → available slot in UI
+                if (!isset($hourFreeCounts[$hourLabel])) {
+                    $hourFreeCounts[$hourLabel] = 0;
                 }
-            }
+                $hourFreeCounts[$hourLabel]++;
 
-            // Hours that are fully booked for this counselor:
-            // there is capacity (potential > 0) but 0 free slots
-            $occupiedHours = [];
-            foreach ($hourPotentialCounts as $hour => $potentialCount) {
-                $freeCount = $hourFreeCounts[$hour] ?? 0;
-                if ($potentialCount > 0 && $freeCount === 0) {
-                    $occupiedHours[] = $hour; // e.g. "10:00"
-                }
-            }
+                $col[] = [
+                    'value'    => $hhmm,
+                    'label'    => $slot->format('g:i A'),
+                    'disabled' => false,
+                    // optional: mark row-level busy flag (here always false because already filtered)
+                    'busy'     => false,
+                ];
+                $allTimes[$hhmm] = true;
 
-            $slotsByCounselor[$c->id] = collect($col)->unique('value')->sortBy('value')->values()->all();
-            $occupiedBy[$c->id]       = $occupiedHours;
-        }
-
-        // ---- 4. Pooled capacity per HH:MM (existing behavior) ----
-        $repo   = app(AppointmentRepositoryInterface::class);
-        $pooled = [];
-        foreach (array_keys($allTimes) as $hhmm) {
-            $t = Carbon::parse($date->toDateString().' '.$hhmm.':00');
-            $pooled[$hhmm] = count($repo->counselorIdsFreeAt($t));
-        }
-
-        // ---- 5. Student's current appointment time (for this session's student) ----
-        $currentTime = null;
-        $studentAppt = DB::table('tbl_appointments')
-            ->where('student_id', $studentId)
-            ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
-            ->orderBy('scheduled_at')
-            ->first();
-
-        if ($studentAppt) {
-            $scheduled = Carbon::parse($studentAppt->scheduled_at);
-            if ($scheduled->isSameDay($date)) {
-                // "HH:MM" (e.g. "10:00") → UI can use this for "CURRENT" pill
-                $currentTime = $scheduled->format('H:i');
+                $cursor = $cursor->addMinutes(30);
             }
         }
 
-        // ---- 6. Simple suggestion/ref_time for UI (first hour that is NOT fully booked) ----
-        $refTime = null;
-        $suggest = null;
-
-        // either ?counselor_id or first counselor
-        $targetCounselorId = (int) $request->query('counselor_id', $counselors->first()->id ?? 0);
-
-        if ($targetCounselorId && isset($occupiedBy[$targetCounselorId])) {
-            $busy = $occupiedBy[$targetCounselorId] ?? [];
-            foreach ($hourStarts as $h) {
-                if (!in_array($h, $busy, true)) {
-                    $refTime = $h;    // e.g. "09:00"
-                    $suggest = $h;
-                    break;
-                }
+        // Hours that are fully booked for this counselor:
+        // there is capacity (potential > 0) but 0 free slots
+        $occupiedHours = [];
+        foreach ($hourPotentialCounts as $hour => $potentialCount) {
+            $freeCount = $hourFreeCounts[$hour] ?? 0;
+            if ($potentialCount > 0 && $freeCount === 0) {
+                $occupiedHours[] = $hour; // e.g. "10:00"
             }
         }
 
-        // ---- 7. Final JSON ----
-        return response()->json([
-            'counselors'  => $counselors->map(fn($r) => ['id' => $r->id, 'name' => $r->name])->values(),
-            'slots'       => $slotsByCounselor,
-            'pooled'      => $pooled,
-            'occupiedBy'  => $occupiedBy,   // keep both camel + snake for safety
-            'occupied_by' => $occupiedBy,
-            'current_time'=> $currentTime,  // NEW: student’s active appt time on this date (HH:MM) or null
-            'ref_time'    => $refTime,      // NEW: first non-fully-booked hour for selected counselor
-            'suggest'     => $suggest,      // NEW: same as ref_time, for your "suggested" pill
-        ]);
+        // if you want, you can also tag each row with busy flag based on its hour
+        $slotsByCounselor[$c->id] = collect($col)
+            ->map(function ($row) use ($occupiedHours) {
+                $hour = substr($row['value'], 0, 2).':00';
+                $row['busy'] = in_array($hour, $occupiedHours, true);
+                return $row;
+            })
+            ->unique('value')
+            ->sortBy('value')
+            ->values()
+            ->all();
+
+        $occupiedBy[$c->id] = $occupiedHours;
     }
+
+    // ---- 4. Pooled capacity per HH:MM (existing behavior) ----
+    $repo   = app(AppointmentRepositoryInterface::class);
+    $pooled = [];
+    foreach (array_keys($allTimes) as $hhmm) {
+        $t = Carbon::parse($date->toDateString().' '.$hhmm.':00');
+        $pooled[$hhmm] = count($repo->counselorIdsFreeAt($t));
+    }
+
+    // ---- 5. Student's current appointment time (for this session's student) ----
+    $currentTime = null;
+    $studentAppt = DB::table('tbl_appointments')
+        ->where('student_id', $studentId)
+        ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
+        ->orderBy('scheduled_at')
+        ->first();
+
+    if ($studentAppt) {
+        $scheduled = Carbon::parse($studentAppt->scheduled_at);
+        if ($scheduled->isSameDay($date)) {
+            $currentTime = $scheduled->format('H:i');
+        }
+    }
+
+    // ---- 6. Simple suggestion/ref_time for UI (first hour that is NOT fully booked) ----
+    $refTime = null;
+    $suggest = null;
+
+    $targetCounselorId = (int) $request->query('counselor_id', $counselors->first()->id ?? 0);
+
+    if ($targetCounselorId && isset($occupiedBy[$targetCounselorId])) {
+        $busy = $occupiedBy[$targetCounselorId] ?? [];
+        foreach ($hourStarts as $h) {
+            if (!in_array($h, $busy, true)) {
+                $refTime = $h;    // e.g. "09:00"
+                $suggest = $h;
+                break;
+            }
+        }
+    }
+
+    // ---- 7. Final JSON ----
+    return response()->json([
+        'counselors'  => $counselors->map(fn($r) => ['id' => $r->id, 'name' => $r->name])->values(),
+        'slots'       => $slotsByCounselor,
+        'pooled'      => $pooled,
+        'occupiedBy'  => $occupiedBy,   // keep both camel + snake for safety
+        'occupied_by' => $occupiedBy,
+        'current_time'=> $currentTime,
+        'ref_time'    => $refTime,
+        'suggest'     => $suggest,
+    ]);
+}
 
     /** Admin books appointment for the session’s student with counselor+time */
     public function book(int $id, Request $request): JsonResponse
