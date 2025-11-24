@@ -87,7 +87,7 @@ class AppointmentController extends Controller
 
         DB::table('tbl_appointments')
             ->where('counselor_id', $cid)
-            ->whereIn('status', ['pending', 'confirmed'])
+            ->where('status', 'confirmed')
             ->where('scheduled_at', '<=', $autoCutoff)
             ->update([
                 'status'     => 'no_show',
@@ -321,8 +321,8 @@ class AppointmentController extends Controller
             ->where('a.counselor_id', $cid)
             ->first();
 
-         // ===== AUTO NO-SHOW (per appointment) =====
-        if ($row && in_array(strtolower((string)$row->status), ['pending', 'confirmed'], true)) {
+        // ===== AUTO NO-SHOW (per appointment) =====
+        if ($row && strtolower((string)$row->status) === 'confirmed') {
             $now   = now();
             $start = Carbon::parse($row->scheduled_at);
 
