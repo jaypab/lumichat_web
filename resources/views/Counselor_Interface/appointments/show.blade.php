@@ -27,7 +27,7 @@
   $canConfirm  = ($status === 'pending');
   $canStart    = ($status === 'confirmed') && $now->gte($dt->copy()->subMinutes(10)); // grace start
   $canDone     = (in_array($status, ['confirmed','ongoing'], true) && $hasStarted);
-  $canFollowUp = ($status === 'completed');
+  $canFollowUp = in_array($status, ['completed', 'no_show'], true);
 
   $doneTitle = !$hasStarted
       ? 'You can only end the session after the scheduled start time'

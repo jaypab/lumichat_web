@@ -590,12 +590,21 @@ private function tidyPhone(?string $v): ?string
     {
         $cid = $this->myCounselorId(); abort_unless($cid, 404);
 
-        $ap = DB::table('tbl_appointments')->where('id', $id)->where('counselor_id', $cid)->first();
+        $ap = DB::table('tbl_appointments')
+        ->where('id', $id)
+        ->where('counselor_id', $cid)
+        ->first();
         abort_unless($ap, 404);
 
-        if ($ap->status !== 'completed') {
-            return back()->with('swal', ['icon'=>'warning','title'=>'Not allowed','text'=>'Create a follow-up only after completion.']);
+        // Allow follow-up when appointment is Completed OR marked as No-Show
+        if (!in_array($ap->status, ['completed', 'no_show'], true)) {
+            return back()->with('swal', [
+                'icon'  => 'warning',
+                'title' => 'Not allowed',
+                'text'  => 'Create a follow-up only for completed or no-show appointments.',
+            ]);
         }
+
 
         $data = $r->validate([
             'date' => ['required','date_format:Y-m-d'],
