@@ -443,7 +443,6 @@
 
 <style>
   /* ===== LumiCHAT circular loader (indigo–violet) ===== */
-
   #loginLoading .lumi-loader-wrapper {
     position: relative;
     width: 120px;
