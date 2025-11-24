@@ -169,36 +169,39 @@
         </div>
       </div>
 
-{{-- Sticky actions --}}
-<div class="px-6 py-4 rounded-b-3xl bg-slate-50/80 border-t border-slate-200 shrink-0">
-  <form method="POST" action="{{ route('legal.accept') }}"
-        class="flex flex-col sm:flex-row items-center justify-between gap-3">
-    @csrf
-    <label class="flex items-start gap-3 select-none">
-      <input id="agree" type="checkbox" name="agree" value="1"
-        class="mt-1 h-5 w-5 rounded-md border-slate-300 text-indigo-600 focus:ring-2 focus:ring-indigo-600/50 focus:ring-offset-0">
-      <span class="text-sm text-slate-700">I agree to the Terms and Conditions.</span>
-    </label>
+  {{-- Sticky actions --}}
+  <div class="px-6 py-4 rounded-b-3xl bg-slate-50/80 border-t border-slate-200 shrink-0">
+    <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
+      
+      {{-- Checkbox note (shared for both actions) --}}
+      <label class="flex items-start gap-3 select-none">
+        <input id="agree" type="checkbox" name="agree" value="1"
+          form="accept-form"
+          class="mt-1 h-5 w-5 rounded-md border-slate-300 text-indigo-600 focus:ring-2 focus:ring-indigo-600/50 focus:ring-offset-0">
+        <span class="text-sm text-slate-700">I agree to the Terms and Conditions.</span>
+      </label>
 
-    <div class="flex items-center gap-3">
-      {{-- Decline --}}
-      <form id="decline-form" method="POST" action="{{ route('legal.decline') }}">
-        @csrf
-        <button type="submit"
-          class="text-sm font-medium text-slate-500 hover:text-slate-700">
-          Decline
-        </button>
-      </form>
+      <div class="flex items-center gap-3">
+        {{-- Decline (separate form) --}}
+        <form id="decline-form" method="POST" action="{{ route('legal.decline') }}">
+          @csrf
+          <button type="submit"
+            class="text-sm font-medium text-slate-500 hover:text-slate-700">
+            Decline
+          </button>
+        </form>
 
-      <button id="continueBtn" type="submit" disabled
-        class="inline-flex items-center justify-center rounded-xl px-5 py-2.5 text-sm font-semibold text-white
-               bg-gradient-to-r from-indigo-600 to-violet-600 shadow-sm ring-1 ring-black/5
-               hover:opacity-95 active:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed">
-        Continue
-      </button>
-    </div>
-  </form>
-</div>
+        {{-- Accept / Continue --}}
+        <form id="accept-form" method="POST" action="{{ route('legal.accept') }}">
+          @csrf
+          <button id="continueBtn" type="submit" disabled
+            class="inline-flex items-center justify-center rounded-xl px-5 py-2.5 text-sm font-semibold text-white
+                  bg-gradient-to-r from-indigo-600 to-violet-600 shadow-sm ring-1 ring-black/5
+                  hover:opacity-95 active:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed">
+            Continue
+          </button>
+        </form>
+      </div>
 
     </div>
   </div>

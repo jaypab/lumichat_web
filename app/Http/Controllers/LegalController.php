@@ -34,15 +34,19 @@ class LegalController extends Controller
         return redirect()->route('chat.index');
     }
 
-    public function decline(Request $request)
+       public function decline(Request $request)
     {
-        // Logout and invalidate session
-        Auth::logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        // If logged in, log out + invalidate session
+        if (Auth::check()) {
+            Auth::logout();
 
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
+
+        // Balik sa login page with info toast
         return redirect()
             ->route('login')
-            ->with('status', 'You must accept the Terms & Conditions to use LumiCHAT.');
+            ->with('info', 'You can only use LumiCHAT after accepting the Terms & Conditions.');
     }
 }
