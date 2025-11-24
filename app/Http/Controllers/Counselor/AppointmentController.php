@@ -50,15 +50,25 @@ class AppointmentController extends Controller
     {
         $cid = $this->myCounselorId();
 
+        // Common filter values
+        $status = $r->query('status', 'all');
+        $period = $r->query('period', 'all');
+        $q      = trim((string) $r->query('q', ''));
+        $now    = now();
+
         // If this user isn’t linked to a counselor record, show an empty list + warning.
         if (!$cid) {
-            $empty = new \Illuminate\Pagination\LengthAwarePaginator([], 0, 10, 1, ['path' => url()->current()]);
+            $empty = new LengthAwarePaginator([], 0, 10, 1, [
+                'path' => url()->current(),
+            ]);
+
             return view('Counselor_Interface.appointments.index', [
-                'appointments'          => $empty,
-                'reassignedAppointments'=> collect(),
-                'status'                => $r->query('status', 'all'),
-                'period'                => $r->query('period', 'all'),
-                'q'                     => $r->query('q', ''),
+                'appointments'            => $empty,
+                'reassignedAppointments'  => collect(),
+                'rescheduledAppointments' => collect(),
+                'status'                  => $status,
+                'period'                  => $period,
+                'q'                       => $q,
             ])->with('swal', [
                 'icon'  => 'warning',
                 'title' => 'Counselor account not linked',
@@ -66,15 +76,9 @@ class AppointmentController extends Controller
             ]);
         }
 
-        // Filters
-        $status = $r->query('status', 'all');
-        $period = $r->query('period', 'all');
-        $q      = trim((string) $r->query('q', ''));
-        $now    = now();
-
         // Safely include counselor-reassignment columns only if they exist
-        $hasCrStatus  = \Illuminate\Support\Facades\Schema::hasColumn('tbl_appointments', 'cr_status');
-        $hasCrCreated = \Illuminate\Support\Facades\Schema::hasColumn('tbl_appointments', 'cr_created_at');
+        $hasCrStatus  = Schema::hasColumn('tbl_appointments', 'cr_status');
+        $hasCrCreated = Schema::hasColumn('tbl_appointments', 'cr_created_at');
 
         // ===== ACTIVE APPOINTMENTS (current counselor_id = $cid) =====
         $select = [
@@ -82,17 +86,17 @@ class AppointmentController extends Controller
             'a.scheduled_at',
             'a.created_at as booked_at',
             'a.status',
-            \Illuminate\Support\Facades\DB::raw("COALESCE(s.name,'—')  as student_name"),
-            \Illuminate\Support\Facades\DB::raw("COALESCE(s.email,'') as student_email"),
+            DB::raw("COALESCE(s.name,'—')  as student_name"),
+            DB::raw("COALESCE(s.email,'') as student_email"),
         ];
         $select[] = $hasCrStatus
             ? 'a.cr_status'
-            : \Illuminate\Support\Facades\DB::raw('NULL as cr_status');
+            : DB::raw('NULL as cr_status');
         $select[] = $hasCrCreated
             ? 'a.cr_created_at'
-            : \Illuminate\Support\Facades\DB::raw('NULL as cr_created_at');
+            : DB::raw('NULL as cr_created_at');
 
-        $qrb = \Illuminate\Support\Facades\DB::table('tbl_appointments as a')
+        $qrb = DB::table('tbl_appointments as a')
             ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
             ->select($select)
             ->where('a.counselor_id', $cid);
@@ -124,7 +128,73 @@ class AppointmentController extends Controller
                 break;
         }
 
-        // Filter: search (student name/email)
+        // ===== RESCHEDULED HISTORY (date and/or counselor changes) =====
+        $rescheduledAppointments = collect();
+
+        if (Schema::hasTable('tbl_appointment_reschedule_history')) {
+            $rh = DB::table('tbl_appointment_reschedule_history as h')
+                ->join('tbl_appointments as a', 'a.id', '=', 'h.appointment_id')
+                ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
+                ->leftJoin('tbl_counselors as oc', 'oc.id', '=', 'h.old_counselor_id')
+                ->leftJoin('tbl_counselors as nc', 'nc.id', '=', 'h.new_counselor_id')
+                ->select([
+                    'a.id as appointment_id',
+                    'a.created_at as booked_at',
+                    'a.scheduled_at as current_scheduled_at',
+
+                    DB::raw("COALESCE(s.name,'—')  as student_name"),
+                    DB::raw("COALESCE(s.email,'') as student_email"),
+
+                    'h.old_scheduled_at',
+                    'h.new_scheduled_at',
+                    'h.reason',
+                    'h.created_at as changed_at',
+                    'oc.name as old_counselor_name',
+                    'nc.name as new_counselor_name',
+                ])
+                // this counselor was involved (before or after)
+                ->where(function ($w) use ($cid) {
+                    $w->where('h.old_counselor_id', $cid)
+                    ->orWhere('h.new_counselor_id', $cid);
+                });
+
+            // reuse period filter based on the *new* schedule (fallback to current)
+            switch ($period) {
+                case 'today':
+                    $rh->whereDate('a.scheduled_at', $now->toDateString());
+                    break;
+                case 'upcoming':
+                    $rh->where('a.scheduled_at', '>=', $now);
+                    break;
+                case 'this_week':
+                    $rh->whereBetween('a.scheduled_at', [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()]);
+                    break;
+                case 'this_month':
+                    $rh->whereBetween('a.scheduled_at', [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()]);
+                    break;
+                case 'past':
+                    $rh->where('a.scheduled_at', '<', $now);
+                    break;
+                default:
+                    // all
+                    break;
+            }
+
+            // reuse search filter
+            if ($q !== '') {
+                $rh->where(function ($w) use ($q) {
+                    $w->where('s.name', 'like', "%{$q}%")
+                    ->orWhere('s.email', 'like', "%{$q}%");
+                });
+            }
+
+            $rescheduledAppointments = $rh
+                ->orderByDesc('h.created_at')
+                ->orderByDesc('a.scheduled_at')
+                ->get();
+        }
+
+        // Filter: search (student name/email) for ACTIVE list
         if ($q !== '') {
             $qrb->where(function ($w) use ($q) {
                 $w->where('s.name', 'like', "%{$q}%")
@@ -143,16 +213,16 @@ class AppointmentController extends Controller
         // ===== REASSIGNED HISTORY (read-only; still visible to past counselor) =====
         $reassignedAppointments = collect();
 
-        if (\Illuminate\Support\Facades\Schema::hasTable('tbl_appointment_counselor_history')) {
-            $hr = \Illuminate\Support\Facades\DB::table('tbl_appointment_counselor_history as h')
+        if (Schema::hasTable('tbl_appointment_counselor_history')) {
+            $hr = DB::table('tbl_appointment_counselor_history as h')
                 ->join('tbl_appointments as a', 'a.id', '=', 'h.appointment_id')
                 ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
                 ->select([
                     'a.id',
                     'a.scheduled_at',
                     'a.created_at as booked_at',
-                    \Illuminate\Support\Facades\DB::raw("COALESCE(s.name,'—')  as student_name"),
-                    \Illuminate\Support\Facades\DB::raw("COALESCE(s.email,'') as student_email"),
+                    DB::raw("COALESCE(s.name,'—')  as student_name"),
+                    DB::raw("COALESCE(s.email,'') as student_email"),
                     'h.status as history_status',
                     'h.changed_at',
                 ])
@@ -196,51 +266,23 @@ class AppointmentController extends Controller
         }
 
         return view('Counselor_Interface.appointments.index', [
-            'appointments'           => $appointments,
-            'reassignedAppointments' => $reassignedAppointments,
-            'status'                 => $status,
-            'period'                 => $period,
-            'q'                      => $q,
+            'appointments'            => $appointments,
+            'reassignedAppointments'  => $reassignedAppointments,
+            'rescheduledAppointments' => $rescheduledAppointments,
+            'status'                  => $status,
+            'period'                  => $period,
+            'q'                       => $q,
         ]);
     }
 
+    /** GET /counselor/appointment/view/{id} */
     public function show(int $id)
-{
-    $cid = $this->myCounselorId();
-    abort_unless($cid, 404);
+    {
+        $cid = $this->myCounselorId();
+        abort_unless($cid, 404);
 
-    // 1) Try as ACTIVE appointment (current counselor)
-    $row = DB::table('tbl_appointments as a')
-        ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-        ->select(
-            'a.*',
-            DB::raw("COALESCE(s.name,'—') as student_name"),
-            DB::raw("COALESCE(s.email,'') as student_email"),
-            DB::raw("
-                TRIM(
-                    CONCAT(
-                        COALESCE(s.course, ''),
-                        CASE 
-                            WHEN s.course IS NOT NULL AND s.year_level IS NOT NULL 
-                                THEN ' · ' 
-                            ELSE '' 
-                        END,
-                        COALESCE(s.year_level, '')
-                    )
-                ) as student_program_year
-            ")
-        )
-        ->where('a.id', $id)
-        ->where('a.counselor_id', $cid)
-        ->first();
-
-    $isHistory        = false;
-    $historyChangedAt = null;
-
-    // 2) If not active, try as REASSIGNED history for THIS counselor + THIS appointment
-    if (!$row && Schema::hasTable('tbl_appointment_counselor_history')) {
-        $hist = DB::table('tbl_appointment_counselor_history as h')
-            ->join('tbl_appointments as a', 'a.id', '=', 'h.appointment_id')
+        // 1) Try as ACTIVE appointment (current counselor)
+        $row = DB::table('tbl_appointments as a')
             ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
             ->select(
                 'a.*',
@@ -258,36 +300,66 @@ class AppointmentController extends Controller
                             COALESCE(s.year_level, '')
                         )
                     ) as student_program_year
-                "),
-                'h.status as history_status',
-                'h.changed_at'
+                ")
             )
-            ->where('h.counselor_id', $cid)   // ✅ only this counselor
-            ->where('h.appointment_id', $id)  // ✅ only this appointment
-            ->where('h.status', 'reassigned')
-            ->orderByDesc('h.changed_at')
+            ->where('a.id', $id)
+            ->where('a.counselor_id', $cid)
             ->first();
 
-        if ($hist) {
-            $row              = $hist;
-            $isHistory        = true;
-            $historyChangedAt = $hist->changed_at;
+        $isHistory        = false;
+        $historyChangedAt = null;
+
+        // 2) If not active, try as REASSIGNED history for THIS counselor + THIS appointment
+        if (!$row && Schema::hasTable('tbl_appointment_counselor_history')) {
+            $hist = DB::table('tbl_appointment_counselor_history as h')
+                ->join('tbl_appointments as a', 'a.id', '=', 'h.appointment_id')
+                ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
+                ->select(
+                    'a.*',
+                    DB::raw("COALESCE(s.name,'—') as student_name"),
+                    DB::raw("COALESCE(s.email,'') as student_email"),
+                    DB::raw("
+                        TRIM(
+                            CONCAT(
+                                COALESCE(s.course, ''),
+                                CASE 
+                                    WHEN s.course IS NOT NULL AND s.year_level IS NOT NULL 
+                                        THEN ' · ' 
+                                    ELSE '' 
+                                END,
+                                COALESCE(s.year_level, '')
+                            )
+                        ) as student_program_year
+                    "),
+                    'h.status as history_status',
+                    'h.changed_at'
+                )
+                ->where('h.counselor_id', $cid)   // ✅ only this counselor
+                ->where('h.appointment_id', $id)  // ✅ only this appointment
+                ->where('h.status', 'reassigned')
+                ->orderByDesc('h.changed_at')
+                ->first();
+
+            if ($hist) {
+                $row              = $hist;
+                $isHistory        = true;
+                $historyChangedAt = $hist->changed_at;
+            }
         }
+
+        abort_unless($row, 404);
+
+        $caseNote = CaseNote::where('appointment_id', $row->id)->first();
+
+        return view('Counselor_Interface.appointments.show', [
+            'appointment'      => $row,
+            'caseNote'         => $caseNote,
+            'isHistory'        => $isHistory,
+            'historyChangedAt' => $historyChangedAt,
+        ]);
     }
 
-    abort_unless($row, 404);
-
-    $caseNote = CaseNote::where('appointment_id', $row->id)->first();
-
-    return view('Counselor_Interface.appointments.show', [
-        'appointment'      => $row,
-        'caseNote'         => $caseNote,
-        'isHistory'        => $isHistory,
-        'historyChangedAt' => $historyChangedAt,
-    ]);
-}
-
-
+    /** GET /counselor/appointments/{id}/case-note/pdf */
     public function caseNotePdf(int $id)
     {
         $cid = $this->myCounselorId(); abort_unless($cid, 404);
@@ -346,32 +418,31 @@ class AppointmentController extends Controller
     }
 
     /** Collapse whitespace and trim (registration-style) */
-private function trimCollapse(?string $v): ?string
-{
-    if ($v === null) return null;
+    private function trimCollapse(?string $v): ?string
+    {
+        if ($v === null) return null;
 
-    if (class_exists('\Normalizer')) {
-        $v = \Normalizer::normalize($v, \Normalizer::FORM_KC) ?: $v; // NFKC
+        if (class_exists('\Normalizer')) {
+            $v = \Normalizer::normalize($v, \Normalizer::FORM_KC) ?: $v; // NFKC
+        }
+
+        return trim(preg_replace('/\s+/u', ' ', $v));
     }
 
-    return trim(preg_replace('/\s+/u', ' ', $v));
-}
+    /** Digits only with optional single leading + */
+    private function tidyPhone(?string $v): ?string
+    {
+        if ($v === null) return null;
 
-/** Digits only with optional single leading + */
-private function tidyPhone(?string $v): ?string
-{
-    if ($v === null) return null;
+        if (class_exists('\Normalizer')) {
+            $v = \Normalizer::normalize($v, \Normalizer::FORM_KC) ?: $v;
+        }
 
-    if (class_exists('\Normalizer')) {
-        $v = \Normalizer::normalize($v, \Normalizer::FORM_KC) ?: $v;
+        // keep digits, keep + only if it is the first char
+        $v = preg_replace('/(?!^)\+/', '', $v); // remove extra +'s
+        $v = preg_replace('/[^\d+]/', '', $v);  // strip non-digits
+        return $v;
     }
-
-    // keep digits, keep + only if it is the first char
-    $v = preg_replace('/(?!^)\+/', '', $v); // remove extra +'s
-    $v = preg_replace('/[^\d+]/', '', $v);  // strip non-digits
-    return $v;
-}
-
 
     /** Sanitize a whole case_note payload */
     private function sanitizeCaseNote(array $in): array
@@ -389,6 +460,7 @@ private function tidyPhone(?string $v): ?string
         }
         return $out;
     }
+    
     public function storeCaseNote(int $id, Request $request)
     {
         $cid = $this->myCounselorId(); abort_unless($cid, 404);

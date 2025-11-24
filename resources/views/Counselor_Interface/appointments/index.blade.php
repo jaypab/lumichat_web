@@ -303,6 +303,135 @@
   </div>
 @endif
 
+{{-- =========================
+     Rescheduled Appointments
+     (date and/or counselor changes)
+   ========================= --}}
+@if(isset($rescheduledAppointments) && $rescheduledAppointments->count() > 0)
+  <div class="max-w-7xl mx-auto space-y-4 mt-6">
+    <div class="flex items-center justify-between">
+      <div>
+        <h3 class="text-sm font-semibold text-slate-800">
+          Rescheduled Appointments
+        </h3>
+        <p class="text-xs text-slate-500">
+          Appointments where the schedule or counselor was changed.
+        </p>
+      </div>
+      <div class="text-xs text-slate-500">
+        Total: <span class="font-semibold">{{ $rescheduledAppointments->count() }}</span>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
+      <div class="relative overflow-x-auto">
+        <table class="min-w-full text-sm leading-6">
+          <thead class="bg-slate-100 border-b border-slate-200 text-slate-700">
+            <tr>
+              <th class="px-6 py-3 text-left uppercase tracking-wide text-[11px]">ID</th>
+              <th class="px-6 py-3 text-left uppercase tracking-wide text-[11px]">Student</th>
+              <th class="px-6 py-3 text-left uppercase tracking-wide text-[11px]">Old Schedule</th>
+              <th class="px-6 py-3 text-left uppercase tracking-wide text-[11px]">New Schedule</th>
+              <th class="px-6 py-3 text-left uppercase tracking-wide text-[11px]">Counselor Change</th>
+              <th class="px-6 py-3 text-left uppercase tracking-wide text-[11px]">Changed On</th>
+              <th class="px-6 py-3 text-right uppercase tracking-wide text-[11px]">Actions</th>
+            </tr>
+          </thead>
+
+          <tbody class="divide-y divide-slate-100">
+            @foreach($rescheduledAppointments as $row)
+              @php
+                $old = $row->old_scheduled_at ? Carbon::parse($row->old_scheduled_at) : null;
+                $new = $row->new_scheduled_at ? Carbon::parse($row->new_scheduled_at) : null;
+                $changedLabel = $row->changed_at
+                    ? Carbon::parse($row->changed_at)->diffForHumans()
+                    : null;
+
+                $oldCoun = $row->old_counselor_name ?? null;
+                $newCoun = $row->new_counselor_name ?? null;
+                $counselorChange = trim(($oldCoun ?? '') . ' → ' . ($newCoun ?? ''));
+              @endphp
+
+              <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition">
+                <td class="px-6 py-4 font-semibold text-slate-900">
+                  {{ $row->appointment_id }}
+                </td>
+
+                <td class="px-6 py-4">
+                  <div class="font-medium text-slate-900">{{ $row->student_name }}</div>
+                  @if(!empty($row->student_email))
+                    <div class="text-slate-500 text-xs">{{ $row->student_email }}</div>
+                  @endif
+                </td>
+
+                <td class="px-6 py-4">
+                  @if($old)
+                    <div class="leading-tight">
+                      <div class="font-medium text-slate-900">{{ $old->format('M d, Y') }}</div>
+                      <div class="text-slate-500 text-xs">{{ $old->format('g:i A') }}</div>
+                    </div>
+                  @else
+                    <span class="text-slate-400">—</span>
+                  @endif
+                </td>
+
+                <td class="px-6 py-4">
+                  @if($new)
+                    <div class="leading-tight">
+                      <div class="font-medium text-slate-900">{{ $new->format('M d, Y') }}</div>
+                      <div class="text-slate-500 text-xs">{{ $new->format('g:i A') }}</div>
+                    </div>
+                  @else
+                    <span class="text-slate-400">—</span>
+                  @endif
+                </td>
+
+                <td class="px-6 py-4">
+                  @if($oldCoun || $newCoun)
+                    <span class="inline-flex items-center h-7 rounded-full bg-slate-900 text-white text-xs font-medium px-3">
+                      <span class="inline-block size-1.5 rounded-full bg-amber-300 mr-1.5"></span>
+                      {{ $oldCoun ?? '—' }} → {{ $newCoun ?? '—' }}
+                    </span>
+                  @else
+                    <span class="text-xs text-slate-500">Same counselor</span>
+                  @endif
+
+                  @if(!empty($row->reason))
+                    <div class="mt-1 text-[11px] text-slate-500">
+                      Reason: {{ $row->reason }}
+                    </div>
+                  @endif
+                </td>
+
+                <td class="px-6 py-4">
+                  @if($changedLabel)
+                    <div class="leading-tight">
+                      <div class="font-medium text-slate-900">
+                        {{ Carbon::parse($row->changed_at)->format('M d, Y') }}
+                      </div>
+                      <div class="text-slate-500 text-xs">{{ $changedLabel }}</div>
+                    </div>
+                  @else
+                    <span class="text-slate-400">—</span>
+                  @endif
+                </td>
+
+                <td class="px-6 py-4 text-right">
+                  <a href="{{ route('counselor.appointments.show', $row->appointment_id) }}"
+                     class="inline-flex items-center justify-center h-10 rounded-lg bg-slate-800 px-4 text-sm font-medium text-white hover:bg-slate-900">
+                    View
+                  </a>
+                </td>
+              </tr>
+            @endforeach
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+@endif
+
+
 {{-- Micro-UX: auto-submit search after a short pause --}}
 <script>
   const q = document.getElementById('q');

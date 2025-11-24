@@ -281,13 +281,19 @@ class ChatbotSessionController extends Controller
             ->exists();
 
         $nextAppt = DB::table('tbl_appointments as a')
-            ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
-            ->where('a.student_id', $session->user_id)
-            ->whereIn('a.status', ['pending','confirmed'])
-            ->where('a.scheduled_at', '>', now())
-            ->orderBy('a.scheduled_at')
-            ->select(['a.id','a.scheduled_at','a.status','c.name as counselor_name'])
-            ->first();
+        ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
+        ->where('a.student_id', $session->user_id)
+        ->whereIn('a.status', ['pending','confirmed'])
+        ->where('a.scheduled_at', '>', now())
+        ->orderBy('a.scheduled_at')
+        ->select([
+            'a.id',
+            'a.counselor_id',        // ⬅️ ADD THIS
+            'a.scheduled_at',
+            'a.status',
+            'c.name as counselor_name',
+        ])
+        ->first();
 
         $logs     = ChatbotSessionRiskLog::where('chatbot_session_id', $session->id)->latest()->get();
         $lastRisk = $logs->first();
