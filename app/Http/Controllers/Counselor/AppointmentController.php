@@ -80,6 +80,21 @@ class AppointmentController extends Controller
         $hasCrStatus  = Schema::hasColumn('tbl_appointments', 'cr_status');
         $hasCrCreated = Schema::hasColumn('tbl_appointments', 'cr_created_at');
 
+        // ===== AUTO NO-SHOW SWEEP (for this counselor) =====
+        // Any pending/confirmed appointment whose slot + grace has fully passed
+        // (scheduled_at + STEP_MINUTES + NO_SHOW_GRACE_MIN <= now) becomes no_show.
+        $autoCutoff = $now->copy()->subMinutes(self::STEP_MINUTES + self::NO_SHOW_GRACE_MIN);
+
+        DB::table('tbl_appointments')
+            ->where('counselor_id', $cid)
+            ->whereIn('status', ['pending', 'confirmed'])
+            ->where('scheduled_at', '<=', $autoCutoff)
+            ->update([
+                'status'     => 'no_show',
+                'updated_at' => $now,
+            ]);
+        // ===== END AUTO NO-SHOW SWEEP =====
+
         // ===== ACTIVE APPOINTMENTS (current counselor_id = $cid) =====
         $select = [
             'a.id',
@@ -305,6 +320,26 @@ class AppointmentController extends Controller
             ->where('a.id', $id)
             ->where('a.counselor_id', $cid)
             ->first();
+
+         // ===== AUTO NO-SHOW (per appointment) =====
+        if ($row && in_array(strtolower((string)$row->status), ['pending', 'confirmed'], true)) {
+            $now   = now();
+            $start = Carbon::parse($row->scheduled_at);
+
+            // After slot length + grace (STEP_MINUTES + NO_SHOW_GRACE_MIN) → auto no_show
+            if ($now->gte($start->copy()->addMinutes(self::STEP_MINUTES + self::NO_SHOW_GRACE_MIN))) {
+                DB::table('tbl_appointments')
+                    ->where('id', $row->id)
+                    ->update([
+                        'status'     => 'no_show',
+                        'updated_at' => $now,
+                    ]);
+
+                // Reflect the change in the in-memory row
+                $row->status = 'no_show';
+            }
+        }
+        // ===== END AUTO NO-SHOW =====
 
         $isHistory        = false;
         $historyChangedAt = null;
