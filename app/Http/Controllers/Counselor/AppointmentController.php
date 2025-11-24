@@ -1015,6 +1015,4 @@ class AppointmentController extends Controller
         }
         return $insideAvailable;
     }
-
-
 }
