@@ -445,11 +445,13 @@
 {{-- SweetAlert triggers (errors/toasts) --}}
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-  const bladeErrors  = @json($errors->any() ? $errors->all() : []);
-  const flashError   = @json(session('error'));
-  const flashSuccess = @json(session('success'));
-  const flashInfo    = @json(session('info'));
-  const cooldown     = Number(@json(session('cooldown')) || 0);
+  const bladeErrors   = @json($errors->any() ? $errors->all() : []);
+  const flashError    = @json(session('error'));
+  const flashSuccess  = @json(session('success'));
+  const flashInfo     = @json(session('info'));
+  const flashStatus   = @json(session('status'));          
+  const flashDeleted  = @json(session('account_deleted')); 
+  const cooldown      = Number(@json(session('cooldown')) || 0);
 
   const escapeHtml = (s) => (s||'').toString()
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -523,11 +525,31 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   const toast = Swal.mixin({
-    toast: true, position: 'top-end',
-    showConfirmButton: false, timer: 2800, timerProgressBar: true
+    toast: true,
+    position: 'top-end',
+    showConfirmButton: false,
+    timer: 2800,
+    timerProgressBar: true
   });
-  if (flashSuccess) toast.fire({ icon: 'success', title: flashSuccess });
-  if (flashInfo)    toast.fire({ icon: 'info',    title: flashInfo    });
+
+  // Generic success/info toasts
+  if (flashSuccess) {
+    toast.fire({ icon: 'success', title: flashSuccess });
+  }
+  if (flashInfo) {
+    toast.fire({ icon: 'info', title: flashInfo });
+  }
+
+  // ✅ Account deletion toast (custom key)
+  if (flashDeleted) {
+    toast.fire({ icon: 'success', title: flashDeleted });
+  }
+
+  // ✅ Jetstream-style "status" (e.g. after delete, password reset, etc.)
+  // Only fire if we didn’t already handle it via success/deleted
+  if (flashStatus && !flashSuccess && !flashDeleted) {
+    toast.fire({ icon: 'success', title: flashStatus });
+  }
 });
 </script>
 
