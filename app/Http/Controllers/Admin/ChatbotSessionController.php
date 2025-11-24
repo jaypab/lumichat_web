@@ -186,63 +186,92 @@ class ChatbotSessionController extends Controller
         return response()->json(['ok' => true, 'until' => session('admin.reauth_until')]);
     }
 
-    /** INDEX: list chatbot sessions with “handled/cleared AFTER session” maps */
-    public function index(Request $r): View
-    {
-        $q       = (string) $r->query('q', '');
-        $dateKey = (string) $r->query('date', 'all');
-        $sort    = (string) $r->query('sort', 'newest');
+/** INDEX: list chatbot sessions with “handled/cleared AFTER session” maps */
+public function index(Request $r): View
+{
+    $q       = (string) $r->query('q', '');
+    $dateKey = (string) $r->query('date', 'all');
+    $sort    = (string) $r->query('sort', 'newest');
 
-        $sessions = $this->sessions->paginateWithFilters($q, $dateKey, self::PER_PAGE, $sort);
-        // Build “handled/cleared after this session” maps for the page
-        $pageSessions = collect($sessions->items());
-        $sessionIds   = $pageSessions->pluck('id')->all();
-        $byId         = $pageSessions->keyBy('id');
-        $studentIds   = $pageSessions->pluck('user_id')->unique()->all();
+    $sessions = $this->sessions->paginateWithFilters($q, $dateKey, self::PER_PAGE, $sort);
 
-        $active = DB::table('tbl_appointments')
-            ->whereIn('student_id', $studentIds)
-            ->whereIn('status', ['pending','confirmed'])
-            ->get(['student_id','created_at']);
+    // Build “handled/cleared after this session” maps for the page
+    $pageSessions = collect($sessions->items());
+    $sessionIds   = $pageSessions->pluck('id')->all();
+    $byId         = $pageSessions->keyBy('id');
+    $studentIds   = $pageSessions->pluck('user_id')->unique()->all();
 
-        $completed = DB::table('tbl_appointments')
-            ->whereIn('student_id', $studentIds)
-            ->where('status', 'completed')
-            ->get(['student_id','updated_at']);
+    // --- Legacy per-student logic (keep) ---
+    $active = DB::table('tbl_appointments')
+        ->whereIn('student_id', $studentIds)
+        ->whereIn('status', ['pending','confirmed'])
+        ->get(['student_id','created_at']);
 
-        $activeByStudent    = $active->groupBy('student_id');
-        $completedByStudent = $completed->groupBy('student_id');
+    $completed = DB::table('tbl_appointments')
+        ->whereIn('student_id', $studentIds)
+        ->where('status', 'completed')
+        ->get(['student_id','updated_at']);
 
-        $handledAfter  = [];
-        $clearedAfter  = [];
+    $activeByStudent    = $active->groupBy('student_id');
+    $completedByStudent = $completed->groupBy('student_id');
 
-        foreach ($sessionIds as $sid) {
-            $sess = $byId[$sid] ?? null;
-            if (!$sess) { $handledAfter[$sid] = false; $clearedAfter[$sid] = false; continue; }
+    // --- NEW: direct link via chatbot_session_id ---
+    // If an appointment is explicitly tied to this session (urgent book OR rescheduled),
+    // we treat it as handled/cleared for that session, regardless of created_at.
+    $activeLinked = DB::table('tbl_appointments')
+        ->whereIn('chatbot_session_id', $sessionIds)
+        ->whereIn('status', ['pending','confirmed'])
+        ->get(['chatbot_session_id','status']);
 
-            $sStudent = (int) $sess->user_id;
-            $sAt      = $sess->created_at;
+    $completedLinked = DB::table('tbl_appointments')
+        ->whereIn('chatbot_session_id', $sessionIds)
+        ->where('status', 'completed')
+        ->get(['chatbot_session_id','status']);
 
-            // handled if any active appt booked AFTER (or same time as) this session
-            $handledAfter[$sid] = (bool) optional($activeByStudent->get($sStudent))->first(function ($ap) use ($sAt) {
-                return $ap->created_at >= $sAt;
-            });
+    $activeBySession    = $activeLinked->groupBy('chatbot_session_id');
+    $completedBySession = $completedLinked->groupBy('chatbot_session_id');
 
-            // cleared if any completed appt completed AFTER (or same time as) this session
-            $clearedAfter[$sid] = (bool) optional($completedByStudent->get($sStudent))->first(function ($ap) use ($sAt) {
-                return $ap->updated_at >= $sAt;
-            });
+    $handledAfter  = [];
+    $clearedAfter  = [];
+
+    foreach ($sessionIds as $sid) {
+        $sess = $byId[$sid] ?? null;
+        if (!$sess) {
+            $handledAfter[$sid] = false;
+            $clearedAfter[$sid] = false;
+            continue;
         }
 
-        return view('admin.chatbot_sessions.index', [
-            'sessions'     => $sessions,
-            'q'            => $q,
-            'dateKey'      => $dateKey,
-            'handledAfter' => $handledAfter,
-            'clearedAfter' => $clearedAfter,
-            'sort'         => $sort,
-        ]);
+        $sStudent = (int) $sess->user_id;
+        $sAt      = $sess->created_at;
+
+        // --- A) Legacy condition: any active/complete AFTER this session (per student) ---
+        $legacyHandled = (bool) optional($activeByStudent->get($sStudent))->first(function ($ap) use ($sAt) {
+            return $ap->created_at >= $sAt;
+        });
+
+        $legacyCleared = (bool) optional($completedByStudent->get($sStudent))->first(function ($ap) use ($sAt) {
+            return $ap->updated_at >= $sAt;
+        });
+
+        // --- B) NEW condition: any appointment EXPLICITLY linked to this session ---
+        $hasLinkedActive    = (bool) optional($activeBySession->get($sid))->first();
+        $hasLinkedCompleted = (bool) optional($completedBySession->get($sid))->first();
+
+        // Final flags
+        $handledAfter[$sid] = $legacyHandled || $hasLinkedActive;
+        $clearedAfter[$sid] = $legacyCleared || $hasLinkedCompleted;
     }
+
+    return view('admin.chatbot_sessions.index', [
+        'sessions'     => $sessions,
+        'q'            => $q,
+        'dateKey'      => $dateKey,
+        'handledAfter' => $handledAfter,
+        'clearedAfter' => $clearedAfter,
+        'sort'         => $sort,
+    ]);
+}
 
     /** SHOW: one session + ordered chats + per-session handled flags */
     public function show(int $id): View
