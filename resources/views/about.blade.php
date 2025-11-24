@@ -285,7 +285,7 @@
         </ol>
       </section>
 
-            {{-- Responses origin --}}
+      {{-- Responses origin --}}
       <section id="responses" class="section-anchor space-y-3 reveal">
         <h3 class="text-xl font-bold">Where the bot’s responses come from</h3>
 
@@ -308,37 +308,37 @@
               <span class="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
               Excerpt from <code class="px-1 py-[1px] rounded bg-slate-800 border border-slate-700">domain.yml</code>
             </div>
-<pre class="whitespace-pre">
-responses:
-  utter_greet:
-    - text: "Hi! How can I help you today?"
-    - text: "Hello! How are you feeling today?"
+            <pre class="whitespace-pre">
+            responses:
+              utter_greet:
+                - text: "Hi! How can I help you today?"
+                - text: "Hello! How are you feeling today?"
 
-  utter_thanks:
-    - text: "You're welcome! I'm here to help."
+              utter_thanks:
+                - text: "You're welcome! I'm here to help."
 
-  utter_goodbye:
-    - text: "Take care, and thank you for chatting today."
+              utter_goodbye:
+                - text: "Take care, and thank you for chatting today."
 
-  utter_mood_sad/p0001:
-    - text: >
-        I’m really sorry you’re feeling sad right now. It’s okay to have
-        those moments—feelings like that mean you’ve been trying hard.
-        You don’t have to rush yourself; little by little, things can
-        get lighter again.
+              utter_mood_sad/p0001:
+                - text: >
+                    I’m really sorry you’re feeling sad right now. It’s okay to have
+                    those moments—feelings like that mean you’ve been trying hard.
+                    You don’t have to rush yourself; little by little, things can
+                    get lighter again.
 
-  utter_mood_happy/p0001:
-    - text: >
-        That’s so nice to hear! You deserve moments like this—simple,
-        calm, and happy. I hope you keep that feeling with you today;
-        you’ve earned it.
-</pre>
+              utter_mood_happy/p0001:
+                - text: >
+                    That’s so nice to hear! You deserve moments like this—simple,
+                    calm, and happy. I hope you keep that feeling with you today;
+                    you’ve earned it.
+            </pre>
           </div>
         </div>
       </section>
 
       {{-- Rasa integration (code sample) --}}
-      <<section id="rasa" class="section-anchor space-y-3 reveal">
+      <section id="rasa" class="section-anchor space-y-3 reveal">
         <h3 class="text-xl font-bold">Rasa ↔ Frontend integration (REST / Webhook)</h3>
         <div class="rounded-xl bg-slate-900 text-slate-100 p-4 text-[13px] overflow-x-auto ring-1 ring-slate-700/60">
       <pre>// ChatController::store (excerpt)
