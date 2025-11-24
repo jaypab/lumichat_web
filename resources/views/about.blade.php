@@ -285,40 +285,82 @@
         </ol>
       </section>
 
-      {{-- Responses origin --}}
+            {{-- Responses origin --}}
       <section id="responses" class="section-anchor space-y-3 reveal">
         <h3 class="text-xl font-bold">Where the bot’s responses come from</h3>
-        <div class="rounded-2xl bg-white/80 dark:bg-gray-800/70 shadow-sm ring-1 ring-gray-200/60 dark:ring-gray-700/60 p-5">
-          <p class="text-gray-600 dark:text-gray-300">
-            Responses are defined in Rasa’s domain (<code class="px-1 py-0.5 text-xs rounded bg-gray-100 dark:bg-gray-800">responses.yml</code>),
-            learned from stories/rules, and extended via custom actions. Content is aligned with counselor-approved guidance and student support resources.
-            Language avoids diagnosis; it uses reflective prompts and referrals for high-risk cues.
-          </p>
+
+        <div class="space-y-4">
+          {{-- Explanation card --}}
+          <div class="rounded-2xl bg-white/80 dark:bg-gray-800/70 shadow-sm ring-1 ring-gray-200/60 dark:ring-gray-700/60 p-5">
+            <p class="text-gray-600 dark:text-gray-300">
+              Responses are defined in Rasa’s main <code class="px-1 py-0.5 text-xs rounded bg-gray-100 dark:bg-gray-800">domain.yml</code>
+              file under the <code class="px-1 py-0.5 text-xs rounded bg-gray-100 dark:bg-gray-800">responses</code> section.  
+              From there, Rasa uses stories/rules and custom actions to decide which
+              response to send. Content is aligned with counselor-approved guidance and
+              student support resources. Language avoids diagnosis; it uses reflective
+              prompts and referrals for high-risk cues.
+            </p>
+          </div>
+
+          {{-- Proof: real excerpt from domain.yml --}}
+          <div class="rounded-xl bg-slate-900 text-slate-100 p-4 text-[12px] leading-relaxed overflow-x-auto ring-1 ring-slate-700/60">
+            <div class="mb-2 text-[11px] font-semibold text-slate-300 flex items-center gap-2">
+              <span class="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+              Excerpt from <code class="px-1 py-[1px] rounded bg-slate-800 border border-slate-700">domain.yml</code>
+            </div>
+<pre class="whitespace-pre">
+responses:
+  utter_greet:
+    - text: "Hi! How can I help you today?"
+    - text: "Hello! How are you feeling today?"
+
+  utter_thanks:
+    - text: "You're welcome! I'm here to help."
+
+  utter_goodbye:
+    - text: "Take care, and thank you for chatting today."
+
+  utter_mood_sad/p0001:
+    - text: >
+        I’m really sorry you’re feeling sad right now. It’s okay to have
+        those moments—feelings like that mean you’ve been trying hard.
+        You don’t have to rush yourself; little by little, things can
+        get lighter again.
+
+  utter_mood_happy/p0001:
+    - text: >
+        That’s so nice to hear! You deserve moments like this—simple,
+        calm, and happy. I hope you keep that feeling with you today;
+        you’ve earned it.
+</pre>
+          </div>
         </div>
       </section>
 
       {{-- Rasa integration (code sample) --}}
-      <section id="rasa" class="section-anchor space-y-3 reveal">
+      <<section id="rasa" class="section-anchor space-y-3 reveal">
         <h3 class="text-xl font-bold">Rasa ↔ Frontend integration (REST / Webhook)</h3>
         <div class="rounded-xl bg-slate-900 text-slate-100 p-4 text-[13px] overflow-x-auto ring-1 ring-slate-700/60">
-        <pre>// Laravel controller (simplified idea)
-        $payload = [
-        'sender'   => $sessionId,       // keeps convo scoped
-        'message'  => $text,            // sanitized user text
-        'metadata' => ['riskProbe' => true],
-        ];
+      <pre>// ChatController::store (excerpt)
+      $r = Http::timeout($timeout)
+          ->withOptions(['verify' => $verify])
+          ->withHeaders(['Accept' => 'application/json'])
+          ->post($rasaUrl, [
+              'sender'   => 'u_' . $userId . '_s_' . $sessionId,
+              'message'  => $rasaMessage,
+              'metadata' => $metadata,
+          ]);
 
-        $response = Http::post(
-        rtrim(config('services.rasa.url'),'/').'/webhooks/rest/webhook',
-        $payload
-        );
-
-        $replies = $response->json(); // [{text:"..."}, {buttons:[...]} ...]
-        </pre>
+      $payload = $r->json() ?? [];
+      foreach ($payload as $piece) {
+          $txt = isset($piece['text']) ? (string) $piece['text'] : '';
+          $btn = (isset($piece['buttons']) && is_array($piece['buttons'])) ? $piece['buttons'] : [];
+          // ...
+      }</pre>
         </div>
         <p class="text-gray-600 dark:text-gray-300">
-          We preserve per-conversation <span class="font-semibold">sender IDs</span>, support metadata, and handle multi-message replies (text, buttons, suggestions).
-          High-risk triggers suggest an appointment flow (non-diagnostic).
+          The frontend sends the student’s message plus metadata to Rasa using this webhook, then
+          parses the JSON replies (text + buttons) and shows them in the chat UI.
         </p>
       </section>
 
