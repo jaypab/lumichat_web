@@ -9,15 +9,12 @@ use App\Models\User;
 use App\Models\ChatSession;
 use App\Models\Appointment;
 use Illuminate\Support\Str;
-use Illuminate\Cache\RateLimiting\Limit;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\Facades\Schema;
 
-// ✅ Bind the dashboard repo interface to the eloquent implementation
+// ✅ Repo bindings
 use App\Repositories\Contracts\DashboardRepositoryInterface;
 use App\Repositories\Eloquent\DashboardRepository;
 
@@ -27,14 +24,18 @@ use App\Repositories\Eloquent\CounselorLogRepository;
 use App\Repositories\Contracts\CourseAnalyticsRepositoryInterface;
 use App\Repositories\Eloquent\CourseAnalyticsRepository;
 
+// ✅ NEW: observer for high-risk alerts
+use App\Observers\ChatSessionObserver;
+
 class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
-{
-    $this->app->bind(DashboardRepositoryInterface::class, DashboardRepository::class);
-    $this->app->bind(CounselorLogRepositoryInterface::class, CounselorLogRepository::class);
-    $this->app->bind(CourseAnalyticsRepositoryInterface::class, CourseAnalyticsRepository::class);
-}
+    {
+        $this->app->bind(DashboardRepositoryInterface::class, DashboardRepository::class);
+        $this->app->bind(CounselorLogRepositoryInterface::class, CounselorLogRepository::class);
+        $this->app->bind(CourseAnalyticsRepositoryInterface::class, CourseAnalyticsRepository::class);
+    }
+
     public function boot(): void
     {
         // Force HTTPS in production
@@ -42,19 +43,16 @@ class AppServiceProvider extends ServiceProvider
             URL::forceScheme('https');
         }
 
-        // ======================  GLOBAL VIEW FLAGS  ======================
+        /* ======================  GLOBAL VIEW FLAGS  ====================== */
         // - $hasAppointments: does current user have ANY appointment rows?
-        // - $appointmentEnabled: feature is unlocked (via signed link/session),
-        //   OR persisted in users.appointment_enabled (if column exists),
-        //   OR implied by having any appointment rows already.
+        // - $appointmentEnabled: unlocked by session flag, persisted column (if exists), or implied by having any appointment.
         View::composer('*', function ($view) {
             $user = Auth::user();
 
-            $hasAppointments = false;
+            $hasAppointments    = false;
             $appointmentEnabled = false;
 
             if ($user) {
-                // Only query if table exists (prevents errors during fresh installs / early migrations)
                 if (Schema::hasTable('tbl_appointments')) {
                     $hasAppointments = DB::table('tbl_appointments')
                         ->where('student_id', $user->id)
@@ -64,7 +62,7 @@ class AppServiceProvider extends ServiceProvider
                 // Session unlock (set by signed link)
                 $appointmentEnabled = (bool) session('appointment_enabled', false);
 
-                // Persisted column (optional): users.appointment_enabled
+                // Persisted column (optional)
                 try {
                     if (Schema::hasTable('tbl_users') && Schema::hasColumn('tbl_users', 'appointment_enabled')) {
                         $appointmentEnabled = $appointmentEnabled || (bool) (
@@ -75,7 +73,7 @@ class AppServiceProvider extends ServiceProvider
                     // ignore schema errors silently
                 }
 
-                // Having any appointment implies feature should be visible thereafter
+                // Any appointment implies it should be visible thereafter
                 if ($hasAppointments) {
                     $appointmentEnabled = true;
                 }
@@ -85,18 +83,19 @@ class AppServiceProvider extends ServiceProvider
             $view->with('appointmentEnabled', $appointmentEnabled);
         });
 
-        view()->composer('*', function ($view) {
+        // One-time product tour flag
+        View::composer('*', function ($view) {
             $view->with('shouldRunTour', Auth::check() && !optional(Auth::user())->has_seen_tutorial);
         });
 
+        // Counselor layout: pending high-risk reviews badge
         View::composer('layouts.counselor', function ($view) {
             $pending = 0;
-
             try {
                 if (Schema::hasTable('tbl_highrisk_reviews')) {
                     $pending = (int) DB::table('tbl_highrisk_reviews')
-                                ->where('review_status', 'pending')
-                                ->count();
+                        ->where('review_status', 'pending')
+                        ->count();
                 }
             } catch (\Throwable $e) {
                 $pending = 0; // safe default
@@ -104,10 +103,9 @@ class AppServiceProvider extends ServiceProvider
 
             $view->with('cslPendingCount', $pending);
         });
-        // =================================================================
+        /* ================================================================= */
 
-        // --- existing model events ---
-
+        /* --------------------- Activity log hooks ------------------------ */
         User::created(function (User $user) {
             if (!Schema::hasTable('tbl_activity_log')) return;
             ActivityLog::create([
@@ -147,5 +145,11 @@ class AppServiceProvider extends ServiceProvider
                 ],
             ]);
         });
+        /* ----------------------------------------------------------------- */
+
+        // ✅ Register ChatSession observer (handles high-risk admin alerts + deep links + review rows)
+        if (class_exists(ChatSession::class) && class_exists(ChatSessionObserver::class)) {
+            ChatSession::observe(ChatSessionObserver::class);
+        }
     }
 }
