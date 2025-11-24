@@ -427,17 +427,101 @@
 </div>
 
 {{-- Loader --}}
-<div id="loginLoading" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 backdrop-blur-sm">
+<div id="loginLoading" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/55 backdrop-blur-sm">
   <div class="text-center">
-    <div class="three-body" role="status" aria-live="polite">
-      <div class="three-body__dot"></div>
-      <div class="three-body__dot"></div>
-      <div class="three-body__dot"></div>
+    <div class="lumi-loader-wrapper" role="status" aria-live="polite">
+      <div class="lumi-loader-circle">
+        Loading
+        <span></span>
+      </div>
     </div>
+
     <div class="mt-4 text-white text-xl font-semibold">{{ $title }}</div>
     <p class="mt-1 text-sm text-white/90">{{ $subtitle }}</p>
   </div>
 </div>
+
+<style>
+  /* ===== LumiCHAT circular loader (indigo–violet) ===== */
+
+  #loginLoading .lumi-loader-wrapper {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+  }
+
+  #loginLoading .lumi-loader-circle {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.08), transparent 60%);
+    border-radius: 9999px;
+    border: 3px solid rgba(148,163,184,0.45); /* slate track */
+    text-align: center;
+    line-height: 80px;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 11px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: #e0e7ff; /* indigo-100 */
+    text-shadow: 0 0 8px rgba(129,140,248,.9);
+    box-shadow:
+      0 0 18px rgba(15,23,42,.55),
+      0 14px 40px rgba(15,23,42,.85);
+  }
+
+  /* spinning rim with indigo → violet accent */
+  #loginLoading .lumi-loader-circle::before {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+    border: 3px solid transparent;
+    border-top-color: #6366f1;  /* indigo-500 */
+    border-right-color: #a855f7; /* violet-500 */
+    animation: lumi-spin 1.8s linear infinite;
+  }
+
+  #loginLoading .lumi-loader-circle span {
+    display: block;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 52%;
+    height: 4px;
+    transform-origin: left center;
+    background: transparent;
+    animation: lumi-orbit 1.8s linear infinite;
+  }
+
+  #loginLoading .lumi-loader-circle span::before {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-radius: 9999px;
+    background: radial-gradient(circle at 30% 30%, #a855f7, #6366f1); /* violet → indigo */
+    top: -6px;
+    right: -8px;
+    box-shadow:
+      0 0 14px rgba(129,140,248,.9),
+      0 0 28px rgba(129,140,248,.75);
+  }
+
+  @keyframes lumi-spin {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  @keyframes lumi-orbit {
+    0%   { transform: rotate(45deg); }
+    100% { transform: rotate(405deg); }
+  }
+</style>
 
 {{-- SweetAlert2 --}}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
