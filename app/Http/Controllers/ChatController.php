@@ -1431,20 +1431,19 @@ private function classifyIntents(string $raw): array
     $t = $this->nluNormalize($raw);
 
     // ---------------- Goodbye / closing detection ----------------
-    // We treat pure "bye / good night / see you / take care" messages
-    // as conversation endings (done), NOT as non-mental topics.
+    // We treat pure "bye / good night / see you / take care / k bye / ok bye"
+    // messages as conversation endings (done), NOT as non-mental topics.
     $goodbye = false;
 
     $closingPattern = '/^\s*('
-        .'bye'
+        .'((ok|okay|k)\s*)?bye'                     // "bye", "ok bye", "k bye"
+        .'|bye\s+bye'                               // "bye bye"
         .'|good\s*bye'
         .'|goodbye'
         .'|good\s*night'
         .'|goodnight'
-        .'|good\s*morning'
-        .'|good\s*afternoon'
-        .'|see\s+you(?:\s+soon)?'
-        .'|talk\s+to\s+you\s+later'
+        .'|see\s+you(?:\s+soon)?'                   // "see you", "see you soon"
+        .'|talk\s+to\s+you\s+later'                 // "talk to you later", "ttyl" below
         .'|ttyl'
         .'|take\s*care'
         .'|thanks\s*,?\s*bye'
@@ -1458,12 +1457,6 @@ private function classifyIntents(string $raw): array
     // ---------------- Bot intro / capabilities ----------------
     $asksCapabilities = false;
 
-    // Common patterns like:
-    //  - what can you do
-    //  - what can this bot do
-    //  - what is lumichat
-    //  - who are you / what are you
-    //  - how can you help me
     if (preg_match(
         '/\b('
             .'what\s+can\s+(you|u)\s+do'
@@ -1481,7 +1474,6 @@ private function classifyIntents(string $raw): array
     }
 
     // ---------------- Appointment intent ----------------
-    // Primary rule: action + counselor/therapist/advisor
     $action  = '(appoint(?:ment)?|apointment|schedule|schedual|book(?:ing)?|bok|reserve|set\s*up)';
     $role    = '(counsel(?:or|ler)|counsellor|councelor|counslor|therap(?:ist|y)|advisor|someone to talk)';
 
@@ -1490,8 +1482,6 @@ private function classifyIntents(string $raw): array
         || preg_match('/\bsee\s+(?:a\s+)?'.$role.'\b/iu', $t)
     );
 
-    // Fallback for LumiCHAT context:
-    // Things like "i want to book", "can I book", "i want to schedule"
     if (!$wantsAppt) {
         $hasBookingVerb = (bool) preg_match(
             '/\b(appoint(?:ment)?|apointment|schedule|schedual|book(?:ing)?|bok|reserve)\b/iu',
@@ -1547,12 +1537,12 @@ private function classifyIntents(string $raw): array
     // ---------------- Done (finished coping / conversation for now) ----------------
     $done = false;
 
-    // Rasa-style payloads, e.g. /coping_done or /done_coping
+    // Rasa-style payloads
     if (preg_match('~/(coping_done|done_coping|finish_coping)~i', $t)) {
         $done = true;
     }
 
-    // Natural language: "done", "done for now", "I'm okay now", "that's enough", etc.
+    // Natural language "done" / "I'm okay now"
     if (!$done) {
         $done = (bool) preg_match(
             '/\b('
@@ -1574,7 +1564,7 @@ private function classifyIntents(string $raw): array
         );
     }
 
-    // Extra: treat very short "done" messages as done
+    // Extra: treat bare "done" as done
     if (!$done) {
         $short = trim($t);
         if (in_array($short, ['done'], true)) {
@@ -1597,7 +1587,7 @@ private function classifyIntents(string $raw): array
             'no'                => $no,
             'done'              => $done,
             'asks_capabilities' => $asksCapabilities,
-            'goodbye'           => $goodbye, // optional – for future use if needed
+            'goodbye'           => $goodbye, // for future use
         ],
         'score' => [
             'length'            => mb_strlen($t),
@@ -1607,6 +1597,7 @@ private function classifyIntents(string $raw): array
         ],
     ];
 }
+
 
     /** Coarse last-bot-intent for contextual "yes" handling. */
     private function lastBotIntent(int $sessionId): string
@@ -1821,7 +1812,7 @@ private function isNonMentalTopic(string $norm, array $labels, array $riskStruct
 }
 
 
- /** Detects when the input is basically not understandable (random chars, no clear words). */
+/** Detects when the input is basically not understandable (random chars, no clear words). */
 private function isUnreadableInput(string $norm): bool
 {
     $norm = trim($norm);
@@ -1843,10 +1834,20 @@ private function isUnreadableInput(string $norm): bool
     }
 
     // 4) If ANY token is a clear, normal short word, treat as readable
-    $whitelistTokens = ['hi','hey','hello','ok','okay','yes','no','hmm','lol','sad','help','me','you','i'];
+    $whitelistTokens = [
+        'hi','hey','hello',
+        'ok','okay',
+        'yes','no',
+        'hmm','lol',
+        'sad','help',
+        'me','you','i',
+        // 👇 NEW: endings / goodbyes should always be treated as readable
+        'bye','goodbye','night','goodnight','gn','tc','thanks','thank'
+    ];
+
     foreach ($tokens as $tk) {
         if (in_array(mb_strtolower($tk), $whitelistTokens, true)) {
-            return false;
+            return false; // definitely readable
         }
     }
 
@@ -1868,6 +1869,7 @@ private function isUnreadableInput(string $norm): bool
     // If it passed all checks above, treat it as readable.
     return false;
 }
+
     /**
      * Build a ChatGPT-style session title from the latest message.
      *
