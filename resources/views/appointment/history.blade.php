@@ -361,7 +361,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // check every 10 seconds (pwede mo higpitan sa 5s kung gusto mo mas “live”)
-  setInterval(pollUpdates, 5000);
+  setInterval(pollUpdates, 1000);
 });
 </script>
 @endpush
