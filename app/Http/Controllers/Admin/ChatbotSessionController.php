@@ -1443,31 +1443,19 @@ public function slots(int $id, Request $request): JsonResponse
     {
         return RiskHeuristics::containsHighRisk($text);
     }
-
-    /** Safe plaintext email sender (logs success + failures, never throws). */
+        /** Safe plaintext email sender (logs failures, never throws). */
     private function sendPlainEmail(?string $to, string $subject, string $body): void
     {
-        if (!$to) {
-            return;
-        }
+        if (!$to) return;
 
         try {
             Mail::raw($body, function ($m) use ($to, $subject) {
                 $m->to($to)->subject($subject);
             });
-
-            // ✅ success log (helps when checking if email really fired)
-            \Log::info('Mail sent OK', [
-                'to'      => $to,
-                'subject' => $subject,
-                'from'    => 'ChatbotSessionController',
-            ]);
         } catch (\Throwable $e) {
-            // generic failure log (used by urgent book + reschedule)
-            \Log::warning('Mail send failed', [
+            \Log::warning('Urgent booking mail failed', [
                 'to'      => $to,
                 'subject' => $subject,
-                'from'    => 'ChatbotSessionController',
                 'error'   => $e->getMessage(),
             ]);
         }
