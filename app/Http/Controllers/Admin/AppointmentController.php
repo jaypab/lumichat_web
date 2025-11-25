@@ -831,54 +831,36 @@ public function assign(Request $request, int $id): RedirectResponse
             \Log::notice('Notify::admins skipped/failed (assign)', ['appt'=>$id,'e'=>$e->getMessage()]);
         }
 
-        /* 🔹 EMAILS ON ASSIGN + AUTO-CONFIRM (HTML using Blade templates) */
+        /* 🔹 EMAILS ON ASSIGN + AUTO-CONFIRM (plain text, using working helper) */
         try {
             $j = $this->joinedApptRow($id);
             if ($j) {
                 $whenNice = $this->niceWhen($j->scheduled_at ?? now());
 
-                // === Student email (uses resources/views/emails/appointments/assigned-student.blade.php) ===
-                if (!empty($j->student_email)) {
-                    try {
-                        Mail::to($j->student_email)
-                            ->send(new AppointmentAssignedStudent(
-                                appointmentId: (int) $j->id,
-                                studentName:   (string) ($j->student_name   ?? 'Student'),
-                                counselorName: (string) ($j->counselor_name ?? 'Counselor'),
-                                scheduledAt:   $j->scheduled_at,
-                                whenNice:      $whenNice,
-                            ));
-                    } catch (\Throwable $e) {
-                        \Log::warning('AppointmentAssignedStudent mail failed', [
-                            'appointment_id' => $id,
-                            'to'             => $j->student_email,
-                            'error'          => $e->getMessage(),
-                        ]);
-                    }
-                }
+                // Student email
+                $this->sendPlainEmail(
+                    $j->student_email ?? null,
+                    'LumiCHAT — Appointment Assigned & Confirmed',
+                    "Hi {$j->student_name},\n\n"
+                    ."Your counseling appointment has been assigned and confirmed.\n\n"
+                    ."Counselor: {$j->counselor_name}\n"
+                    ."When: {$whenNice}\n\n"
+                    ."See you soon.\n"
+                );
 
-                // === Counselor email (keep separate template / mailable) ===
-                if (!empty($j->counselor_email)) {
-                    try {
-                        Mail::to($j->counselor_email)
-                            ->send(new AppointmentAssignedCounselor(
-                                appointmentId: (int) $j->id,
-                                studentName:   (string) ($j->student_name   ?? 'Student'),
-                                counselorName: (string) ($j->counselor_name ?? 'Counselor'),
-                                scheduledAt:   $j->scheduled_at,
-                                whenNice:      $whenNice,
-                            ));
-                    } catch (\Throwable $e) {
-                        \Log::warning('AppointmentAssignedCounselor mail failed', [
-                            'appointment_id' => $id,
-                            'to'             => $j->counselor_email,
-                            'error'          => $e->getMessage(),
-                        ]);
-                    }
-                }
+                // Counselor email
+                $this->sendPlainEmail(
+                    $j->counselor_email ?? null,
+                    'LumiCHAT — New Appointment Assigned',
+                    "Hi {$j->counselor_name},\n\n"
+                    ."A counseling appointment has been assigned to you.\n\n"
+                    ."Student: {$j->student_name}\n"
+                    ."When: {$whenNice}\n\n"
+                    ."Please check your LumiCHAT dashboard for full details.\n"
+                );
             }
         } catch (\Throwable $e) {
-            \Log::warning('AppointmentAssigned mail wrapper failed', [
+            \Log::warning('AppointmentAssigned mail failed', [
                 'appointment_id' => $id,
                 'error'          => $e->getMessage(),
             ]);
