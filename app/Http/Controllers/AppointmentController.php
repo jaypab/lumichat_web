@@ -1,1177 +1,1116 @@
 <?php
 
-namespace App\Http\Controllers\Counselor;
+namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
-use Carbon\Carbon;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Auth;
-use App\Models\Appointment;
-use App\Models\CaseNote;
-use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Collection;
+use Carbon\Carbon;
+use App\Notifications\SimpleDatabaseNotification;
+use App\Models\User; 
 use App\Support\Notify;
+use Illuminate\Http\JsonResponse;
 
+// ⬇️ ADD THESE
+use App\Models\Appointment;
+use Illuminate\Http\RedirectResponse;
 
 class AppointmentController extends Controller
 {
-    /** how long a slot is (minutes) */
-    private const STEP_MINUTES      = 60;
-    /** how long after a slot we allow marking no-show (grace minutes after end) */
-    private const NO_SHOW_GRACE_MIN = 30;
+    /** Minutes per slot (now hourly) */
+    private const STEP_MINUTES = 60;
+    /** Grid step for building slots (must divide ranges) */
+    private const SLOT_MINUTES = 60;
 
-    /** Resolve the counselor’s primary key used in tbl_appointments.counselor_id */
-    private function myCounselorId(): ?int
+    /** Statuses that block a time from being offered again */
+    private const BLOCKING_STATUSES = ['pending', 'confirmed', 'completed'];
+
+    /** Student “active” statuses that block new bookings */
+    private const STUDENT_ACTIVE_STATUSES = ['pending', 'confirmed'];
+
+    /** Auto mark “no show” if the slot ended + this grace */
+    private const NO_SHOW_GRACE_MINUTES = 30;
+
+    /** Mon–Fri only (1=Mon ... 5=Fri with isoWeekday) */
+    private const WEEKDAY_MIN = 1; // Monday
+    private const WEEKDAY_MAX = 5; // Friday
+
+    /* --------------------------- Utilities --------------------------- */
+    private function floorToSlot(Carbon $dt): Carbon
     {
-        $uid  = auth()->id();
-        $user = auth()->user();
-
-        // Case A: counselors table links to users via user_id
-        if (Schema::hasColumn('tbl_counselors', 'user_id')) {
-            $cid = DB::table('tbl_counselors')->where('user_id', $uid)->value('id');
-            if ($cid) return (int) $cid;
-        }
-
-        // Case B: match by email (common when there is no user_id column)
-        if ($user && Schema::hasColumn('tbl_counselors', 'email')) {
-            $cid = DB::table('tbl_counselors')->where('email', $user->email)->value('id');
-            if ($cid) return (int) $cid;
-        }
-
-        // Case C: the counselor guard logs in against tbl_counselors directly
-        $exists = DB::table('tbl_counselors')->where('id', $uid)->exists();
-        if ($exists) return (int) $uid;
-
-        // No mapping found -> misconfiguration (will show a warning in index)
-        return null;
+        $m = (int) floor($dt->minute / self::SLOT_MINUTES) * self::SLOT_MINUTES;
+        return $dt->copy()->setTime($dt->hour, $m, 0);
     }
 
-    /** List appointments assigned to this counselor (filters: status, period, q) */
-    public function index(Request $r)
+    /** Auto-transition past PENDING/CONFIRMED appointments to NO_SHOW (per student). */
+    private function autoSweepNoShowsForStudent(int $studentId): void
     {
-        $cid = $this->myCounselorId();
-
-        // Common filter values
-        $status = $r->query('status', 'all');
-        $period = $r->query('period', 'all');
-        $q      = trim((string) $r->query('q', ''));
-        $now    = now();
-
-        // If this user isn’t linked to a counselor record, show an empty list + warning.
-        if (!$cid) {
-            $empty = new LengthAwarePaginator([], 0, 10, 1, [
-                'path' => url()->current(),
-            ]);
-
-            return view('Counselor_Interface.appointments.index', [
-                'appointments'            => $empty,
-                'reassignedAppointments'  => collect(),
-                'rescheduledAppointments' => collect(),
-                'status'                  => $status,
-                'period'                  => $period,
-                'q'                       => $q,
-            ])->with('swal', [
-                'icon'  => 'warning',
-                'title' => 'Counselor account not linked',
-                'text'  => 'Your user is not linked to a counselor record. Ask admin to set tbl_counselors.user_id.',
-            ]);
-        }
-
-        // Safely include counselor-reassignment columns only if they exist
-        $hasCrStatus  = Schema::hasColumn('tbl_appointments', 'cr_status');
-        $hasCrCreated = Schema::hasColumn('tbl_appointments', 'cr_created_at');
-
-        // ===== AUTO NO-SHOW SWEEP (for this counselor) =====
-        // Any pending/confirmed appointment whose slot has fully passed
-        // (scheduled_at + STEP_MINUTES <= now) becomes no_show.
-        $autoCutoff = $now->copy()->subMinutes(self::STEP_MINUTES);
+        // If the end of the slot (scheduled_at + STEP) + grace is already past -> no_show
+        $cutoff = now()->subMinutes(self::STEP_MINUTES + self::NO_SHOW_GRACE_MINUTES);
 
         DB::table('tbl_appointments')
-            ->where('counselor_id', $cid)
-            ->whereIn('status', ['pending', 'confirmed'])   // ✅ kasama na pending
-            ->where('scheduled_at', '<=', $autoCutoff)
+            ->where('student_id', $studentId)
+            ->whereIn('status', self::STUDENT_ACTIVE_STATUSES) // pending/confirmed
+            ->where('scheduled_at', '<=', $cutoff)             // slot long finished
             ->update([
                 'status'     => 'no_show',
-                'updated_at' => $now,
+                'updated_at' => now(),
             ]);
-        // ===== END AUTO NO-SHOW SWEEP =====
+    }
 
-        // ===== ACTIVE APPOINTMENTS (current counselor_id = $cid) =====
-        $select = [
-            'a.id',
-            'a.scheduled_at',
-            'a.created_at as booked_at',
-            'a.status',
-            DB::raw("COALESCE(s.name,'—')  as student_name"),
-            DB::raw("COALESCE(s.email,'') as student_email"),
-        ];
-        $select[] = $hasCrStatus
-            ? 'a.cr_status'
-            : DB::raw('NULL as cr_status');
-        $select[] = $hasCrCreated
-            ? 'a.cr_created_at'
-            : DB::raw('NULL as cr_created_at');
+    private function apptRepo(): \App\Repositories\Contracts\AppointmentRepositoryInterface
+    {
+        return app(\App\Repositories\Contracts\AppointmentRepositoryInterface::class);
+    }
 
-        $qrb = DB::table('tbl_appointments as a')
-            ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-            ->select($select)
-            ->where('a.counselor_id', $cid);
+    /* --------------------------- Booking page ------------------------ */
+    public function index()
+    {
+        if (Auth::check()) {
+            $this->autoSweepNoShowsForStudent(Auth::id());
 
-        // Filter: status
-        if ($status !== 'all') {
-            $qrb->where('a.status', $status);
+            $hasActive = DB::table('tbl_appointments')
+                ->where('student_id', Auth::id())
+                ->whereIn('status', self::STUDENT_ACTIVE_STATUSES)
+                ->exists();
+
+            if ($hasActive) {
+                return redirect()
+                    ->route('appointment.history')
+                    ->with('swal', [
+                        'icon'  => 'warning',
+                        'title' => 'You already have an active appointment',
+                        'text'  => 'Complete or cancel it before booking another.',
+                    ]);
+            }
         }
 
-        // Filter: period
+        // No counselor list (pooled availability)
+        return view('appointment.index');
+    }
+
+    /* ---------- Availability helper: prefer date-specific over recurring ---------- */
+    /**
+     * Returns availability ranges for a counselor on a specific date.
+     * If there are date-specific rows for that date, they are returned.
+     * Otherwise, falls back to recurring rows for that weekday.
+     */
+    private function rangesForCounselorOnDate(int $cid, Carbon $date): Collection
+    {
+        $dow = $date->isoWeekday(); // 1..7
+
+        // 1) exact date rows (override)
+        $dated = DB::table('tbl_counselor_availabilities')
+            ->where('counselor_id', $cid)
+            ->whereDate('date', $date->toDateString())
+            ->orderBy('start_time')
+            ->get(['start_time', 'end_time', 'slot_type']);
+
+        if ($dated->count() > 0) {
+            return $dated;
+        }
+
+        // 2) fallback to recurring weekday rows
+        return DB::table('tbl_counselor_availabilities')
+            ->where('counselor_id', $cid)
+            ->whereNull('date')
+            ->where('weekday', $dow)
+            ->orderBy('start_time')
+            ->get(['start_time', 'end_time', 'slot_type']);
+    }
+
+    /**
+     * Day is disabled for this counselor when resolved availability rows
+     * for that date contain **no** 'available' ranges at all.
+     */
+    private function dayDisabledForCounselor(int $cid, Carbon $date): bool
+    {
+        $rows = $this->rangesForCounselorOnDate($cid, $date);
+        foreach ($rows as $r) {
+            if (($r->slot_type ?? 'available') === 'available') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // GET /appointment/counselors?date=YYYY-MM-DD&time=HH:MM
+    public function counselors(Request $request)
+    {
+        $request->validate([
+            'date' => ['required','date_format:Y-m-d'],
+            'time' => ['required','regex:/^\d{2}:\d{2}$/'],
+        ]);
+
+        $slot = Carbon::parse($request->date.' '.$request->time.':00')->second(0);
+
+        // weekday + future guards (same rules as store)
+        if ($slot->isoWeekday() < 1 || $slot->isoWeekday() > 5) {
+            return response()->json(['counselors'=>[], 'reason'=>'weekend', 'message'=>'Weekends are closed.']);
+        }
+        if ($slot->lte(now())) {
+            return response()->json(['counselors'=>[], 'reason'=>'past', 'message'=>'Past time.']);
+        }
+
+        $freeIds = $this->counselorsFreeAt($slot);
+
+        if (empty($freeIds)) {
+            return response()->json(['counselors'=>[]]);
+        }
+
+        $rows = DB::table('tbl_counselors')
+            ->whereIn('id', $freeIds)
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get(['id','name','email','phone']);
+
+        return response()->json([
+            'counselors' => $rows->map(fn($r)=>[
+                'id'    => (int)$r->id,
+                'name'  => (string)$r->name,
+                'email' => (string)$r->email,
+                'phone' => (string)($r->phone ?? ''),
+            ])->values(),
+        ]);
+    }
+
+    /* -------------- Optional landing: decide index vs history ----------- */
+    private function workingCounselorsAt(Carbon $slotStart): int
+    {
+        $date    = $slotStart->copy()->startOfDay();
+        $slotEnd = $slotStart->copy()->addMinutes(self::SLOT_MINUTES);
+
+        $cids = DB::table('tbl_counselors')
+            ->where('is_active', 1)
+            ->where('is_accepting_appointments', 1)
+            ->pluck('id')->all();
+        if (empty($cids)) return 0;
+
+        $count = 0;
+        foreach ($cids as $cid) {
+            $cid = (int)$cid;
+
+            // If the counselor disabled this weekday entirely, skip
+            if ($this->dayDisabledForCounselor($cid, $date)) {
+                continue;
+            }
+
+            // Count only if the specific slot is allowed (inside any available AND not inside any blocked)
+            if ($this->slotAllowedForCounselor($cid, $slotStart, $slotEnd, $date)) {
+                $count++;
+            }
+        }
+        return $count;
+    }
+
+    // --- pooled capacity remaining at this exact slot ---
+    private function remainingCapacityAt(Carbon $slotStart): int
+    {
+        $working = $this->workingCounselorsAt($slotStart);
+
+        // Any appointment at this exact time (assigned or not) consumes capacity
+        $booked = DB::table('tbl_appointments')
+            ->where('scheduled_at', $slotStart)
+            ->whereIn('status', self::BLOCKING_STATUSES)
+            ->count();
+
+        $remain = $working - $booked;
+        return $remain > 0 ? $remain : 0;
+    }
+
+    public function entrypoint(Request $request)
+    {
+        $userId = Auth::id();
+        $this->autoSweepNoShowsForStudent($userId);
+
+        $hasActive = DB::table('tbl_appointments')
+            ->where('student_id', $userId)
+            ->whereIn('status', self::STUDENT_ACTIVE_STATUSES)
+            ->exists();
+
+        if ($hasActive) {
+            return redirect()
+                ->route('appointment.history')
+                ->with('swal', [
+                    'icon'               => 'warning',
+                    'title'              => 'You already have a pending/confirmed appointment',
+                    'text'               => 'Complete or cancel it before booking another.',
+                    'confirmButtonText'  => 'OK',
+                    'allowOutsideClick'  => false,
+                    'allowEscapeKey'     => false,
+                ]);
+        }
+
+        return $this->index();
+    }
+
+    /* -------------------------- Slots (AJAX) ---------------------------- */
+    public function slots(Request $request)
+    {
+        $dateStr = (string) $request->query('date', '');
+        if (!$dateStr || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateStr)) {
+            return response()->json(['slots'=>[], 'reason'=>'bad_request', 'message'=>'Provide date=YYYY-MM-DD.'], 400);
+        }
+
+        $date  = Carbon::parse($dateStr)->startOfDay();
+        $today = now();
+
+        $dowIso = $date->isoWeekday();
+        if ($dowIso < 1 || $dowIso > 5) {
+            return response()->json(['slots'=>[], 'reason'=>'weekend', 'message'=>'Appointments are available Monday to Friday only.']);
+        }
+
+        $cids = DB::table('tbl_counselors')
+            ->where('is_active', 1)
+            ->where('is_accepting_appointments', 1)   // ← ADD THIS
+            ->pluck('id')->all();
+        if (empty($cids)) {
+            return response()->json(['slots'=>[], 'reason'=>'no_counselor', 'message'=>'No counselors are currently available.']);
+        }
+
+        // ⬇️ NEW: if all active counselors disabled this weekday, return none (explicit reason)
+        $allDisabled = true;
+        foreach ($cids as $cid) {
+            if (!$this->dayDisabledForCounselor((int)$cid, $date)) { $allDisabled = false; break; }
+        }
+        if ($allDisabled) {
+            return response()->json(['slots'=>[], 'reason'=>'disabled_weekday', 'message'=>'This weekday is disabled by all counselors.']);
+        }
+
+        $candidate = [];
+        foreach ($cids as $cid) {
+            // get both available and blocked rows, but we’ll still step only through the
+            // ranges marked available to keep things cheap
+            $ranges = $this->rangesForCounselorOnDate($cid, $date)
+                ->filter(fn($r) => !isset($r->slot_type) || $r->slot_type === 'available');
+
+            foreach ($ranges as $r) {
+                if (!\is_string($r->start_time) || !\is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') {
+                    continue;
+                }
+
+                $cursor = Carbon::parse($date->toDateString().' '.$r->start_time)->second(0);
+                $end    = Carbon::parse($date->toDateString().' '.$r->end_time)->second(0);
+
+                while ($cursor->lt($end)) {
+                    $slot = $this->floorToSlot($cursor);
+                    $next = $slot->copy()->addMinutes(self::SLOT_MINUTES);
+                    if ($next->gt($end)) break;
+
+                    // skip past times for today
+                    if ($date->isSameDay($today) && $slot->lte($today)) {
+                        $cursor = $cursor->addMinutes(self::SLOT_MINUTES);
+                        continue;
+                    }
+
+                    // ✅ NEW: respect blocks/disabled day for this counselor
+                    if (!$this->slotAllowedForCounselor((int)$cid, $slot, $next, $date)) {
+                        $cursor = $cursor->addMinutes(self::SLOT_MINUTES);
+                        continue;
+                    }
+
+                    // merge by HH:MM (pooled view)
+                    $candidate[$slot->format('H:i')] = $slot->copy();
+                    $cursor = $cursor->addMinutes(self::SLOT_MINUTES);
+                }
+            }
+        }
+
+        // If nothing survived (e.g., everyone disabled the weekday), return an explicit reason
+        if (empty($candidate)) {
+            // you already return 'disabled_weekday' earlier when it’s a full-day disable for all;
+            // this covers partial/custom blocks that eliminate all slots for this date.
+            return response()->json(['slots' => [], 'reason' => 'no_slots', 'message' => 'No working-hour slots on this day.']);
+        }
+
+        $slots = [];
+        foreach ($candidate as $hhmm => $slotStart) {
+            $remaining = $this->remainingCapacityAt($slotStart);
+            $slots[] = [
+                'value'     => $hhmm,
+                'label'     => $slotStart->format('g:i A'),
+                'available' => max(0, (int)$remaining),
+            ];
+        }
+        usort($slots, fn($a,$b)=>strcmp($a['value'],$b['value']));
+        return response()->json(['slots'=>$slots]);
+    }
+
+    /* --------------------------- Store booking -------------------------- */
+public function store(Request $request)
+{
+    $request->validate([
+        'date'    => ['required','date_format:Y-m-d'],
+        'time'    => ['required','regex:/^\d{2}:\d{2}$/'],
+        'consent' => ['accepted'],
+    ], [], ['date'=>'date', 'time'=>'time']);
+
+    $studentId = Auth::id();
+
+    // First, auto-sweep past actives to no_show so they won't block booking
+    $this->autoSweepNoShowsForStudent($studentId);
+
+    $raw  = Carbon::parse($request->date.' '.$request->time.':00')->second(0);
+    $slot = $this->floorToSlot($raw);
+
+    if ($raw->ne($slot)) {
+        return back()->withErrors(['time'=>'Please choose a 60-minute step (e.g., 09:00, 10:00).'])->withInput();
+    }
+
+    $hasActiveAny = DB::table('tbl_appointments')
+        ->where('student_id', $studentId)
+        ->whereIn('status', self::STUDENT_ACTIVE_STATUSES)
+        ->exists();
+    if ($hasActiveAny) {
+        return back()->withErrors([
+            'error' => 'You already have a pending/confirmed appointment. Complete or cancel it before booking another.',
+        ])->withInput();
+    }
+
+    $dowIso = $slot->isoWeekday();
+    if ($dowIso < 1 || $dowIso > 5) {
+        return back()->withErrors(['date'=>'Appointments are available Monday to Friday only.'])->withInput();
+    }
+    if ($slot->lte(now())) {
+        return back()->withErrors(['time'=>'Please choose a future time.'])->withInput();
+    }
+
+    $hasSameDay = DB::table('tbl_appointments')
+        ->where('student_id', $studentId)
+        ->whereDate('scheduled_at', $slot->toDateString())
+        ->whereIn('status', self::BLOCKING_STATUSES)
+        ->exists();
+    if ($hasSameDay) {
+        return back()->withErrors(['date'=>'You already have an appointment on this date.'])->withInput();
+    }
+
+    try {
+        $newId = null;
+
+        DB::transaction(function () use ($studentId, $slot, &$newId) {
+            $remaining = $this->remainingCapacityAt($slot);
+            if ($remaining <= 0) {
+                throw new \RuntimeException('FULL');
+            }
+
+            // get ID for deep link
+            $newId = DB::table('tbl_appointments')->insertGetId([
+                'student_id'   => $studentId,
+                'counselor_id' => null,
+                'scheduled_at' => $slot,
+                'status'       => 'pending',
+                'created_at'   => now(),
+                'updated_at'   => now(),
+            ]);
+        }, 3);
+
+        // 🔔 notify student (requested)
+        $this->notifyUser(
+            $studentId,
+            'Appointment requested',
+            'We received your booking for ' . $slot->format('M d, Y g:i A') . '. You’ll be notified when it’s approved.',
+            route('appointment.view', $newId)
+        );
+
+        // 🔔 ADMIN: new pending appointment needs assignment (with deep link)
+        try {
+            $whenNice   = $slot->format('M d, Y g:i A');
+            $studentNm  = Auth::user()->name ?? ('#'.$studentId);
+            $adminUrl   = route('admin.appointments.show', $newId);
+
+            Notify::admins(
+                'Appointment request',
+                "Appointment request from {$studentNm} • {$whenNice}. Please review and assign.",
+                $adminUrl
+            );
+        } catch (\Throwable $e) {
+            \Log::warning('Admin notify failed (new pending appt)', [
+                'appointment_id' => $newId,
+                'error'          => $e->getMessage(),
+            ]);
+        }
+
+    } catch (\RuntimeException $e) {
+        if ($e->getMessage() === 'FULL') {
+            return back()->withInput()->with('swal', [
+                'icon'  => 'info',
+                'title' => 'Time slot unavailable',
+                'text'  => 'That time just filled up. Please pick another slot.',
+            ]);
+        }
+        throw $e;
+    }
+
+    return redirect()
+        ->route('appointment.history')
+        ->with('swal', [
+            'icon'  => 'success',
+            'title' => 'Appointment booked!',
+            'html'  => sprintf(
+                '<div style="text-align:left">
+                <div><b>Date:</b> %s</div>
+                <div><b>Time:</b> %s</div>
+                <div style="margin-top:.25rem;color:#475569"><em>A counselor has not been assigned yet. You’ll be notified once an admin assigns one.</em></div>
+                </div>',
+                e($slot->format('M d, Y')),
+                e($slot->format('g:i A'))
+            ),
+            'confirmButtonText' => 'OK',
+        ]);
+}
+
+    /* ----------------------------- History ----------------------------- */
+    public function history(Request $request)
+    {
+        // not changed; shows 'no_show' rows too
+        $status = (string) $request->query('status', 'all');
+        $period = (string) ($request->query('period', $request->query('preoid', 'all')));
+        $q      = trim((string) $request->query('q', ''));
+
+        $now = now();
+
+        $query = DB::table('tbl_appointments as a')
+            ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
+            // ⬇️ pick latest counselor_change_request per appointment
+            ->leftJoin(DB::raw('
+                (SELECT appointment_id, MAX(id) AS last_id
+                FROM counselor_change_requests
+                GROUP BY appointment_id) last_cr
+            '), 'last_cr.appointment_id', '=', 'a.id')
+            ->leftJoin('counselor_change_requests as cr', 'cr.id', '=', 'last_cr.last_id')
+            ->select([
+                'a.id','a.student_id','a.counselor_id','a.scheduled_at','a.status',
+                'c.name as counselor_name','c.email as counselor_email','c.phone as counselor_phone',
+                'a.final_note','a.finalized_at',
+                DB::raw('cr.status as cr_status'),
+                DB::raw('cr.created_at as cr_created_at'),
+            ])
+            ->where('a.student_id', Auth::id());
+
+        if ($status !== 'all') $query->where('a.status', $status);
+
         switch ($period) {
-            case 'today':
-                $qrb->whereDate('a.scheduled_at', $now->toDateString());
-                break;
-            case 'upcoming':
-                $qrb->where('a.scheduled_at', '>=', $now);
-                break;
-            case 'this_week':
-                $qrb->whereBetween('a.scheduled_at', [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()]);
-                break;
-            case 'this_month':
-                $qrb->whereBetween('a.scheduled_at', [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()]);
-                break;
-            case 'past':
-                $qrb->where('a.scheduled_at', '<', $now);
-                break;
-            default:
-                // all
-                break;
+            case 'today':      $query->whereDate('a.scheduled_at', $now->toDateString()); break;
+            case 'upcoming':   $query->where('a.scheduled_at', '>=', $now); break;
+            case 'this_week':  $query->whereBetween('a.scheduled_at', [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()]); break;
+            case 'this_month': $query->whereBetween('a.scheduled_at', [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()]); break;
+            case 'past':       $query->where('a.scheduled_at', '<', $now); break;
+            case 'all': default: break;
         }
 
-        // ===== RESCHEDULED HISTORY (date and/or counselor changes) =====
-        $rescheduledAppointments = collect();
-
-        if (Schema::hasTable('tbl_appointment_reschedule_history')) {
-            $rh = DB::table('tbl_appointment_reschedule_history as h')
-                ->join('tbl_appointments as a', 'a.id', '=', 'h.appointment_id')
-                ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-                ->leftJoin('tbl_counselors as oc', 'oc.id', '=', 'h.old_counselor_id')
-                ->leftJoin('tbl_counselors as nc', 'nc.id', '=', 'h.new_counselor_id')
-                ->select([
-                    'a.id as appointment_id',
-                    'a.created_at as booked_at',
-                    'a.scheduled_at as current_scheduled_at',
-
-                    DB::raw("COALESCE(s.name,'—')  as student_name"),
-                    DB::raw("COALESCE(s.email,'') as student_email"),
-
-                    'h.old_scheduled_at',
-                    'h.new_scheduled_at',
-                    'h.reason',
-                    'h.created_at as changed_at',
-                    'oc.name as old_counselor_name',
-                    'nc.name as new_counselor_name',
-                ])
-                // this counselor was involved (before or after)
-                ->where(function ($w) use ($cid) {
-                    $w->where('h.old_counselor_id', $cid)
-                    ->orWhere('h.new_counselor_id', $cid);
-                });
-
-            // reuse period filter based on the *new* schedule (fallback to current)
-            switch ($period) {
-                case 'today':
-                    $rh->whereDate('a.scheduled_at', $now->toDateString());
-                    break;
-                case 'upcoming':
-                    $rh->where('a.scheduled_at', '>=', $now);
-                    break;
-                case 'this_week':
-                    $rh->whereBetween('a.scheduled_at', [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()]);
-                    break;
-                case 'this_month':
-                    $rh->whereBetween('a.scheduled_at', [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()]);
-                    break;
-                case 'past':
-                    $rh->where('a.scheduled_at', '<', $now);
-                    break;
-                default:
-                    // all
-                    break;
-            }
-
-            // reuse search filter
-            if ($q !== '') {
-                $rh->where(function ($w) use ($q) {
-                    $w->where('s.name', 'like', "%{$q}%")
-                    ->orWhere('s.email', 'like', "%{$q}%");
-                });
-            }
-
-            $rescheduledAppointments = $rh
-                ->orderByDesc('h.created_at')
-                ->orderByDesc('a.scheduled_at')
-                ->get();
-        }
-
-        // Filter: search (student name/email) for ACTIVE list
         if ($q !== '') {
-            $qrb->where(function ($w) use ($q) {
-                $w->where('s.name', 'like', "%{$q}%")
-                ->orWhere('s.email', 'like', "%{$q}%");
+            $query->where(function($w) use ($q) {
+                $w->where('c.name', 'like', "%{$q}%")
+                ->orWhereNull('c.id');
             });
         }
 
-        // Sort: future first (asc), then past (desc); completed at the bottom
-        $qrb->orderByRaw("CASE WHEN a.status = 'completed' THEN 1 ELSE 0 END ASC")
-            ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN 0 ELSE 1 END", [$now])
-            ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN a.scheduled_at END ASC",  [$now])
-            ->orderByRaw("CASE WHEN a.scheduled_at <  ? THEN a.scheduled_at END DESC", [$now]);
+        $query->orderByRaw("CASE WHEN a.status = 'completed' THEN 1 ELSE 0 END ASC");
 
-        $appointments = $qrb->paginate(10)->withQueryString();
-
-        // ===== REASSIGNED HISTORY (read-only; still visible to past counselor) =====
-        $reassignedAppointments = collect();
-
-        if (Schema::hasTable('tbl_appointment_counselor_history')) {
-            $hr = DB::table('tbl_appointment_counselor_history as h')
-                ->join('tbl_appointments as a', 'a.id', '=', 'h.appointment_id')
-                ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-                ->select([
-                    'a.id',
-                    'a.scheduled_at',
-                    'a.created_at as booked_at',
-                    DB::raw("COALESCE(s.name,'—')  as student_name"),
-                    DB::raw("COALESCE(s.email,'') as student_email"),
-                    'h.status as history_status',
-                    'h.changed_at',
-                ])
-                ->where('h.counselor_id', $cid)
-                ->where('h.status', 'reassigned');
-
-            // optional: reuse period filter for these as well (based on scheduled_at)
-            switch ($period) {
-                case 'today':
-                    $hr->whereDate('a.scheduled_at', $now->toDateString());
-                    break;
-                case 'upcoming':
-                    $hr->where('a.scheduled_at', '>=', $now);
-                    break;
-                case 'this_week':
-                    $hr->whereBetween('a.scheduled_at', [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()]);
-                    break;
-                case 'this_month':
-                    $hr->whereBetween('a.scheduled_at', [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()]);
-                    break;
-                case 'past':
-                    $hr->where('a.scheduled_at', '<', $now);
-                    break;
-                default:
-                    // all
-                    break;
-            }
-
-            // optional: reuse search filter
-            if ($q !== '') {
-                $hr->where(function ($w) use ($q) {
-                    $w->where('s.name', 'like', "%{$q}%")
-                    ->orWhere('s.email', 'like', "%{$q}%");
-                });
-            }
-
-            $reassignedAppointments = $hr
-                ->orderByDesc('h.changed_at')
-                ->orderByDesc('a.scheduled_at')
-                ->get();
+        if ($period === 'past') {
+            $query->orderBy('a.scheduled_at', 'desc');
+        } elseif (in_array($period, ['today','upcoming','this_week','this_month'], true)) {
+            $query->orderBy('a.scheduled_at', 'asc');
+        } else {
+            $query->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN 0 ELSE 1 END", [$now])
+                ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN a.scheduled_at END ASC",  [$now])
+                ->orderByRaw("CASE WHEN a.scheduled_at <  ? THEN a.scheduled_at END DESC", [$now])
+                ->orderByRaw("CASE WHEN a.status = 'completed' THEN a.scheduled_at END DESC");
         }
 
-        return view('Counselor_Interface.appointments.index', [
-            'appointments'            => $appointments,
-            'reassignedAppointments'  => $reassignedAppointments,
-            'rescheduledAppointments' => $rescheduledAppointments,
-            'status'                  => $status,
-            'period'                  => $period,
-            'q'                       => $q,
-        ]);
-    }
+        $appointments = $query->paginate(10)->withQueryString();
 
-    /** GET /counselor/appointment/view/{id} */
-    public function show(int $id)
-    {
-        $cid = $this->myCounselorId();
-        abort_unless($cid, 404);
+        // 🔹 NEW: latest updated_at for THIS student's appointments (for polling)
+        $lastUpdatedAt = DB::table('tbl_appointments')
+            ->where('student_id', Auth::id())
+            ->max('updated_at');
 
-        // 1) Try as ACTIVE appointment (current counselor)
-        $row = DB::table('tbl_appointments as a')
-            ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-            ->select(
-                'a.*',
-                DB::raw("COALESCE(s.name,'—') as student_name"),
-                DB::raw("COALESCE(s.email,'') as student_email"),
-                DB::raw("
-                    TRIM(
-                        CONCAT(
-                            COALESCE(s.course, ''),
-                            CASE 
-                                WHEN s.course IS NOT NULL AND s.year_level IS NOT NULL 
-                                    THEN ' · ' 
-                                ELSE '' 
-                            END,
-                            COALESCE(s.year_level, '')
-                        )
-                    ) as student_program_year
-                ")
-            )
-            ->where('a.id', $id)
-            ->where('a.counselor_id', $cid)
-            ->first();
-
-        // ===== AUTO NO-SHOW (per appointment) =====
-        if ($row && in_array(strtolower((string)$row->status), ['pending', 'confirmed'], true)) {
-            $now   = now();
-            $start = Carbon::parse($row->scheduled_at);
-
-            // After full slot length (STEP_MINUTES) → auto no_show
-            if ($now->gte($start->copy()->addMinutes(self::STEP_MINUTES))) {
-                DB::table('tbl_appointments')
-                    ->where('id', $row->id)
-                    ->update([
-                        'status'     => 'no_show',
-                        'updated_at' => $now,
-                    ]);
-
-                // Reflect the change in the in-memory row
-                $row->status = 'no_show';
-            }
-        }
-        // ===== END AUTO NO-SHOW =====
-
-        $isHistory        = false;
-        $historyChangedAt = null;
-
-        // 2) If not active, try as REASSIGNED history for THIS counselor + THIS appointment
-        if (!$row && Schema::hasTable('tbl_appointment_counselor_history')) {
-            $hist = DB::table('tbl_appointment_counselor_history as h')
-                ->join('tbl_appointments as a', 'a.id', '=', 'h.appointment_id')
-                ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-                ->select(
-                    'a.*',
-                    DB::raw("COALESCE(s.name,'—') as student_name"),
-                    DB::raw("COALESCE(s.email,'') as student_email"),
-                    DB::raw("
-                        TRIM(
-                            CONCAT(
-                                COALESCE(s.course, ''),
-                                CASE 
-                                    WHEN s.course IS NOT NULL AND s.year_level IS NOT NULL 
-                                        THEN ' · ' 
-                                    ELSE '' 
-                                END,
-                                COALESCE(s.year_level, '')
-                            )
-                        ) as student_program_year
-                    "),
-                    'h.status as history_status',
-                    'h.changed_at'
-                )
-                ->where('h.counselor_id', $cid)   // ✅ only this counselor
-                ->where('h.appointment_id', $id)  // ✅ only this appointment
-                ->where('h.status', 'reassigned')
-                ->orderByDesc('h.changed_at')
-                ->first();
-
-            if ($hist) {
-                $row              = $hist;
-                $isHistory        = true;
-                $historyChangedAt = $hist->changed_at;
-            }
-        }
-
-        abort_unless($row, 404);
-
-        $caseNote = CaseNote::where('appointment_id', $row->id)->first();
-
-        return view('Counselor_Interface.appointments.show', [
-            'appointment'      => $row,
-            'caseNote'         => $caseNote,
-            'isHistory'        => $isHistory,
-            'historyChangedAt' => $historyChangedAt,
-        ]);
-    }
-
-    /** GET /counselor/appointments/{id}/case-note/pdf */
-    public function caseNotePdf(int $id)
-    {
-        $cid = $this->myCounselorId(); abort_unless($cid, 404);
-
- $appointment = DB::table('tbl_appointments as a')
-    ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-    ->select(
-        'a.*',
-        DB::raw("COALESCE(s.name,'—') as student_name"),
-        DB::raw("COALESCE(s.email,'') as student_email"),
-        DB::raw("
-            TRIM(
-                CONCAT(
-                    COALESCE(s.course, ''),
-                    CASE 
-                        WHEN s.course IS NOT NULL AND s.year_level IS NOT NULL 
-                            THEN ' · ' 
-                        ELSE '' 
-                    END,
-                    COALESCE(s.year_level, '')
-                )
-            ) as student_program_year
-        ")
-    )
-    ->where('a.id', $id)
-    ->where('a.counselor_id', $cid)
-    ->first();
-
-
-        $caseNote = \App\Models\CaseNote::where('appointment_id', $appointment->id)->first();
-        abort_unless($caseNote, 404);
-
-        // Optional logo embed (set to your actual path or null)
-        $logoPath = public_path('images/chatbot.png');
-        $logoData = file_exists($logoPath)
-            ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath))
-            : null;
-
-        $pdf = app('dompdf.wrapper');
-        $pdf->setPaper('a4', 'portrait')->setOptions([
-            // Either omit defaultFont or use a built-in one like Helvetica
-            'defaultFont' => 'Helvetica',
-            'isHtml5ParserEnabled' => true,
-            'isRemoteEnabled' => true,
+        $view = view('appointment.history', [
+            'appointments'  => $appointments,
+            'status'        => $status,
+            'period'        => $period,
+            'q'             => $q,
+            'lastUpdatedAt' => $lastUpdatedAt,
         ]);
 
-        $pdf->loadView('Counselor_Interface.appointments.pdf-case-note', [
-            'appointment' => $appointment,
-            'note'        => $caseNote,
-            'generatedAt' => now()->format('F d, Y · g:i A'),
-            'logoData'    => $logoData,
+        // keep your last_seen logic
+        \App\Models\User::where('id', Auth::id())->update([
+            'last_seen_appt_at' => now(),
         ]);
 
-        $filename = 'Case_Note_Appointment_'.$appointment->id.'.pdf';
-        return request()->boolean('download') ? $pdf->download($filename) : $pdf->stream($filename);
+        return $view;
     }
 
-    /** Collapse whitespace and trim (registration-style) */
-    private function trimCollapse(?string $v): ?string
+    public function historyPoll(Request $request): \Illuminate\Http\JsonResponse
     {
-        if ($v === null) return null;
-
-        if (class_exists('\Normalizer')) {
-            $v = \Normalizer::normalize($v, \Normalizer::FORM_KC) ?: $v; // NFKC
+        $userId = Auth::id();
+        if (!$userId) {
+            return response()->json(['ok' => false, 'error' => 'unauthenticated'], 401);
         }
 
-        return trim(preg_replace('/\s+/u', ' ', $v));
-    }
+        $last = $request->query('last');
 
-    /** Digits only with optional single leading + */
-    private function tidyPhone(?string $v): ?string
-    {
-        if ($v === null) return null;
+        $latest = DB::table('tbl_appointments')
+            ->where('student_id', $userId)
+            ->max('updated_at');
 
-        if (class_exists('\Normalizer')) {
-            $v = \Normalizer::normalize($v, \Normalizer::FORM_KC) ?: $v;
-        }
-
-        // keep digits, keep + only if it is the first char
-        $v = preg_replace('/(?!^)\+/', '', $v); // remove extra +'s
-        $v = preg_replace('/[^\d+]/', '', $v);  // strip non-digits
-        return $v;
-    }
-
-    /** Sanitize a whole case_note payload */
-    private function sanitizeCaseNote(array $in): array
-    {
-        $out = [];
-        foreach ($in as $k => $v) {
-            if ($k === 'emergency_contact_no') {
-                $out[$k] = $this->tidyPhone($v);
-            } elseif ($k === 'date') {
-                $vv = $this->trimCollapse($v);
-                $out[$k] = $vv ?: null;
-            } else {
-                $out[$k] = $this->trimCollapse($v);
-            }
-        }
-        return $out;
-    }
-    
-    public function storeCaseNote(int $id, Request $request)
-    {
-        $cid = $this->myCounselorId(); abort_unless($cid, 404);
-
-        $appointment = DB::table('tbl_appointments')
-            ->where('id', $id)
-            ->where('counselor_id', $cid)
-            ->first();
-        abort_unless($appointment, 404);
-
-        if (!in_array(strtolower((string)$appointment->status), ['completed'], true)) {
-            return back()->with('swal', [
-                'icon'=>'error','title'=>'Not allowed yet',
-                'text'=>'You can only save the Case Note after the appointment is Completed.',
+        if (!$latest) {
+            return response()->json([
+                'ok'           => true,
+                'has_changes'  => false,
+                'last_updated' => null,
             ]);
         }
 
-        $rules = [
-            // Header
-            'case_note.student_name'             => ['required','string','max:255'],
-            'case_note.date'                     => ['required','date','before_or_equal:today'], // ✅ not future
-            'case_note.program_year'             => ['nullable','string','max:255'],
-            'case_note.address'                  => ['nullable','string','max:255'],
+        $latestStr = (string) $latest;
 
-            // I–V
-            'case_note.presenting_problem'       => ['required','string','max:4000'],
-            'case_note.observations'             => ['required','string','max:4000'],
-            'case_note.interventions'            => ['required','string','max:4000'],
-            'case_note.response'                 => ['required','string','max:4000'],
-            'case_note.plan_followup'            => ['required','string','max:4000'],
-
-            // VI
-            'case_note.emergency_contact_person' => ['required','string','max:255'],
-            'case_note.emergency_relationship'   => ['required','string','max:255'],
-            'case_note.emergency_contact_no'     => ['required','regex:/^\+?\d{10,15}$/'], // ✅ phone format
-            'case_note.emergency_address'        => ['required','string','max:255'],
-        ];
-
-       $messages = [
-            'case_note.presenting_problem.required'       => 'Presenting Problem is required.',
-            'case_note.observations.required'             => 'Observations is required.',
-            'case_note.interventions.required'            => 'Interventions is required.',
-            'case_note.response.required'                 => 'Student’s Response / Insight is required.',
-            'case_note.plan_followup.required'            => 'Plan / Follow-Up is required.',
-            'case_note.emergency_contact_person.required' => 'Emergency contact person is required.',
-            'case_note.emergency_relationship.required'   => 'Emergency relationship is required.',
-            'case_note.emergency_contact_no.required'     => 'Emergency contact number is required.',
-            'case_note.emergency_address.required'        => 'Emergency address is required.',
-            'case_note.student_name.required'             => 'Student name is required.',
-            'case_note.date.required'                     => 'Date is required.',
-
-            // ✅ missing but needed
-            'case_note.emergency_contact_no.regex'        => 'Enter a valid contact number (10–15 digits, optional + at the start).',
-            'case_note.date.date'                         => 'Date must be a valid calendar date.',
-            'case_note.date.before_or_equal'              => 'Date cannot be in the future.',
-
-            // (optional but nice to have if you keep max rules)
-            'case_note.student_name.max'                  => 'Student name is too long.',
-            'case_note.program_year.max'                  => 'Program & Year is too long.',
-            'case_note.address.max'                       => 'Address is too long.',
-            'case_note.emergency_contact_person.max'      => 'Contact person is too long.',
-            'case_note.emergency_relationship.max'        => 'Relationship is too long.',
-            'case_note.emergency_address.max'             => 'Emergency address is too long.',
-            'case_note.*.max'                             => 'This field exceeds the allowed length.', // catch-all fallback
-        ];
-
-        // 👉 Single validator, explicitly disable stop-on-first-failure
-        $validator = \Validator::make($request->all(), $rules, $messages);
-        $validator->stopOnFirstFailure(false);
-        $validated = $validator->validate();
-
-        // Sanitize like registration page
-        $cn = $this->sanitizeCaseNote($validated['case_note'] ?? []);
-
-        $existing    = CaseNote::where('appointment_id', $appointment->id)->first();
-        $counselorId = $this->myCounselorId();
-        $noteDate    = !empty($cn['date']) ? Carbon::parse($cn['date'])->toDateString() : now()->toDateString();
-
-        CaseNote::updateOrCreate(
-            ['appointment_id' => $appointment->id],
-            [
-                'counselor_id' => $counselorId,
-                'student_id'   => $appointment->student_id ?? null,
-                'student_name' => $cn['student_name'] ?? $appointment->student_name ?? null,
-                'note_date'    => $noteDate,
-                'program_year' => $cn['program_year'] ?? null,
-                'address'      => $cn['address'] ?? null,
-
-                'presenting_problem' => $cn['presenting_problem'] ?? null,
-                'observations'       => $cn['observations'] ?? null,
-                'interventions'      => $cn['interventions'] ?? null,
-                'response'           => $cn['response'] ?? null,
-                'plan_followup'      => $cn['plan_followup'] ?? null,
-
-                'emergency_contact_person' => $cn['emergency_contact_person'] ?? null,
-                'emergency_relationship'   => $cn['emergency_relationship'] ?? null,
-                'emergency_contact_no'     => $cn['emergency_contact_no'] ?? null,
-                'emergency_address'        => $cn['emergency_address'] ?? null,
-
-                'created_by' => $existing?->created_by ?? Auth::id(),
-                'updated_by' => Auth::id(),
-            ]
-        );
-
-        return back()->with('swal', [
-            'icon'  => 'success',
-            'title' => 'Case Note saved',
-            'text'  => 'Your counselor case note has been saved successfully.',
+        return response()->json([
+            'ok'           => true,
+            'has_changes'  => $last && $latestStr !== $last,
+            'last_updated' => $latestStr,
         ]);
     }
 
-    /** POST /counselor/appointments/{id}/no-show — after grace */
-    public function markNoShow(int $id)
+    public function unseenCount(Request $request)
     {
-        $cid = $this->myCounselorId(); abort_unless($cid, 404);
+        $user   = Auth::user();
+        if (!$user) return response()->json(['count' => 0]);
 
-        $row = DB::table('tbl_appointments')->where('id', $id)->where('counselor_id', $cid)->first();
-        abort_unless($row, 404);
+        $last = $user->last_seen_appt_at ?? Carbon::createFromTimestamp(0);
 
-        if (!in_array($row->status, ['pending','confirmed'], true)) {
-            return back()->with('swal', ['icon'=>'warning','title'=>'Not allowed','text'=>'Only pending/confirmed can be set to No-Show.']);
-        }
+        $count = DB::table('tbl_appointments')
+            ->where('student_id', $user->id)
+            ->where('updated_at', '>', $last)
+            ->count();
 
-        $start   = Carbon::parse($row->scheduled_at);
-        $end     = $start->copy()->addMinutes(self::STEP_MINUTES);
-        $allowed = $end->copy()->addMinutes(self::NO_SHOW_GRACE_MIN);
-
-        if ($allowed->isFuture()) {
-            return back()->with('swal', ['icon'=>'warning','title'=>'Too early','text'=>'You can mark No-Show after the slot passes the grace period.']);
-        }
-
-        DB::table('tbl_appointments')->where('id', $id)->update([
-            'status'     => 'no_show',
-            'updated_at' => now(),
-        ]);
-
-        return back()->with('swal', ['icon'=>'success','title'=>'Marked as No-Show']);
+        return response()->json(['count' => $count]);
     }
 
-    /** Counselor saves final report (only after completed, and must own the appt) */
-    public function saveReport(Request $r, int $id)
+    public function exportHistoryPdf(Request $request)
     {
-        $cid = $this->myCounselorId(); abort_unless($cid, 404);
+        // unchanged
+        $status = (string) $request->query('status', 'all');
+        $period = (string) ($request->query('period', $request->query('preoid', 'all')));
+        $q      = trim((string) $request->query('q', ''));
+        $now    = now();
 
-        $data = $r->validate([
-            'diagnosis'  => ['required','string','max:4000'],
-            'final_note' => ['nullable','string','max:4000'],
-        ]);
+        $query = DB::table('tbl_appointments as a')
+            ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
+            ->select([
+                'a.id','a.student_id','a.counselor_id','a.scheduled_at','a.status',
+                'c.name as counselor_name','c.email as counselor_email','c.phone as counselor_phone',
+                'a.final_note','a.finalized_at',
+            ])
+            ->where('a.student_id', Auth::id());
 
-        $a = DB::table('tbl_appointments')->where('id', $id)->where('counselor_id', $cid)->first();
-        abort_unless($a, 404);
+        if ($status !== 'all') $query->where('a.status', $status);
 
-        if ($a->status !== 'completed') {
-            return back()->with('swal', ['icon'=>'warning','title'=>'Not allowed','text'=>'You can save the diagnosis only for completed appointments.']);
+        switch ($period) {
+            case 'today':      $query->whereDate('a.scheduled_at', $now->toDateString()); break;
+            case 'upcoming':   $query->where('a.scheduled_at', '>=', $now); break;
+            case 'this_week':  $query->whereBetween('a.scheduled_at', [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()]); break;
+            case 'this_month': $query->whereBetween('a.scheduled_at', [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()]); break;
+            case 'past':       $query->where('a.scheduled_at', '<', $now); break;
+            default: /* all */ break;
         }
 
-        DB::table('tbl_diagnosis_reports')->insert([
-            'appointment_id' => $a->id,
-            'student_id'     => $a->student_id,
-            'counselor_id'   => $cid,
-            'diagnosis_result' => $data['diagnosis'],  
-            'notes'            => $data['final_note'] ?? null, 
-            'updated_at'     => now(),
+        if ($q !== '') {
+            $query->where(function($w) use ($q) {
+                $w->where('c.name', 'like', "%{$q}%")->orWhereNull('c.id');
+            });
+        }
+
+        $query->orderByRaw("CASE WHEN a.status = 'completed' THEN 1 ELSE 0 END ASC");
+        if ($period === 'past') {
+            $query->orderBy('a.scheduled_at', 'desc');
+        } elseif (in_array($period, ['today','upcoming','this_week','this_month'], true)) {
+            $query->orderBy('a.scheduled_at', 'asc');
+        } else {
+            $query->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN 0 ELSE 1 END", [$now])
+                  ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN a.scheduled_at END ASC",  [$now])
+                  ->orderByRaw("CASE WHEN a.scheduled_at <  ? THEN a.scheduled_at END DESC", [$now])
+                  ->orderByRaw("CASE WHEN a.status = 'completed' THEN a.scheduled_at END DESC");
+        }
+
+        $appointments = $query->get();
+
+        $logoData = null;
+        $logoPath = public_path('images/chatbot.png');
+        if (is_file($logoPath)) $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
+
+        $pdf = app('dompdf.wrapper');
+        $pdf->setPaper('a4', 'portrait');
+        $pdf->setOptions([
+            'defaultFont'          => 'DejaVu Sans',
+            'isHtml5ParserEnabled' => true,
+            'isRemoteEnabled'      => true,
+            'chroot'               => public_path(),
+            'dpi'                  => 96,
+            'isPhpEnabled'         => true,
         ]);
 
-        return back()->with('swal', ['icon'=>'success','title'=>'Saved','text'=>'Diagnosis report saved.']);
+        $pdf->loadView('appointment.history-pdf', [
+            'appointments' => $appointments,
+            'status'       => $status,
+            'period'       => $period,
+            'q'            => $q,
+            'generatedAt'  => now()->format('Y-m-d H:i'),
+            'logoData'     => $logoData,
+        ]);
+
+        $filename = 'My_Appointments_' . now()->format('Ymd_His') . '.pdf';
+
+        if ($request->boolean('download')) {
+            return $pdf->download($filename);
+        }
+        return $pdf->stream($filename);
     }
 
-    public function followUpForm(int $id)
+    public function exportShowPdf(Request $request, int $id)
     {
-        $cid = $this->myCounselorId(); // your existing helper
+        $userId = Auth::id();
 
+        $appointment = DB::table('tbl_appointments as a')
+            ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
+            ->select('a.*','c.name as counselor_name','c.email as counselor_email','c.phone as counselor_phone')
+            ->where('a.id', $id)
+            ->where('a.student_id', $userId)
+            ->first();
+
+        abort_unless($appointment, 404);
+
+        $logoData = null;
+        $logoPath = public_path('images/chatbot.png');
+        if (is_file($logoPath)) $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
+
+        $pdf = app('dompdf.wrapper');
+        $pdf->setPaper('a4', 'portrait');
+        $pdf->setOptions([
+            'defaultFont'          => 'DejaVu Sans',
+            'isHtml5ParserEnabled' => true,
+            'isRemoteEnabled'      => true,
+            'chroot'               => public_path(),
+            'dpi'                  => 96,
+            'isPhpEnabled'         => true,
+        ]);
+
+        $pdf->loadView('appointment.pdf-show', [
+            'appointment' => $appointment,
+            'generatedAt' => now()->format('Y-m-d H:i'),
+            'logoData'    => $logoData,
+        ]);
+
+        $filename = 'Appointment_' . $appointment->id . '_' . now()->format('Ymd_His') . '.pdf';
+
+        if ($request->boolean('download')) {
+            return $pdf->download($filename);
+        }
+        return $pdf->stream($filename);
+    }
+
+    public function show(int $id)
+    {
+        $userId = Auth::id();
+
+        // 1) Load appointment (owned by this student) + assigned counselor info
         $appointment = DB::table('tbl_appointments as a')
             ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
             ->select([
                 'a.*',
                 'c.name  as counselor_name',
                 'c.email as counselor_email',
+                'c.phone as counselor_phone',
             ])
             ->where('a.id', $id)
-            ->where('a.counselor_id', $cid) // must belong to this counselor
+            ->where('a.student_id', $userId)
             ->first();
 
+        // 404 kung hindi niya appointment
         abort_unless($appointment, 404);
 
-        $suggest = [
-            'date' => Carbon::now()->addWeek()->toDateString(),
-            'time' => '09:00',
-        ];
-
-        return view('Counselor_Interface.appointments.follow-up', [
-            'appointment' => $appointment,
-            'suggest'     => $suggest,
-        ]);
-    }
-
-   public function followUpStore(Request $r, int $id)
-{
-    $cid = $this->myCounselorId(); 
-    abort_unless($cid, 404);
-
-    $ap = DB::table('tbl_appointments')
-        ->where('id', $id)
-        ->where('counselor_id', $cid)
-        ->first();
-    abort_unless($ap, 404);
-
-    // Allow follow-up when appointment is Completed OR marked as No-Show
-    if (!in_array($ap->status, ['completed', 'no_show'], true)) {
-        return back()->with('swal', [
-            'icon'  => 'warning',
-            'title' => 'Not allowed',
-            'text'  => 'Create a follow-up only for completed or no-show appointments.',
-        ]);
-    }
-
-    $data = $r->validate([
-        'date' => ['required','date_format:Y-m-d'],
-        'time' => ['required','regex:/^\d{2}:\d{2}$/'],
-        'note' => ['nullable','string','max:4000'],
-    ]);
-
-    $scheduledAt = Carbon::parse("{$data['date']} {$data['time']}:00");
-    if ($scheduledAt->lte(now())) {
-        return back()->withErrors([
-            'date' => 'Pick a future date/time for the follow-up.',
-        ])->withInput();
-    }
-
-    // Ensure counselor is free at that slot
-    $busy = DB::table('tbl_appointments')
-        ->where('counselor_id', $cid)
-        ->where('scheduled_at', $scheduledAt)
-        ->whereIn('status', ['pending','confirmed','completed'])
-        ->exists();
-    if ($busy) {
-        return back()
-            ->with('swal', [
-                'icon'  => 'warning',
-                'title' => 'Not available',
-                'text'  => 'You are busy at that time. Pick another slot.',
+        // 2) Latest counselor change request (if any) + preferred counselor name
+        $changeRequest = DB::table('counselor_change_requests as cr')
+            ->leftJoin('tbl_counselors as pc', 'pc.id', '=', 'cr.preference_counselor_id')
+            ->select([
+                'cr.*',
+                // same property names na ginagamit sa blade:
+                'cr.preference_counselor_id',
+                'pc.name as preferred_counselor_name',
             ])
-            ->withInput();
-    }
-
-    // Create the follow-up (confirmed)
-    $newId = DB::table('tbl_appointments')->insertGetId([
-        'student_id'   => $ap->student_id,
-        'counselor_id' => $cid,
-        'scheduled_at' => $scheduledAt,
-        'status'       => 'confirmed', // counselor-created follow-up is confirmed
-        'note'         => $data['note'] ?? null,
-        'parent_id'    => $ap->id,
-        'created_at'   => now(),
-        'updated_at'   => now(),
-    ]);
-
-    // ------- Notifications + Emails (student + counselor) -------
-    try {
-        $whenNice = $scheduledAt->format('M d, Y g:i A');
-
-        // Pull student + counselor for names/emails
-        $studentRow = DB::table('tbl_users')
-            ->where('id', $ap->student_id)
-            ->first(['name','email']);
-
-        $counselorRow = DB::table('tbl_counselors')
-            ->where('id', $cid)
-            ->first(['name','email']);
-
-        $studentName    = $studentRow->name ?? 'Student';
-        $counselorName  = $counselorRow->name ?? 'Counselor';
-        $studentEmail   = $studentRow->email ?? null;
-        $counselorEmail = $counselorRow->email ?? null;
-
-        // Deep links (if routes exist)
-        $studentUrl = \Illuminate\Support\Facades\Route::has('appointment.view')
-            ? route('appointment.view', $newId)
-            : null;
-
-        $counselorUrl = \Illuminate\Support\Facades\Route::has('counselor.appointments.show')
-            ? route('counselor.appointments.show', $newId)
-            : null;
-
-        // In-app notifications (if Notify wiring is in place)
-        try {
-            if ($studentRow) {
-                Notify::student(
-                    (int) $ap->student_id,
-                    'Follow-up appointment scheduled',
-                    'Your counselor scheduled a follow-up appointment on '.$whenNice.'.',
-                    $studentUrl
-                );
-            }
-
-            Notify::counselor(
-                (int) $cid,
-                'Follow-up appointment created',
-                'You created a follow-up for '.$studentName.' on '.$whenNice.'.',
-                $counselorUrl
-            );
-        } catch (\Throwable $e) {
-            \Log::notice('Notify (counselor follow-up) failed/skipped', [
-                'followup_id' => $newId,
-                'error'       => $e->getMessage(),
-            ]);
-        }
-
-        // Plain-text EMAILS
-        if ($studentEmail) {
-            $this->sendPlainEmail(
-                $studentEmail,
-                'LumiCHAT — Follow-up Appointment Scheduled',
-                "Hi {$studentName},\n\n"
-                ."Your counselor has scheduled a follow-up guidance appointment for you:\n\n"
-                ."📅 {$whenNice}\n\n"
-                ."Please log in to LumiCHAT to review the details. If this time does not work for you, "
-                ."coordinate with your counselor or guidance office.\n\n"
-                ."We’re here to support you."
-            );
-        }
-
-        if ($counselorEmail) {
-            $this->sendPlainEmail(
-                $counselorEmail,
-                'LumiCHAT — Follow-up Appointment Confirmed',
-                "Hi {$counselorName},\n\n"
-                ."You created a follow-up appointment for {$studentName} scheduled on {$whenNice}.\n"
-                ."You can view the appointment details in your LumiCHAT counselor dashboard.\n"
-            );
-        }
-    } catch (\Throwable $e) {
-        \Log::warning('Email/notify failed in followUpStore', [
-            'orig_appt_id' => $id,
-            'followup_id'  => $newId ?? null,
-            'error'        => $e->getMessage(),
-        ]);
-    }
-    // ------------------------------------------------------------
-
-    return redirect()->route('counselor.appointments.index')
-        ->with('swal', [
-            'icon'  => 'success',
-            'title' => 'Follow-up created',
-            'text'  => 'The follow-up appointment has been confirmed and notifications were sent.',
-        ]);
-}
-
-    /** Ensure a date falls Mon–Fri (Sun->Mon 9:00, Sat->Mon 9:00). */
-    private function nextWeekdayMonToFri(Carbon $dt): Carbon
-    {
-        $dow = (int) $dt->dayOfWeek; // 0 Sun .. 6 Sat
-        if ($dow === 0) return $dt->addDay()->setTime(9,0,0);
-        if ($dow === 6) return $dt->addDays(2)->setTime(9,0,0);
-        return $dt;
-    }
-
-    /** Optional: counselor’s single appointment PDF */
-   public function exportShowPdf(Request $request, int $id)
-{
-    $cid = $this->myCounselorId();
-    abort_unless($cid, 404);
-
-    // Same appointment lookup as caseNotePdf
-    $appointment = DB::table('tbl_appointments as a')
-    ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-    ->select(
-        'a.*',
-        DB::raw("COALESCE(s.name,'—') as student_name"),
-        DB::raw("COALESCE(s.email,'') as student_email"),
-        DB::raw("
-            TRIM(
-                CONCAT(
-                    COALESCE(s.course, ''),
-                    CASE 
-                        WHEN s.course IS NOT NULL AND s.year_level IS NOT NULL 
-                            THEN ' · ' 
-                        ELSE '' 
-                    END,
-                    COALESCE(s.year_level, '')
-                )
-            ) as student_program_year
-        ")
-    )
-    ->where('a.id', $id)
-    ->where('a.counselor_id', $cid)
-    ->first();
-
-
-    abort_unless($appointment, 404);
-
-    // Pull the case note for this appointment
-    $caseNote = \App\Models\CaseNote::where('appointment_id', $appointment->id)->first();
-    abort_unless($caseNote, 404);
-
-    // Optional logo embed
-    $logoPath = public_path('images/chatbot.png');
-    $logoData = file_exists($logoPath)
-        ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath))
-        : null;
-
-    $pdf = app('dompdf.wrapper');
-    $pdf->setPaper('a4', 'portrait')->setOptions([
-        'defaultFont'          => 'Helvetica',
-        'isHtml5ParserEnabled' => true,
-        'isRemoteEnabled'      => true,
-    ]);
-
-    // 👉 Use the existing case-note template
-    $pdf->loadView('Counselor_Interface.appointments.pdf-case-note', [
-        'appointment' => $appointment,
-        'note'        => $caseNote,
-        'generatedAt' => now()->format('F d, Y · g:i A'),
-        'logoData'    => $logoData,
-    ]);
-
-    $filename = 'Case_Note_Appointment_'.$appointment->id.'.pdf';
-
-    return $request->boolean('download')
-        ? $pdf->download($filename)
-        : $pdf->stream($filename);
-}
-
-    public function status(Request $request, int $id)
-    {
-        $cid = $this->myCounselorId();
-        abort_unless($cid, 404);
-
-        $appt = DB::table('tbl_appointments')
-            ->where('id', $id)
-            ->where('counselor_id', $cid)
+            ->where('cr.appointment_id', $appointment->id)
+            ->orderByDesc('cr.id')
             ->first();
-        abort_unless($appt, 404);
 
-        $now      = now();
-        $startAt  = Carbon::parse($appt->scheduled_at);
-        $graceMin = 10;
+        // 3) Build counselor list for the "Request different counselor" modal
+        //    (same slot as this appointment)
+        $slotStart = Carbon::parse($appointment->scheduled_at)->second(0);
 
-        // ✅ FIX: read the action from the request
-        $action  = (string) $request->input('action', '');
-        $allowed = ['confirm', 'start', 'done', 'no_show'];
-        if (!in_array($action, $allowed, true)) {
-            return back()->withErrors('Unknown action.')->withInput();
-        }
+        $counselors = DB::table('tbl_counselors')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'phone']);
 
-        // Normalize current status
-        $status = strtolower((string) $appt->status);
+        // IDs ng counselors na free sa exact slot na ito
+        $freeIds = $this->counselorsFreeAt($slotStart);   // returns array<int>
 
-        // Guard rails per action
-        if ($action === 'confirm') {
-            if ($status !== 'pending') {
-                return back()->withErrors('Only pending appointments can be confirmed.');
-            }
-            DB::table('tbl_appointments')->where('id', $id)->update([
-                'status'     => 'confirmed',
-                'updated_at' => $now,
-            ]);
-            return back()->with('swal', ['title' => 'Confirmed', 'text' => 'Appointment confirmed.']);
-        }
-
-        if ($action === 'start') {
-            if ($status !== 'confirmed') {
-                return back()->withErrors('Only confirmed appointments can be started.');
-            }
-            if ($now->lt($startAt->copy()->subMinutes($graceMin))) {
-                return back()->withErrors("You can start within {$graceMin} minutes before the scheduled time.");
-            }
-            DB::table('tbl_appointments')->where('id', $id)->update([
-                'status'     => 'ongoing',
-                // 'started_at' => $now,   // ❌ remove (column doesn't exist)
-                'updated_at' => $now,
-            ]);
-            return back()->with('swal', ['title' => 'Session started', 'text' => 'Status set to Ongoing.']);
-        }
-
-        if ($action === 'done') {
-            if (!in_array($status, ['confirmed', 'ongoing'], true)) {
-                return back()->withErrors('Only confirmed/ongoing appointments can be ended.');
-            }
-            if ($now->lt($startAt)) {
-                return back()->withErrors('You can only end after the scheduled start time.');
-            }
-            DB::table('tbl_appointments')->where('id', $id)->update([
-                'status'     => 'completed',
-                // 'ended_at'   => $now,   // ❌ remove
-                'updated_at' => $now,
-            ]);
-            return back()->with('swal', ['title' => 'Completed', 'text' => 'Appointment marked as Completed.']);
-        }
-
-        if ($action === 'no_show') {
-            if (!in_array($status, ['pending', 'confirmed'], true)) {
-                return back()->withErrors('Only pending/confirmed can be marked No-Show.');
-            }
-            DB::table('tbl_appointments')->where('id', $id)->update([
-                'status'     => 'no_show',
-                'updated_at' => $now,
-            ]);
-            return back()->with('swal', ['title' => 'Marked No-Show', 'text' => 'Student marked as No-Show.']);
-        }
-
-        // Fallback (shouldn’t hit)
-        return back();
+        // 4) Render student-side show view
+        return view('appointment.show', [
+            'appointment'   => $appointment,
+            'changeRequest' => $changeRequest,   // may ->status, ->preference_counselor_id, ->preferred_counselor_name
+            'counselors'    => $counselors,
+            'freeIds'       => $freeIds,
+        ]);
     }
-    
-   public function followUpSlots(Request $request, \App\Models\Appointment $appointment)
-    {
-        $cid = $this->myCounselorId();
 
-        // Keep UI happy: never 404—return reasons.
-        if (!$cid) {
-            return response()->json(['reason' => 'not_counselor']);
-        }
-        if ((int)$appointment->counselor_id !== (int)$cid) {
-            return response()->json(['reason' => 'not_owner']);
-        }
-
-        $date = (string) $request->query('date', '');
-        if ($date === '') {
-            return response()->json(['reason' => 'no_date']);
-        }
-
-        try {
-            $day = \Carbon\Carbon::parse($date)->startOfDay();
-        } catch (\Throwable $e) {
-            return response()->json(['reason' => 'bad_date']);
-        }
-
-        if ($day->isPast())    return response()->json(['reason' => 'past']);
-        // Use ISO weekday: 1=Mon ... 7=Sun (match student side + your data)
-        $isoDow = (int) $day->isoWeekday();
-        if ($isoDow < 1 || $isoDow > 5) return response()->json(['reason' => 'weekend']);
-
-        // Accepting flag: align with student controller
-        $accepting = \Illuminate\Support\Facades\DB::table('tbl_counselors')
-            ->where('id', $cid)
-            ->value('is_accepting_appointments');
-        if ((string)$accepting === '0') {
-            return response()->json(['reason' => 'disabled', 'blocked' => true]);
-        }
-
-        // Get availability rows (date-specific overrides recurring)
-        $ranges = $this->rangesForCounselorOnDateIso($cid, $day);
-        if ($ranges->isEmpty()) {
-            return response()->json(['reason' => 'no_availability']);
-        }
-
-        // Build slots inside AVAILABLE ranges; BLOCKED overrides.
-        $slotMinutes = (int) self::STEP_MINUTES; // 60
-        $slots = [];
-        foreach ($ranges as $r) {
-            if (($r->slot_type ?? 'available') !== 'available') continue;
-            if (!is_string($r->start_time) || !is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') continue;
-
-            $start = \Carbon\Carbon::parse($date.' '.$r->start_time)->second(0);
-            $end   = \Carbon\Carbon::parse($date.' '.$r->end_time)->second(0);
-
-            for ($t = $start->copy(); $t->lt($end); $t->addMinutes($slotMinutes)) {
-                $tEnd = $t->copy()->addMinutes($slotMinutes);
-
-                // skip past times if same day
-                if ($day->isToday() && $t->lte(now())) continue;
-
-                // respect blocks
-                if (!$this->slotAllowedForCounselorIso($cid, $t, $tEnd, $day)) continue;
-
-                $hhmm = $t->format('H:i');
-
-                // Busy check: counselor has appt at exact start with active statuses
-                $taken = DB::table('tbl_appointments')
-                    ->where('counselor_id', $cid)
-                    ->whereDate('scheduled_at', $day->toDateString())
-                    ->whereTime('scheduled_at', $hhmm.':00')
-                    ->whereIn('status', ['pending','confirmed','ongoing'])
-                    ->exists();
-
-                $slots[] = [
-                    'label'     => $t->format('g:i A'),
-                    'value'     => $hhmm,
-                    'available' => $taken ? 0 : 1,
-                ];
-            }
-        }
-
-        if (!$slots) return response()->json(['reason' => 'no_slots']);
-
-        // If everything is taken
-        $open = collect($slots)->sum(fn($s) => $s['available'] ? 1 : 0);
-        if ($open === 0) return response()->json(['reason' => 'fully_booked']);
-
-        // Unique + sorted
-        $slots = collect($slots)->unique('value')->sortBy('value')->values()->all();
-
-        return response()->json(['slots' => $slots]);
-    }
+    /* ------------------------------ Helpers ---------------------------- */
 
     /**
-     * Counselor availability rows for a date:
-     * - Prefer date-specific rows; else fallback to recurring by ISO weekday (1..7).
-     * - Reads start_time, end_time, slot_type ('available'|'blocked').
+     * True if the slot is within ANY 'available' range AND NOT inside ANY 'blocked' range
+     * after resolving date-specific vs recurring rows.
+     * Blocked always overrides available on overlap.
      */
-    private function rangesForCounselorOnDateIso(int $cid, \Carbon\Carbon $date): \Illuminate\Support\Collection
+    private function slotAllowedForCounselor(int $cid, Carbon $slotStart, Carbon $slotEnd, Carbon $date): bool
     {
-        $isoDow = $date->isoWeekday(); // 1..7
-
-        $dated = DB::table('tbl_counselor_availabilities')
-            ->where('counselor_id', $cid)
-            ->whereDate('date', $date->toDateString())
-            ->orderBy('start_time')
-            ->get(['start_time','end_time','slot_type']);
-
-        if ($dated->count() > 0) return $dated;
-
-        return DB::table('tbl_counselor_availabilities')
-            ->where('counselor_id', $cid)
-            ->whereNull('date')
-            ->where('weekday', $isoDow) // 🔑 ISO alignment
-            ->orderBy('start_time')
-            ->get(['start_time','end_time','slot_type']);
-    }
-
-    /**
-     * True if the slot is within ANY 'available' range AND NOT in ANY 'blocked' range
-     * after date-specific override. (Matches student side behavior.)
-     */
-    private function slotAllowedForCounselorIso(int $cid, \Carbon\Carbon $slotStart, \Carbon\Carbon $slotEnd, \Carbon\Carbon $date): bool
-    {
-        $rows = $this->rangesForCounselorOnDateIso($cid, $date);
+        $rows = $this->rangesForCounselorOnDate($cid, $date);
 
         $insideAvailable = false;
         foreach ($rows as $r) {
-            if (!is_string($r->start_time) || !is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') continue;
-
-            $st = \Carbon\Carbon::parse($date->toDateString().' '.$r->start_time);
-            $en = \Carbon\Carbon::parse($date->toDateString().' '.$r->end_time);
+            if (!\is_string($r->start_time) || !\is_string($r->end_time) || $r->start_time === '' || $r->end_time === '') {
+                continue;
+            }
+            $st = Carbon::parse($date->toDateString().' '.$r->start_time);
+            $en = Carbon::parse($date->toDateString().' '.$r->end_time);
 
             $inside = $slotStart->gte($st) && $slotEnd->lte($en);
             if (!$inside) continue;
 
+            // If any matching row is BLOCKED -> immediately disallow
             if (($r->slot_type ?? 'available') === 'blocked') {
-                return false; // any block wins
+                return false;
             }
+
+            // Mark that at least one matching row is available
             if (($r->slot_type ?? 'available') === 'available') {
                 $insideAvailable = true;
             }
         }
+
         return $insideAvailable;
     }
-    /**
- * Simple plain-text email helper for counselor actions.
- */
-private function sendPlainEmail(string $to, string $subject, string $body): void
+
+    /** Return counselor IDs who are free at the exact $scheduledAt slot (date-aware, hourly). */
+    private function counselorsFreeAt(Carbon $scheduledAt): array
+    {
+        $date      = $scheduledAt->copy()->startOfDay();
+        $endOfSlot = $scheduledAt->copy()->addMinutes(self::STEP_MINUTES);
+
+        $active = DB::table('tbl_counselors')
+            ->where('is_active', 1)
+            ->where('is_accepting_appointments', 1)
+            ->pluck('id')->all();
+        if (empty($active)) return [];
+
+        $free = [];
+        foreach ($active as $cid) {
+            $cid = (int)$cid;
+
+            // Skip fully disabled day
+            if ($this->dayDisabledForCounselor($cid, $date)) {
+                continue;
+            }
+
+            // Blocked overrides available: slot must be allowed
+            if (!$this->slotAllowedForCounselor($cid, $scheduledAt, $endOfSlot, $date)) {
+                continue;
+            }
+
+            // No conflicting appt at exact start
+            $taken = DB::table('tbl_appointments')
+                ->where('counselor_id', $cid)
+                ->where('scheduled_at', $scheduledAt)
+                ->whereIn('status', self::BLOCKING_STATUSES)
+                ->exists();
+
+            if (!$taken) $free[] = $cid;
+        }
+        return $free;
+    }
+
+    /* --------------------------- Cancel (student) ---------------------- */
+    public function cancel($id, Request $request)
+    {
+        $userId = Auth::id();
+
+        $ap = DB::table('tbl_appointments')
+            ->where('id', $id)
+            ->where('student_id', $userId)
+            ->first();
+
+        if (!$ap) {
+            return back()->withErrors(['error' => 'Appointment not found.']);
+        }
+
+        if ($ap->status !== 'pending') {
+            return back()->withErrors(['error' => 'Only pending appointments can be canceled.']);
+        }
+
+        $now   = now();
+        $start = Carbon::parse($ap->scheduled_at);
+        if ($start->lte($now)) {
+            return back()->withErrors(['error' => 'This appointment has already started/passed and cannot be canceled.']);
+        }
+
+        DB::table('tbl_appointments')
+            ->where('id', $ap->id)
+            ->update([
+                'status'     => 'canceled',
+                'updated_at' => now(),
+            ]);
+
+        // 🔔 notify student (canceled)
+        $this->notifyUser(
+            $userId,
+            'Appointment canceled',
+            'Your appointment for ' . $start->format('M d, Y g:i A') . ' was canceled.',
+            route('appointment.history')
+        );
+
+        return redirect()
+            ->route('appointment.history')
+            ->with('swal', [
+                'icon'              => 'success',
+                'title'             => 'Appointment canceled',
+                'text'              => 'Your appointment has been canceled successfully.',
+                'confirmButtonText' => 'OK',
+            ]);
+    }
+
+
+        private function notifyUser(int $userId, string $title, string $body = '', ?string $url = null): void
+    {
+        $u = User::find($userId);
+        if (!$u) return;
+
+        $u->notify(new SimpleDatabaseNotification($title, $body, $url));
+    }
+
+   public function requestCounselorChange(Request $request, int $id)
+    {
+        $userId = Auth::id();
+
+        // 1) Load appointment owned by this student
+        $ap = DB::table('tbl_appointments')
+            ->where('id', $id)
+            ->where('student_id', $userId)
+            ->first();
+
+        abort_unless($ap, 404);
+
+        $now   = now();
+        $start = Carbon::parse($ap->scheduled_at);
+
+        // 2) ❌ Block: appointments coming from chatbot (urgent / reschedule)
+        if (!empty($ap->chatbot_session_id)) {
+            return back()->withErrors([
+                'error' => 'Requesting a different counselor is only available for normal booked appointments.',
+            ]);
+        }
+
+        // 3) ❌ Must be a future, CONFIRMED appointment
+        if ($ap->status !== 'confirmed') {
+            return back()->withErrors([
+                'error' => 'You can request a change only for confirmed appointments.',
+            ]);
+        }
+
+        if ($start->isPast()) {
+            return back()->withErrors([
+                'error' => 'You can request a change only before the session starts.',
+            ]);
+        }
+
+        // 4) ❌ Must already have an assigned counselor
+        if (empty($ap->counselor_id)) {
+            return back()->withErrors([
+                'error' => 'You can request a change only after a counselor has been assigned to this appointment.',
+            ]);
+        }
+
+        // 5) ✅ Strict 2-hour window after booking
+        //    (from created_at; if gusto mo from confirmation time, palitan lang field)
+        $createdAt     = Carbon::parse($ap->created_at);
+        $windowEndsAt  = $createdAt->copy()->addHours(2);
+        $withinWindow  = $now->lte($windowEndsAt);
+
+        if (! $withinWindow) {
+            return back()->withErrors([
+                'error' => 'The 2-hour window to request a different counselor has already passed.',
+            ]);
+        }
+
+        // ---------------------------------------------------------------------
+        // 6) Validation + save (same as before)
+        // ---------------------------------------------------------------------
+
+        // Reason codes aligned with the Blade <select>
+        $allowedReasons = [
+            'comfort_mismatch',
+            'communication_style',
+            'language',
+            'conflict',
+            'gender_preference',
+            'cultural_preference',
+            'other',
+        ];
+
+        // Base validation
+        $data = $request->validate([
+            'reason_code'             => ['required', 'in:' . implode(',', $allowedReasons)],
+            'reason_text'             => ['nullable', 'string', 'max:300'],
+            'preference_counselor_id' => ['required', 'integer', 'exists:tbl_counselors,id'],
+        ], [], [
+            'reason_code'             => 'reason',
+            'reason_text'             => 'additional explanation',
+            'preference_counselor_id' => 'preferred counselor',
+        ]);
+
+        // Conditional requirement for "other"
+        $reasonText = (string)($data['reason_text'] ?? '');
+        if ($data['reason_code'] === 'other') {
+            if (mb_strlen(trim($reasonText)) < 10) {
+                return back()
+                    ->withErrors([
+                        'reason_text' => 'Please describe your reason in at least 10 characters.',
+                    ])
+                    ->withInput();
+            }
+        }
+
+        // Sanitize text
+        $clean = function (?string $s): string {
+            $s = (string) $s;
+            $s = strip_tags($s);
+            $s = preg_replace('/https?:\/\/\S+/i', '[link removed]', $s);
+            $s = preg_replace('/[\x00-\x1F\x7F]/u', ' ', $s);
+            $s = preg_replace('/\s{2,}/', ' ', $s);
+            return trim($s);
+        };
+        $data['reason_text'] = $clean($reasonText);
+
+        // Double-check preferred counselor
+        $prefId = (int) $data['preference_counselor_id'];
+        $exists = DB::table('tbl_counselors')->where('id', $prefId)->exists();
+        if (! $exists) {
+            return back()
+                ->withErrors(['preference_counselor_id' => 'Selected counselor is not valid.'])
+                ->withInput();
+        }
+
+        // Existing open request?
+        $existing = DB::table('counselor_change_requests')
+            ->where('appointment_id', $ap->id)
+            ->where('status', 'requested')
+            ->first();
+
+        $payload = [
+            'appointment_id'          => $ap->id,
+            'requested_by_student_id' => $userId,
+            'current_counselor_id'    => $ap->counselor_id,
+            'reason_code'             => $data['reason_code'],
+            'reason_text'             => $data['reason_text'],
+            'preference_counselor_id' => $prefId,
+            'status'                  => 'requested',
+            'updated_at'              => now(),
+        ];
+
+        if ($existing) {
+            DB::table('counselor_change_requests')
+                ->where('id', $existing->id)
+                ->update($payload);
+        } else {
+            $payload['created_at'] = now();
+            DB::table('counselor_change_requests')->insert($payload);
+        }
+
+        // Notify admins (optional)
+        try {
+            Notify::admins(
+                'Counselor change request',
+                'Student #' . $userId . ' requested a counselor change for appointment #' . $ap->id . '.'
+            );
+        } catch (\Throwable $e) {
+            \Log::warning('Admin notify failed (counselor change request)', ['e' => $e->getMessage()]);
+        }
+
+        return redirect()
+            ->route('appointment.view', $ap->id)
+            ->with('success', 'Your request was submitted and is now under review. We’ll notify you once the admin decides.');
+    }
+
+public function studentConfirm(Appointment $appointment, Request $request): RedirectResponse
 {
-    // If mail is not configured, silently skip
-    if (!config('mail.default')) {
-        \Log::info('Mail disabled / not configured, skipping sendPlainEmail.', [
-            'to'      => $to,
-            'subject' => $subject,
-        ]);
-        return;
+    $user = $request->user();
+
+    // must belong to this student
+    if ((int)$appointment->student_id !== (int)$user->id) {
+        abort(403);
     }
 
+    // this confirm flow is ONLY for appointments that were marked
+    // by admin/counselor as requiring student confirmation
+    if (! $appointment->student_confirm_required) {
+        return back()->with('status', 'This appointment does not require student confirmation.');
+    }
+
+    // only pending + future can be confirmed
+    if ($appointment->status !== 'pending') {
+        return back()->with('status', 'Only pending appointments can be confirmed.');
+    }
+    if (\Carbon\Carbon::parse($appointment->scheduled_at)->isPast()) {
+        return back()->with('status', 'This appointment has already started or passed.');
+    }
+
+    // Save confirmation
+    $appointment->status                   = 'confirmed';
+    $appointment->student_confirm_required = false;
+    $appointment->student_confirmed_at     = now();
+    $appointment->save();
+
+    // 🔔 Notify admins (and counselor if assigned) with deep links
     try {
-        Mail::raw($body, function ($m) use ($to, $subject) {
-            $m->to($to)->subject($subject);
-        });
+        $whenNice  = \Carbon\Carbon::parse($appointment->scheduled_at)->format('M d, Y g:i A');
+        $studentNm = $user->name ?? ('#'.$user->id);
+
+        // Admins — generic so it covers reschedule & urgent bookings
+        \App\Support\Notify::admins(
+            'Student confirmed appointment',
+            "{$studentNm} confirmed an appointment • {$whenNice} (ID #{$appointment->id}).",
+            route('admin.appointments.show', $appointment->id)
+        );
+
+        // Counselor — if already assigned
+        if (!empty($appointment->counselor_id)) {
+            \App\Support\Notify::counselor(
+                (int) $appointment->counselor_id,
+                'Student confirmed appointment',
+                "Student {$studentNm} confirmed • {$whenNice}.",
+                \Illuminate\Support\Facades\Route::has('counselor.appointments.show')
+                    ? route('counselor.appointments.show', $appointment->id)
+                    : null
+            );
+        }
     } catch (\Throwable $e) {
-        \Log::warning('sendPlainEmail failed in Counselor\\AppointmentController', [
-            'to'      => $to,
-            'subject' => $subject,
-            'error'   => $e->getMessage(),
+        \Log::notice('Notify on studentConfirm failed', [
+            'id' => $appointment->id,
+            'e'  => $e->getMessage(),
         ]);
     }
-}
 
+    return redirect()
+        ->route('appointment.view', $appointment->id)
+        ->with('success', 'Your guidance appointment for ' .
+            \Carbon\Carbon::parse($appointment->scheduled_at)->format('M d, Y · g:i A') .
+            ' has been confirmed.');
+}
 }
