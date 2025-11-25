@@ -934,147 +934,159 @@ public function updateStatus(Request $r, int $id): RedirectResponse
         Notify::student((int)$ap->student_id, $title, $body);
     }
 
-    public function followUpStore(Request $request, int $id)
-    {
-        $appointment = $this->appointments->findById($id);
-        abort_unless($appointment, 404);
+public function followUpStore(Request $request, int $id)
+{
+    $appointment = $this->appointments->findById($id);
+    abort_unless($appointment, 404);
 
-        // Only after completion
-        if ($appointment->status !== 'completed') {
+    // Only after completion
+    if ($appointment->status !== 'completed') {
+        return back()->with(self::FLASH_SWAL, [
+            'icon'  => 'warning',
+            'title' => 'Not allowed',
+            'text'  => 'You can create a follow-up only after the appointment is completed.',
+        ]);
+    }
+
+    $data = $request->validate([
+        'date' => ['required','date_format:Y-m-d'],
+        'time' => ['required','regex:/^\d{2}:\d{2}$/'],
+        'note' => ['nullable','string','max:4000'],
+    ]);
+
+    $scheduledAt = Carbon::parse($data['date'].' '.$data['time'].':00');
+    if ($scheduledAt->lte(now())) {
+        return back()->withErrors(['time' => 'Please pick a future time.'])->withInput();
+    }
+
+    $originalCounselorId = $appointment->counselor_id ?: null;
+
+    // capture created appt details for post-commit notifications
+    $created = (object)['id' => null, 'counselor_id' => null, 'scheduled_at' => null];
+
+    try {
+        DB::transaction(function () use ($appointment, $scheduledAt, $originalCounselorId, $data, &$created) {
+
+            // counselors free at that exact slot (pooled capacity)
+            $freeIds = $this->appointments->counselorIdsFreeAt($scheduledAt);
+
+            if ($originalCounselorId) {
+                // keep same counselor only if free
+                if (!in_array((int)$originalCounselorId, $freeIds, true)) {
+                    throw new \RuntimeException('COUNSELOR_BUSY');
+                }
+                $counselorId = (int)$originalCounselorId;
+            } else {
+                // pooled capacity required
+                if (empty($freeIds)) {
+                    throw new \RuntimeException('FULL');
+                }
+                $counselorId = null; // assign later (pooled)
+            }
+
+            // Create the appointment and capture its ID
+            $newId = DB::table('tbl_appointments')->insertGetId([
+                'student_id'               => (int) $appointment->student_id,
+                'counselor_id'             => $counselorId,     // can be null or an id
+                'scheduled_at'             => $scheduledAt,
+                'status'                   => 'pending',        // ← awaiting student confirmation
+                'student_confirm_required' => 1,                // ← require student confirm
+                'student_confirmed_at'     => null,
+                'parent_id'                => $appointment->id,
+                'note'                     => $data['note'] ?? null,
+                'created_at'               => now(),
+                'updated_at'               => now(),
+            ]);
+
+            // expose for post-commit notifications
+            $created->id           = $newId;
+            $created->counselor_id = $counselorId;
+            $created->scheduled_at = $scheduledAt;
+        });
+    } catch (\RuntimeException $e) {
+        if ($e->getMessage() === 'FULL') {
+            return back()->with(self::FLASH_SWAL, [
+                'icon'  => 'info',
+                'title' => 'Time slot unavailable',
+                'text'  => 'That time has no remaining capacity. Please pick another slot.',
+            ])->withInput();
+        }
+        if ($e->getMessage() === 'COUNSELOR_BUSY') {
             return back()->with(self::FLASH_SWAL, [
                 'icon'  => 'warning',
-                'title' => 'Not allowed',
-                'text'  => 'You can create a follow-up only after the appointment is completed.',
-            ]);
+                'title' => 'Counselor not available',
+                'text'  => 'The original counselor is busy at that time. Please pick a different time.',
+            ])->withInput();
         }
-
-        $data = $request->validate([
-            'date' => ['required','date_format:Y-m-d'],
-            'time' => ['required','regex:/^\d{2}:\d{2}$/'],
-            'note' => ['nullable','string','max:4000'],
-        ]);
-
-        $scheduledAt = Carbon::parse($data['date'].' '.$data['time'].':00');
-        if ($scheduledAt->lte(now())) {
-            return back()->withErrors(['time' => 'Please pick a future time.'])->withInput();
-        }
-
-        $originalCounselorId = $appointment->counselor_id ?: null;
-
-        // capture created appt details for post-commit notifications
-        $created = (object)['id' => null, 'counselor_id' => null, 'scheduled_at' => null];
-
-        try {
-            DB::transaction(function () use ($appointment, $scheduledAt, $originalCounselorId, $data, &$created) {
-
-                // counselors free at that exact slot (pooled capacity)
-                $freeIds = $this->appointments->counselorIdsFreeAt($scheduledAt);
-
-                if ($originalCounselorId) {
-                    // keep same counselor only if free
-                    if (!in_array((int)$originalCounselorId, $freeIds, true)) {
-                        throw new \RuntimeException('COUNSELOR_BUSY');
-                    }
-                    $counselorId = (int)$originalCounselorId;
-                } else {
-                    // pooled capacity required
-                    if (empty($freeIds)) {
-                        throw new \RuntimeException('FULL');
-                    }
-                    $counselorId = null; // assign later (pooled)
-                }
-
-                // Create the appointment and capture its ID
-                $newId = DB::table('tbl_appointments')->insertGetId([
-                    'student_id'   => (int) $appointment->student_id,
-                    'counselor_id' => $counselorId,        // can be null or an id
-                    'scheduled_at' => $scheduledAt,
-                    'status'       => 'confirmed',         // auto-confirm per your flow
-                    'parent_id'    => $appointment->id,
-                    'note'         => $data['note'] ?? null,
-                    'created_at'   => now(),
-                    'updated_at'   => now(),
-                ]);
-
-                // expose for post-commit notifications
-                $created->id           = $newId;
-                $created->counselor_id = $counselorId;
-                $created->scheduled_at = $scheduledAt;
-            });
-        } catch (\RuntimeException $e) {
-            if ($e->getMessage() === 'FULL') {
-                return back()->with(self::FLASH_SWAL, [
-                    'icon'  => 'info',
-                    'title' => 'Time slot unavailable',
-                    'text'  => 'That time has no remaining capacity. Please pick another slot.',
-                ])->withInput();
-            }
-            if ($e->getMessage() === 'COUNSELOR_BUSY') {
-                return back()->with(self::FLASH_SWAL, [
-                    'icon'  => 'warning',
-                    'title' => 'Counselor not available',
-                    'text'  => 'The original counselor is busy at that time. Please pick a different time.',
-                ])->withInput();
-            }
-            throw $e;
-        }
-
-        // 🔔 Post-commit notifications (soft-fail)
-        try {
-            $dtLabel = Carbon::parse($created->scheduled_at)->format('M d, Y g:i A');
-
-            // Student — Follow-up scheduled
-            \App\Support\Notify::student(
-                (int) $appointment->student_id,
-                'Follow-up scheduled',
-                'Your follow-up appointment has been scheduled for '.$dtLabel.'.',
-                route('appointment.view', (int) $created->id)
-            );
-
-            // Counselor — New follow-up assigned (only if counselor kept/assigned)
-            $student = DB::table('tbl_users')->where('id', $appointment->student_id)->first();
-            if (!empty($created->counselor_id) && \Illuminate\Support\Facades\Route::has('counselor.appointments.show')) {
-                $studentName = $student?->name ?? ('#'.$appointment->student_id);
-
-                \App\Support\Notify::counselor(
-                    (int) $created->counselor_id,
-                    'New follow-up assigned',
-                    'Student: '.$studentName.' · '.$dtLabel.'.',
-                    route('counselor.appointments.show', (int) $created->id)
-                );
-            }
-
-            // Emails
-            if (!empty($student?->email)) {
-                $this->sendPlainEmail(
-                    $student->email,
-                    'LumiCHAT — Follow-up Confirmed',
-                    "Hi {$student->name},\n\nYour follow-up appointment has been scheduled for {$dtLabel}.\n"
-                );
-            }
-            if (!empty($created->counselor_id)) {
-                $c = DB::table('tbl_counselors')->where('id', $created->counselor_id)->first();
-                if (!empty($c?->email)) {
-                    $studentName = $student?->name ?? ('#'.$appointment->student_id);
-                    $this->sendPlainEmail(
-                        $c->email,
-                        'LumiCHAT — New Follow-up Assigned',
-                        "A new follow-up has been assigned to you.\nStudent: {$studentName}\nWhen: {$dtLabel}\n"
-                    );
-                }
-            }
-        } catch (\Throwable $e) {
-            \Log::warning('followUpStore notify/email failed', ['id' => $created->id, 'e' => $e->getMessage()]);
-        }
-
-        return redirect()
-            ->route('admin.appointments.index')
-            ->with(self::FLASH_SWAL, [
-                'icon'  => 'success',
-                'title' => 'Follow-up confirmed',
-                'text'  => 'The follow-up appointment has been created and confirmed.',
-            ]);
+        throw $e;
     }
+
+    // 🔔 Post-commit notifications (soft-fail)
+    try {
+        $dtLabel = Carbon::parse($created->scheduled_at)->format('M d, Y g:i A');
+
+        // Build signed confirm/decline links for the student (48h validity)
+        $confirmUrl = \Illuminate\Support\Facades\URL::signedRoute(
+            'appointments.student.confirm',
+            ['id' => (int) $created->id],
+            now()->addDays(2)
+        );
+        $declineUrl = \Illuminate\Support\Facades\URL::signedRoute(
+            'appointments.student.decline',
+            ['id' => (int) $created->id],
+            now()->addDays(2)
+        );
+
+        // Student — needs confirmation
+        \App\Support\Notify::student(
+            (int) $appointment->student_id,
+            'Confirm your appointment',
+            'We scheduled a counseling slot for '.$dtLabel.'. Please confirm or decline.',
+            $confirmUrl // primary deep link
+        );
+
+        // Optional: email both links
+        $student = DB::table('tbl_users')->where('id', $appointment->student_id)->first();
+        if (!empty($student?->email)) {
+            $body = "Hi {$student->name},\n\n"
+                  . "A counseling appointment was scheduled for {$dtLabel}.\n"
+                  . "Please confirm or decline:\n\n"
+                  . "Confirm: {$confirmUrl}\n"
+                  . "Decline: {$declineUrl}\n";
+            $this->sendPlainEmail($student->email, 'LumiCHAT — Please Confirm Appointment', $body);
+        }
+
+        // Counselor — tentatively assigned (if kept/assigned)
+        if (!empty($created->counselor_id) && \Illuminate\Support\Facades\Route::has('counselor.appointments.show')) {
+            $studentName = $student?->name ?? ('#'.$appointment->student_id);
+            \App\Support\Notify::counselor(
+                (int) $created->counselor_id,
+                'Tentative appointment (awaiting student)',
+                'Student: '.$studentName.' · '.$dtLabel.'. Awaiting student confirmation.',
+                route('counselor.appointments.show', (int) $created->id)
+            );
+        }
+
+        // Admins — FYI
+        if (\Illuminate\Support\Facades\Route::has('admin.appointments.show')) {
+            \App\Support\Notify::admins(
+                'Tentative appointment created',
+                sprintf('Appointment #%d scheduled for %s — awaiting student confirmation.', (int) $created->id, $dtLabel),
+                route('admin.appointments.show', (int) $created->id)
+            );
+        }
+    } catch (\Throwable $e) {
+        \Log::warning('followUpStore notify/email failed', ['id' => $created->id, 'e' => $e->getMessage()]);
+    }
+
+    return redirect()
+        ->route('admin.appointments.index')
+        ->with(self::FLASH_SWAL, [
+            'icon'  => 'success',
+            'title' => 'Follow-up created',
+            'text'  => 'Follow-up created. Waiting for the student to confirm.',
+        ]);
+}
 
     /** JSON: pooled capacity and (optional) specific counselor availability */
     public function capacity(Request $r): JsonResponse
@@ -1430,4 +1442,156 @@ public function updateStatus(Request $r, int $id): RedirectResponse
             'last_updated' => $latestStr,
         ]);
     }
+
+    /**
+     * Public, signed link → student confirms a tentative/urgent appointment.
+     * Route: GET /appointments/{id}/confirm  (name: appointments.student.confirm)
+     */
+    public function studentConfirm(Request $request, int $id)
+    {
+        // Find current row
+        $before = DB::table('tbl_appointments')->where('id', $id)->first();
+        abort_unless($before, 404);
+
+        // If it’s already confirmed, just take the happy path
+        if ($before->status === 'confirmed') {
+            return redirect()->route('appointment.view', $id)->with(self::FLASH_SWAL, [
+                'icon'  => 'success',
+                'title' => 'Already confirmed',
+                'text'  => 'Your appointment is already confirmed.',
+            ]);
+        }
+
+        // Only pending/confirmed may be confirmed via this link
+        if (!in_array($before->status, ['pending','confirmed'], true)) {
+            return redirect()->route('appointment.view', $id)->with(self::FLASH_SWAL, [
+                'icon'  => 'warning',
+                'title' => 'Not allowed',
+                'text'  => 'This appointment can’t be confirmed anymore.',
+            ]);
+        }
+
+        // Apply confirmation
+        DB::table('tbl_appointments')->where('id', $id)->update([
+            'status'                   => 'confirmed',
+            'student_confirm_required' => 0,
+            'student_confirmed_at'     => now(),
+            'updated_at'               => now(),
+        ]);
+
+        // Load a minimal row for centralized notifier
+        $row = DB::table('tbl_appointments')->where('id', $id)->first(['id','student_id','counselor_id','scheduled_at','status']);
+
+        // In-app notifications
+        try {
+            $this->notifyOnStatusChange($row, (string)($before->status ?? ''), 'confirmed');
+        } catch (\Throwable $e) {
+            \Log::notice('notifyOnStatusChange failed (studentConfirm)', ['id'=>$id,'e'=>$e->getMessage()]);
+        }
+
+        // Emails (same wording style as elsewhere)
+        try {
+            $j = $this->joinedApptRow($id);
+            if ($j) {
+                $whenNice = $this->niceWhen($j->scheduled_at ?? now());
+                // student
+                $this->sendPlainEmail(
+                    $j->student_email ?? null,
+                    'LumiCHAT — Appointment Confirmed',
+                    "Hi {$j->student_name},\n\nYour appointment has been confirmed.\nWhen: {$whenNice}\nCounselor: {$j->counselor_name}\n\nSee you!"
+                );
+                // counselor
+                $this->sendPlainEmail(
+                    $j->counselor_email ?? null,
+                    'LumiCHAT — Appointment Confirmed',
+                    "A confirmed appointment is on your schedule.\nStudent: {$j->student_name}\nWhen: {$whenNice}\n"
+                );
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('Status email failed (studentConfirm)', ['id' => $id, 'err' => $e->getMessage()]);
+        }
+
+        return redirect()->route('appointment.view', $id)->with(self::FLASH_SWAL, [
+            'icon'  => 'success',
+            'title' => 'Confirmed',
+            'text'  => 'Thanks! Your appointment has been confirmed.',
+        ]);
+    }
+
+    /**
+     * Public, signed link → student declines a tentative/urgent appointment.
+     * Route: GET /appointments/{id}/decline  (name: appointments.student.decline)
+     */
+    public function studentDecline(Request $request, int $id)
+    {
+        // Find current row
+        $before = DB::table('tbl_appointments')->where('id', $id)->first();
+        abort_unless($before, 404);
+
+        // If already cancelled, nothing to do
+        if (in_array($before->status, ['canceled','cancelled'], true)) {
+            return redirect()->route('appointment.view', $id)->with(self::FLASH_SWAL, [
+                'icon'  => 'info',
+                'title' => 'Already cancelled',
+                'text'  => 'This appointment is already cancelled.',
+            ]);
+        }
+
+        // Only pending/confirmed can be declined by student
+        if (!in_array($before->status, ['pending','confirmed'], true)) {
+            return redirect()->route('appointment.view', $id)->with(self::FLASH_SWAL, [
+                'icon'  => 'warning',
+                'title' => 'Not allowed',
+                'text'  => 'This appointment can’t be declined anymore.',
+            ]);
+        }
+
+        // Apply cancellation
+        DB::table('tbl_appointments')->where('id', $id)->update([
+            'status'                   => 'canceled',
+            'student_confirm_required' => 0,
+            'student_confirmed_at'     => null,
+            'updated_at'               => now(),
+        ]);
+
+        // Load minimal row for notifications
+        $row = DB::table('tbl_appointments')->where('id', $id)->first(['id','student_id','counselor_id','scheduled_at','status']);
+
+        // In-app notifications (student, counselor, and admins for visibility)
+        try {
+            $this->notifyOnStatusChange($row, (string)($before->status ?? ''), 'cancelled');
+        } catch (\Throwable $e) {
+            \Log::notice('notifyOnStatusChange failed (studentDecline)', ['id'=>$id,'e'=>$e->getMessage()]);
+        }
+
+        // Emails
+        try {
+            $j = $this->joinedApptRow($id);
+            if ($j) {
+                $whenNice = $this->niceWhen($j->scheduled_at ?? now());
+                $this->sendPlainEmail(
+                    $j->student_email ?? null,
+                    'LumiCHAT — Appointment Cancelled',
+                    "Hi {$j->student_name},\n\nYour appointment scheduled on {$whenNice} has been cancelled per your request.\n"
+                );
+                if (!empty($j->counselor_email)) {
+                    $this->sendPlainEmail(
+                        $j->counselor_email,
+                        'LumiCHAT — Appointment Cancelled',
+                        "A student cancelled an appointment.\nStudent: {$j->student_name}\nWhen: {$whenNice}\n"
+                    );
+                }
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('Status email failed (studentDecline)', ['id' => $id, 'err' => $e->getMessage()]);
+        }
+
+        return redirect()->route('appointment.view', $id)->with(self::FLASH_SWAL, [
+            'icon'  => 'success',
+            'title' => 'Cancelled',
+            'text'  => 'Got it. Your appointment has been cancelled.',
+        ]);
+    }
+
+
 }
