@@ -110,6 +110,9 @@ Route::middleware('auth' , 'tos')->group(function () {
     Route::get('/appointment/book',     [AppointmentController::class, 'index'])->name('appointment.create');
     Route::get('/appointment/history',  [AppointmentController::class, 'history'])->name('appointment.history');
 
+    Route::get('/appointment/unseen-count', [AppointmentController::class, 'unseenCount'])
+        ->name('appointment.unseen');
+
     Route::get('/appointment/history/export/pdf', [AppointmentController::class, 'exportHistoryPdf'])
         ->name('appointment.history.export.pdf');
 
