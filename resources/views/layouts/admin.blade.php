@@ -598,7 +598,7 @@
           html: `
             ${iconHtml}
             <p class="mt-2 text-[14px] text-slate-600 dark:text-slate-300">
-              You’ll be logged out from this device. Your conversations and appointments will stay saved in your account.
+               You’ll be signed out from the admin panel on this device. All student records, reports, and chatbot sessions will remain safely stored in LumiCHAT.
             </p>
           `,
           focusConfirm: false,
