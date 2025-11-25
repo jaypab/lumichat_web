@@ -61,57 +61,13 @@ class ChatController extends Controller
         return 'there';
     }
 
-    private function evaluateRiskLevel(string $text): string
-    {
-        $t = RiskHeuristics::normalizeMsg($text);
-        $t = preg_replace('/\s+/u', ' ', $t ?? '');
+  private function evaluateRiskLevel(string $text): string
+{
+    // Reuse the richer assessRisk() logic so we only maintain one source of truth.
+    $risk = $this->assessRisk($text);
+    return $risk['level'] ?? 'low';
+}
 
-        // ===== HIGH =====
-        // Direct phrases
-        $high = [
-            '\bi\s*(?:just\s*)?(?:(?:will|would|could|can|might|gonna|going\s+to)\s*)?die\b',
-            '\bi\s*(?:wanna|want(?:\s*to)?|plan|planning|intend|need|will|gonna)\s*(?:to\s*)?(?:die|kill myself|end (?:it|my life)|commit suicide|unalive|disappear|be gone)\b',
-            '\b(?:kill myself|commit suicide|end it all|no reason to live|life is pointless)\b',
-            '\bi\s*(?:wish|want)\s*(?:i\s*)?(?:were|was)\s*dead\b',
-            '\bi\s*(?:can\'?t|cannot)\s*go on\b',
-            '\b(?:jump off|overdose|poison myself|hang myself)\b',
-            '\b(?:self[- ]harm|cut(?:ting)? myself)\b',
-        ];
-
-        // respect negation for "die"
-        $negatedDie = (bool) preg_match('/\b(?:don\'?t|do\s+not)\s+i\s+[^.?!]*\bdie\b/iu', $t);
-        foreach ($high as $p) {
-            if ($p === '\bi\s*(?:just\s*)?(?:(?:will|would|could|can|might|gonna|going\s+to)\s*)?die\b') {
-                if (!$negatedDie && preg_match('/'.$p.'/iu', $t)) return 'high';
-            } else if (preg_match('/'.$p.'/iu', $t)) {
-                return 'high';
-            }
-        }
-
-        // Co-occurrence with proximity (intent within ~8 words of act), both orders
-        $acts   = '(suicide|die|unalive|kill myself|end my life|end it|jump|overdose|poison|cut|disappear|be gone)';
-        $intent = '(wanna|want|plan|planning|thinking|feel like|i should|i will|i might|really want|gonna|need)';
-        if (
-            preg_match('/\b' . $intent . '\b(?:\W+\w+){0,8}?\b' . $acts . '\b/iu', $t)
-            || preg_match('/\b' . $acts . '\b(?:\W+\w+){0,8}?\b' . $intent . '\b/iu', $t)
-        ) {
-            return 'high';
-        }
-
-        // ===== MODERATE =====
-        $moderate = [
-            '\bi\s*(?:hate|loath|despise)\s*myself\b',
-            '\b(?:i (?:want|wish) (?:to )?disappear|i (?:don\'?t|do not) want to exist|i wish i wasn\'?t here|i wish i never existed)\b',
-            '\b(?:i(?:\'m| am)? (?:not ?ok(?:ay)?|empty|worthless|a burden|beyond help))\b',
-            '\b(?:give up on life|i don\'?t want to live|i feel like dying)\b',
-            '\b(?:depress(?:ed|ing)?|anxious|panic|overwhelmed|burnout|stressed)\b',
-        ];
-        foreach ($moderate as $p) {
-            if (preg_match('/' . $p . '/iu', $t)) return 'moderate';
-        }
-
-        return 'low';
-    }
 
     private function buildRasaMetadata(int $sessionId, string $lang, string $risk): array
     {
@@ -1196,49 +1152,176 @@ private function hasAnyWordExact(string $text, array $terms): bool
         return $out;
     }
 
-    /** Rich risk assessment with typo/slang coverage. */
-    private function assessRisk(string $raw): array
-    {
-        $t = $this->nluNormalize($raw);
+/** Rich risk assessment with typo/slang + EN / Taglish coverage. */
+private function assessRisk(string $raw): array
+{
+    $t = $this->nluNormalize($raw);
 
-        // Acronyms/slang to expand matching (kms = kill myself, etc.)
-        $slangHigh = [
-            'kms','end it','end it all','unalive','i can\'t go on','can\'t go on','no reason to live',
-            'life is pointless','nothing to live for'
-        ];
-        foreach ($slangHigh as $s) if (preg_match('/\b'.$this->flex($s).'\b/u',$t)) return ['level'=>'high','hits'=>[$s]];
+    // -----------------------------------------------------------------
+    // 0) Negation shield – “I don’t want to die / hurt myself”
+    //    We don’t want this to instantly flag as HIGH if they’re
+    //    explicitly saying they *don’t* want to.
+    // -----------------------------------------------------------------
+    $negationShield = false;
 
-        // High (explicit self-harm/suicide) + common misspellings
-        $highPhrases = [
-            'kill myself','kill my self','commit suicide','sui cide','suicide','sucide','suicde','suiside',
-            'end my life','end myl ife','i want to die','i wanna die','wish i was dead','wish i were dead',
-            'overdose','hang myself','jump off','cut myself','self harm','self-harm','hurt myself on purpose'
-        ];
-        foreach ($highPhrases as $p) if (preg_match('/\b'.$this->flex($p).'\b/u',$t)) return ['level'=>'high','hits'=>[$p]];
-
-        // Proximity: intent ~ act within 8 tokens, tolerant to typos
-        $intent = '(wanna|want|plan|planning|think|thinking|feel like|should|will|might|need|tryna|trying)';
-        $act    = '(suic(?:ide|de|e)|die|unalive|kill\s*my\s*self|end\s*my\s*life|end\s*it|overdose|hang|jump|cut|self[- ]?harm|hurt\s*my\s*self)';
-        if (
-            preg_match('/\b'.$intent.'\b(?:\W+\w+){0,8}\b'.$act.'\b/iu',$t) ||
-            preg_match('/\b'.$act.'\b(?:\W+\w+){0,8}\b'.$intent.'\b/iu',$t)
-        ) {
-            return ['level'=>'high','hits'=>['intent+act']];
-        }
-
-        // Moderate (expanded + typos)
-        $moderate = [
-            'i hate myself','i hat myself','i hte myself',
-            'i want to disappear','i wanna disappear','i don\'t want to exist','i dont want to exist',
-            'feel like dying','feel lik dyin','i am worthless','worthles','i am a burden','burdn',
-            'empty inside','i\'m empty','numb all the time','tired of everything','done with everything',
-            'overwhelmed','overwhelm','burnout','panic','anxiety','depressed','depressd','depresed',
-            'i am not okay','im not ok','not okey', 'not okay','i am not okey', 'not ok'
-        ];
-        foreach ($moderate as $p) if (preg_match('/\b'.$this->flex($p).'\b/u',$t)) return ['level'=>'moderate','hits'=>[$p]];
-
-        return ['level'=>'low','hits'=>[]];
+    // English
+    if (preg_match(
+        '/\bi\s*(don\'?t|do\s+not)\s*(want|plan|intend)\s*to\s*'
+        .'(die|kill myself|hurt myself|end my life|harm myself)\b/u',
+        $t
+    )) {
+        $negationShield = true;
     }
+
+    // Tagalog / Taglish
+    if (preg_match(
+        '/\bayoko(?:ng)?\s+(mamatay|masaktan\s+ang\s+sarili|magpakamatay|mawala)\b/u',
+        $t
+    )) {
+        $negationShield = true;
+    }
+
+    // -----------------------------------------------------------------
+    // 1) Slang / shorthand that directly implies self-harm/suicide
+    // -----------------------------------------------------------------
+    $slangHigh = [
+        'kms',                 // kill myself
+        'kys',                 // kill yourself / kill yourself (still critical)
+        'end it', 'end it all',
+        'unalive',
+        'i can\'t go on', 'cant go on', 'can\'t go on',
+        'no reason to live', 'nothing to live for',
+        'life is pointless', 'life is meaningless',
+
+       
+    ];
+
+    foreach ($slangHigh as $s) {
+        if (preg_match('/\b'.$this->flex($s).'\b/u', $t)) {
+            return [
+                'level' => $negationShield ? 'moderate' : 'high',
+                'hits'  => [$s],
+            ];
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // 2) Explicit HIGH phrases (methods, direct self-harm)
+    // -----------------------------------------------------------------
+    $highPhrases = [
+        // English – direct self-harm / suicide
+        'kill myself', 'kill my self',
+        'commit suicide', 'sui cide', 'suicide', 'sucide', 'suicde', 'suiside',
+        'end my life', 'end myl ife',
+        'i want to die', 'i wanna die', 'i plan to die', 'i am going to die',
+        'wish i was dead', 'wish i were dead',
+        'overdose', 'overdosing',
+        'hang myself', 'hang my self',
+        'jump off a bridge', 'jump off the bridge',
+        'jump off a building', 'jump off the building',
+        'jump in front of a bus', 'jump in front of a train',
+        'slit my wrist', 'slit my wrists',
+        'cut my wrists', 'cut my wrist',
+        'self harm', 'self-harm', 'hurt myself on purpose',
+
+        // “Kill me” variants – still treat as critical in this context
+        'someone kill me', 'pls kill me', 'please kill me',
+
+        // Filipino / Taglish explicit phrases
+        'magpakamatay na lang ako',
+        'papatayin ko ang sarili ko', 'papatayin ko sarili ko',
+        'saktan ang sarili ko', 'saktan ko ang sarili ko',
+        'hiwain ang pulsuhan ko', 'hiwain ko ang pulsuhan ko', 'hiwain ko ang pulso ko',
+        'tumalon sa tulay', 'tumalon sa building', 'tumalon sa bubong',
+        'tatalon ako sa tulay', 'tatalon ako sa building', 'tatalon ako sa bubong',
+    ];
+
+    foreach ($highPhrases as $p) {
+        if (preg_match('/\b'.$this->flex($p).'\b/u', $t)) {
+            return [
+                'level' => $negationShield ? 'moderate' : 'high',
+                'hits'  => [$p],
+            ];
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // 3) Intent + act within proximity (~8 tokens), both orders
+    // -----------------------------------------------------------------
+    $intent = '(wanna|want|plan|planning|think|thinking|feel like|should|will|might|need|tryna|trying|balak|plano|gusto ko)';
+    $act    = '('
+        .'suic(?:ide|de|e)'
+        .'|die'
+        .'|unalive'
+        .'|kill\s*my\s*self'
+        .'|end\s*my\s*life'
+        .'|end\s*it'
+        .'|overdose'
+        .'|hang'
+        .'|jump'
+        .'|cut'
+        .'|self[- ]?harm'
+        .'|hurt\s*my\s*self'
+        .'|magpakamatay'
+        .'|mamatay'
+        .'|saktan\s+ang\s+sarili'
+        .'|maglaslas'
+    .')';
+
+    if (
+        preg_match('/\b'.$intent.'\b(?:\W+\w+){0,8}\b'.$act.'\b/iu', $t)
+        || preg_match('/\b'.$act.'\b(?:\W+\w+){0,8}\b'.$intent.'\b/iu', $t)
+    ) {
+        return [
+            'level' => $negationShield ? 'moderate' : 'high',
+            'hits'  => ['intent+act'],
+        ];
+    }
+
+    // -----------------------------------------------------------------
+    // 4) MODERATE – expanded hopeless / self-hatred set
+    // -----------------------------------------------------------------
+    $moderate = [
+        // Self-hatred / worthlessness
+        'i hate myself', 'i hat myself', 'i hte myself',
+        'i am worthless', 'worthles', 'worthless', 'useless', 'i am a burden', 'burdn',
+        'i\'m a burden', 'im a burden', 'feeling like a burden',
+
+        // Disappearing / not existing
+        'i want to disappear', 'i wanna disappear',
+        'i dont want to exist', 'i don\'t want to exist',
+        'i wish i never existed', 'i wish i wasn\'t here',
+
+        // “Done with life” / “tapos na ako” style
+        'feel like dying', 'feel lik dyin',
+        'give up on life', 'i give up on life', 'i want to give up',
+        'tired of everything', 'done with everything',
+        'pagod na ako sa lahat', 'pagod na ako', 'sobra na pagod ko',
+        'ayoko na', 'sawa na ako', 'sawang sawa na ako',
+
+        // Strong depressive / anxiety words
+        'overwhelmed', 'overwhelm',
+        'burnout', 'burn out', 'burned out',
+        'panic', 'anxiety', 'anxious',
+        'depressed', 'depressd', 'depresed', 'deprssd', 'deprsd',
+
+        // Not okay / low-functioning
+        'i am not okay', 'im not ok', 'i\'m not ok', 'im not okay', 'i\'m not okay',
+        'not okey', 'not ok',
+        'i am not okey', 'i am not fine', 'im not fine', 'i\'m not fine',
+    ];
+
+    foreach ($moderate as $p) {
+        if (preg_match('/\b'.$this->flex($p).'\b/u', $t)) {
+            return ['level' => 'moderate', 'hits' => [$p]];
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // 5) Default
+    // -----------------------------------------------------------------
+    return ['level' => 'low', 'hits' => []];
+}
 
     /** Broad emotion tagging (with misspellings, synonyms, and key phrases). */
     private function labelEmotions(string $raw): array
@@ -1342,10 +1425,35 @@ private function hasAnyWordExact(string $text, array $terms): bool
     }
 
 
-    /** Intent classification (English only) with typo coverage + question guard. */
+ /** Intent classification (English only) with typo coverage + question guard. */
 private function classifyIntents(string $raw): array
 {
     $t = $this->nluNormalize($raw);
+
+    // ---------------- Goodbye / closing detection ----------------
+    // We treat pure "bye / good night / see you / take care" messages
+    // as conversation endings (done), NOT as non-mental topics.
+    $goodbye = false;
+
+    $closingPattern = '/^\s*('
+        .'bye'
+        .'|good\s*bye'
+        .'|goodbye'
+        .'|good\s*night'
+        .'|goodnight'
+        .'|good\s*morning'
+        .'|good\s*afternoon'
+        .'|see\s+you(?:\s+soon)?'
+        .'|talk\s+to\s+you\s+later'
+        .'|ttyl'
+        .'|take\s*care'
+        .'|thanks\s*,?\s*bye'
+        .'|thank\s+you\s*,?\s*bye'
+    .')\s*[!.…]*\s*$/iu';
+
+    if (preg_match($closingPattern, $t)) {
+        $goodbye = true;
+    }
 
     // ---------------- Bot intro / capabilities ----------------
     $asksCapabilities = false;
@@ -1474,6 +1582,11 @@ private function classifyIntents(string $raw): array
         }
     }
 
+    // NEW: pure goodbye messages → mark as done too
+    if (!$done && $goodbye) {
+        $done = true;
+    }
+
     return [
         'flags' => [
             'wants_appointment' => $wantsAppt,
@@ -1483,7 +1596,8 @@ private function classifyIntents(string $raw): array
             'yes'               => $yes,
             'no'                => $no,
             'done'              => $done,
-            'asks_capabilities' => $asksCapabilities,  // 👈 NEW FLAG
+            'asks_capabilities' => $asksCapabilities,
+            'goodbye'           => $goodbye, // optional – for future use if needed
         ],
         'score' => [
             'length'            => mb_strlen($t),
