@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\Appointment;
 use App\Models\CaseNote;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Mail;
+use App\Support\Notify;
+
 
 class AppointmentController extends Controller
 {
@@ -692,63 +695,157 @@ class AppointmentController extends Controller
         ]);
     }
 
-    /** Create the follow-up booked to this counselor if free; else ask to pick another time. */
-    public function followUpStore(Request $r, int $id)
-    {
-        $cid = $this->myCounselorId(); abort_unless($cid, 404);
+   public function followUpStore(Request $r, int $id)
+{
+    $cid = $this->myCounselorId(); 
+    abort_unless($cid, 404);
 
-        $ap = DB::table('tbl_appointments')
+    $ap = DB::table('tbl_appointments')
         ->where('id', $id)
         ->where('counselor_id', $cid)
         ->first();
-        abort_unless($ap, 404);
+    abort_unless($ap, 404);
 
-        // Allow follow-up when appointment is Completed OR marked as No-Show
-        if (!in_array($ap->status, ['completed', 'no_show'], true)) {
-            return back()->with('swal', [
+    // Allow follow-up when appointment is Completed OR marked as No-Show
+    if (!in_array($ap->status, ['completed', 'no_show'], true)) {
+        return back()->with('swal', [
+            'icon'  => 'warning',
+            'title' => 'Not allowed',
+            'text'  => 'Create a follow-up only for completed or no-show appointments.',
+        ]);
+    }
+
+    $data = $r->validate([
+        'date' => ['required','date_format:Y-m-d'],
+        'time' => ['required','regex:/^\d{2}:\d{2}$/'],
+        'note' => ['nullable','string','max:4000'],
+    ]);
+
+    $scheduledAt = Carbon::parse("{$data['date']} {$data['time']}:00");
+    if ($scheduledAt->lte(now())) {
+        return back()->withErrors([
+            'date' => 'Pick a future date/time for the follow-up.',
+        ])->withInput();
+    }
+
+    // Ensure counselor is free at that slot
+    $busy = DB::table('tbl_appointments')
+        ->where('counselor_id', $cid)
+        ->where('scheduled_at', $scheduledAt)
+        ->whereIn('status', ['pending','confirmed','completed'])
+        ->exists();
+    if ($busy) {
+        return back()
+            ->with('swal', [
                 'icon'  => 'warning',
-                'title' => 'Not allowed',
-                'text'  => 'Create a follow-up only for completed or no-show appointments.',
+                'title' => 'Not available',
+                'text'  => 'You are busy at that time. Pick another slot.',
+            ])
+            ->withInput();
+    }
+
+    // Create the follow-up (confirmed)
+    $newId = DB::table('tbl_appointments')->insertGetId([
+        'student_id'   => $ap->student_id,
+        'counselor_id' => $cid,
+        'scheduled_at' => $scheduledAt,
+        'status'       => 'confirmed', // counselor-created follow-up is confirmed
+        'note'         => $data['note'] ?? null,
+        'parent_id'    => $ap->id,
+        'created_at'   => now(),
+        'updated_at'   => now(),
+    ]);
+
+    // ------- Notifications + Emails (student + counselor) -------
+    try {
+        $whenNice = $scheduledAt->format('M d, Y g:i A');
+
+        // Pull student + counselor for names/emails
+        $studentRow = DB::table('tbl_users')
+            ->where('id', $ap->student_id)
+            ->first(['name','email']);
+
+        $counselorRow = DB::table('tbl_counselors')
+            ->where('id', $cid)
+            ->first(['name','email']);
+
+        $studentName    = $studentRow->name ?? 'Student';
+        $counselorName  = $counselorRow->name ?? 'Counselor';
+        $studentEmail   = $studentRow->email ?? null;
+        $counselorEmail = $counselorRow->email ?? null;
+
+        // Deep links (if routes exist)
+        $studentUrl = \Illuminate\Support\Facades\Route::has('appointment.view')
+            ? route('appointment.view', $newId)
+            : null;
+
+        $counselorUrl = \Illuminate\Support\Facades\Route::has('counselor.appointments.show')
+            ? route('counselor.appointments.show', $newId)
+            : null;
+
+        // In-app notifications (if Notify wiring is in place)
+        try {
+            if ($studentRow) {
+                Notify::student(
+                    (int) $ap->student_id,
+                    'Follow-up appointment scheduled',
+                    'Your counselor scheduled a follow-up appointment on '.$whenNice.'.',
+                    $studentUrl
+                );
+            }
+
+            Notify::counselor(
+                (int) $cid,
+                'Follow-up appointment created',
+                'You created a follow-up for '.$studentName.' on '.$whenNice.'.',
+                $counselorUrl
+            );
+        } catch (\Throwable $e) {
+            \Log::notice('Notify (counselor follow-up) failed/skipped', [
+                'followup_id' => $newId,
+                'error'       => $e->getMessage(),
             ]);
         }
 
-
-        $data = $r->validate([
-            'date' => ['required','date_format:Y-m-d'],
-            'time' => ['required','regex:/^\d{2}:\d{2}$/'],
-            'note' => ['nullable','string','max:4000'],
-        ]);
-
-        $scheduledAt = Carbon::parse("{$data['date']} {$data['time']}:00");
-        if ($scheduledAt->lte(now())) {
-            return back()->withErrors([
-                'date' => 'Pick a future date/time for the follow-up.',
-            ])->withInput();
-        }
-        // Ensure counselor is free at that slot
-        $busy = DB::table('tbl_appointments')
-            ->where('counselor_id', $cid)
-            ->where('scheduled_at', $scheduledAt)
-            ->whereIn('status', ['pending','confirmed','completed'])
-            ->exists();
-        if ($busy) {
-            return back()->with('swal', ['icon'=>'warning','title'=>'Not available','text'=>'You are busy at that time. Pick another slot.'])->withInput();
+        // Plain-text EMAILS
+        if ($studentEmail) {
+            $this->sendPlainEmail(
+                $studentEmail,
+                'LumiCHAT — Follow-up Appointment Scheduled',
+                "Hi {$studentName},\n\n"
+                ."Your counselor has scheduled a follow-up guidance appointment for you:\n\n"
+                ."📅 {$whenNice}\n\n"
+                ."Please log in to LumiCHAT to review the details. If this time does not work for you, "
+                ."coordinate with your counselor or guidance office.\n\n"
+                ."We’re here to support you."
+            );
         }
 
-        DB::table('tbl_appointments')->insert([
-            'student_id'   => $ap->student_id,
-            'counselor_id' => $cid,
-            'scheduled_at' => $scheduledAt,
-            'status'       => 'confirmed', // counselor-created follow-up is confirmed
-            'note'         => $data['note'] ?? null,
-            'parent_id'    => $ap->id,
-            'created_at'   => now(),
-            'updated_at'   => now(),
+        if ($counselorEmail) {
+            $this->sendPlainEmail(
+                $counselorEmail,
+                'LumiCHAT — Follow-up Appointment Confirmed',
+                "Hi {$counselorName},\n\n"
+                ."You created a follow-up appointment for {$studentName} scheduled on {$whenNice}.\n"
+                ."You can view the appointment details in your LumiCHAT counselor dashboard.\n"
+            );
+        }
+    } catch (\Throwable $e) {
+        \Log::warning('Email/notify failed in followUpStore', [
+            'orig_appt_id' => $id,
+            'followup_id'  => $newId ?? null,
+            'error'        => $e->getMessage(),
         ]);
-
-        return redirect()->route('counselor.appointments.index')
-            ->with('swal', ['icon'=>'success','title'=>'Follow-up created','text'=>'The follow-up appointment has been confirmed.']);
     }
+    // ------------------------------------------------------------
+
+    return redirect()->route('counselor.appointments.index')
+        ->with('swal', [
+            'icon'  => 'success',
+            'title' => 'Follow-up created',
+            'text'  => 'The follow-up appointment has been confirmed and notifications were sent.',
+        ]);
+}
 
     /** Ensure a date falls Mon–Fri (Sun->Mon 9:00, Sat->Mon 9:00). */
     private function nextWeekdayMonToFri(Carbon $dt): Carbon
@@ -1050,4 +1147,31 @@ class AppointmentController extends Controller
         }
         return $insideAvailable;
     }
+    /**
+ * Simple plain-text email helper for counselor actions.
+ */
+private function sendPlainEmail(string $to, string $subject, string $body): void
+{
+    // If mail is not configured, silently skip
+    if (!config('mail.default')) {
+        \Log::info('Mail disabled / not configured, skipping sendPlainEmail.', [
+            'to'      => $to,
+            'subject' => $subject,
+        ]);
+        return;
+    }
+
+    try {
+        Mail::raw($body, function ($m) use ($to, $subject) {
+            $m->to($to)->subject($subject);
+        });
+    } catch (\Throwable $e) {
+        \Log::warning('sendPlainEmail failed in Counselor\\AppointmentController', [
+            'to'      => $to,
+            'subject' => $subject,
+            'error'   => $e->getMessage(),
+        ]);
+    }
+}
+
 }

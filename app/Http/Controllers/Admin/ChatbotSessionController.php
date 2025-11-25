@@ -21,6 +21,8 @@ use Illuminate\Support\Facades\RateLimiter;
 use App\Support\RiskHeuristics;
 use App\Models\Chat;
 use App\Support\Notify;
+use Illuminate\Support\Facades\Mail;
+
 
 class ChatbotSessionController extends Controller
 {
@@ -643,7 +645,7 @@ public function slots(int $id, Request $request): JsonResponse
     ]);
 }
 
-    /** Admin books appointment for the session’s student with counselor+time */
+       /** Admin books appointment for the session’s student with counselor+time */
     public function book(int $id, Request $request): JsonResponse
     {
         $session = $this->sessions->findWithOrderedChats($id);
@@ -744,7 +746,7 @@ public function slots(int $id, Request $request): JsonResponse
             throw $e;
         }
 
-        // 🔔 Role-aware notifications (deep links) — only this part added
+        // 🔔 Role-aware notifications (deep links)
         try {
             $whenNice     = $slot->format('M d, Y g:i A');
             $studentUrl   = route('appointment.view', $createdId);
@@ -767,8 +769,6 @@ public function slots(int $id, Request $request): JsonResponse
                 'A student appointment was created for '.$whenNice.' (awaiting student confirmation).',
                 $counselorUrl
             );
-
-            // Admins — keep your existing broadcast with deep link (already present below)
         } catch (\Throwable $e) {
             \Log::notice('Notify (book) student/counselor failed/skipped', ['id'=>$createdId,'e'=>$e->getMessage()]);
         }
@@ -788,6 +788,54 @@ public function slots(int $id, Request $request): JsonResponse
             \Log::warning('Notify::admins (booked by admin) failed', [
                 'appt_id' => $createdId,
                 'e'       => $e->getMessage(),
+            ]);
+        }
+
+        /* 🔹 NEW: EMAILS FOR URGENT BOOKING (student + counselor) */
+        try {
+            $row = DB::table('tbl_appointments as a')
+                ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
+                ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
+                ->where('a.id', $createdId)
+                ->select([
+                    'a.id',
+                    'a.scheduled_at',
+                    's.name  as student_name',
+                    's.email as student_email',
+                    'c.name  as counselor_name',
+                    'c.email as counselor_email',
+                ])
+                ->first();
+
+            if ($row) {
+                $whenNice = Carbon::parse($row->scheduled_at ?? $slot)->format('M d, Y g:i A');
+
+                // Student email – urgent booking
+                $this->sendPlainEmail(
+                    $row->student_email ?? null,
+                    'LumiCHAT — Urgent Appointment Scheduled',
+                    "Hi {$row->student_name},\n\n"
+                    ."We scheduled an urgent counseling appointment for you based on your recent LumiCHAT session.\n\n"
+                    ."Counselor: {$row->counselor_name}\n"
+                    ."When: {$whenNice}\n\n"
+                    ."Please log in to LumiCHAT to confirm or manage this appointment.\n"
+                );
+
+                // Counselor email – urgent assignment
+                $this->sendPlainEmail(
+                    $row->counselor_email ?? null,
+                    'LumiCHAT — New Urgent Appointment',
+                    "Hi {$row->counselor_name},\n\n"
+                    ."A high-priority counseling appointment has been scheduled for a student.\n\n"
+                    ."Student: {$row->student_name}\n"
+                    ."When: {$whenNice}\n\n"
+                    ."Please check your LumiCHAT counselor dashboard for full details.\n"
+                );
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('Urgent booking emails failed', [
+                'appointment_id' => $createdId,
+                'error'          => $e->getMessage(),
             ]);
         }
 
@@ -949,183 +997,224 @@ public function slots(int $id, Request $request): JsonResponse
     }
 
     public function reschedule(int $id, Request $request): JsonResponse
-    {
-        $session = $this->sessions->findWithOrderedChats($id);
-        if (!$session || empty($session->user_id)) {
-            return response()->json(['message' => 'Session not found.'], 404);
-        }
-        $studentId = (int) $session->user_id;
-
-        // one-time guard
-        if (!empty($session->expedited_at)) {
-            return response()->json(['message' => 'This session was already moved earlier.'], 409);
-        }
-
-        // earliest FUTURE active appt to move
-        $appt = DB::table('tbl_appointments')
-            ->where('student_id', $studentId)
-            ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
-            ->where('scheduled_at', '>', now())
-            ->orderBy('scheduled_at')
-            ->first();
-
-        if (!$appt) {
-            return response()->json(['message' => 'No active appointment to reschedule.'], 409);
-        }
-
-        // validate inputs
-        $request->validate([
-            'date'         => ['required','date_format:Y-m-d'],
-            'time'         => ['required','regex:/^\d{2}:\d{2}$/'],
-            'counselor_id' => ['required','integer','exists:tbl_counselors,id'],
-        ]);
-
-        $date        = (string) $request->input('date');
-        $time        = (string) $request->input('time');
-        $counselorId = (int)    $request->input('counselor_id');
-
-        // build & check slot (30-min grid, Mon–Fri, future)
-        $raw  = Carbon::parse($date.' '.$time.':00')->second(0);
-        $slot = (function(Carbon $dt){ $m=(int)floor($dt->minute/30)*30; return $dt->copy()->setTime($dt->hour,$m,0);} )($raw);
-        if ($raw->ne($slot))                                return response()->json(['message'=>'Please choose a 30-minute step time.'], 422);
-        if ($slot->isoWeekday() < 1 || $slot->isoWeekday() > 5) return response()->json(['message'=>'Mon–Fri only.'], 422);
-        if ($slot->lte(now()))                              return response()->json(['message'=>'Please choose a future time.'], 422);
-
-        $counselorRow  = DB::table('tbl_counselors')->where('id',$counselorId)->first(['id','name','email']);
-        $counselorName = $counselorRow->name ?? null;
-
-        // Note to persist (kept from your original style)
-        $note = $this->composeRescheduleNote($session, $slot, $counselorName);
-
-        // We'll notify *after* commit to avoid duplicates on retry.
-        $notify = [
-            'student_id'    => $studentId,
-            'counselor_id'  => (int) $counselorId,
-            'student_url'   => route('appointment.view', $appt->id),
-            'counselor_url' => \Illuminate\Support\Facades\Route::has('counselor.appointments.show')
-                ? route('counselor.appointments.show', $appt->id)
-                : null,
-            'admin_url'     => \Illuminate\Support\Facades\Route::has('admin.appointments.show')
-                ? route('admin.appointments.show', $appt->id)
-                : null,
-            'when_nice'     => $slot->format('M d, Y g:i A'),
-            'student_name'  => (string) ($session->user->name ?? ('#'.$studentId)),
-            'counselor_name'=> $counselorName,
-            'ok'            => false,
-        ];
-
-        try {
-            DB::transaction(function () use ($session, $appt, $studentId, $counselorId, $slot, $note, &$notify) {
-                // lock session row (dynamic table name support)
-                $sessTable = $this->sessionsTable();
-                if ($sessTable) {
-                    $sessRow = DB::table($sessTable)->where('id',$session->id)->lockForUpdate()->first();
-                    if (!$sessRow || !empty($sessRow->expedited_at)) {
-                        throw new \RuntimeException('ALREADY_EXPEDITED');
-                    }
-                }
-
-                // lock current appt
-                $current = DB::table('tbl_appointments')->where('id',$appt->id)->lockForUpdate()->first();
-                if (!$current || !in_array($current->status, self::SESSION_ACTIVE_STATUSES, true)) {
-                    throw new \RuntimeException('APPT_GONE');
-                }
-
-                // ensure target slot free
-                $taken = DB::table('tbl_appointments')
-                    ->where('counselor_id', $counselorId)
-                    ->where('scheduled_at', $slot)
-                    ->whereIn('status', self::BLOCKING_STATUSES)
-                    ->lockForUpdate()
-                    ->exists();
-                if ($taken) throw new \RuntimeException('TAKEN');
-
-                // move the appt + require student confirmation
-                DB::table('tbl_appointments')
-                    ->where('id', $appt->id)
-                    ->update([
-                        'counselor_id'             => $counselorId,
-                        'scheduled_at'             => $slot,
-                        'note'                     => $note,
-                        'chatbot_session_id'       => $session->id,
-                        // 🔽 para lumabas yung Confirm button sa student side
-                        'status'                   => 'pending',
-                        'student_confirm_required' => true,
-                        'student_confirmed_at'     => null,
-                        'updated_at'               => now(),
-                    ]);
-
-                // mark session as expedited (if columns exist)
-                if ($sessTable) {
-                    $updates = ['updated_at' => now()];
-                    if (Schema::hasColumn($sessTable, 'expedited_appt_id')) $updates['expedited_appt_id'] = $appt->id;
-                    if (Schema::hasColumn($sessTable, 'expedited_at'))      $updates['expedited_at']      = now();
-                    DB::table($sessTable)->where('id',$session->id)->update($updates);
-                }
-
-                // mark success for post-commit notifications
-                $notify['ok'] = true;
-            });
-        } catch (\RuntimeException $e) {
-            if ($e->getMessage()==='ALREADY_EXPEDITED') return response()->json(['message'=>'This session was already moved earlier.'], 409);
-            if ($e->getMessage()==='TAKEN')            return response()->json(['message'=>'That time just filled. Pick another.'], 409);
-            if ($e->getMessage()==='APPT_GONE')        return response()->json(['message'=>'The appointment changed. Reload and try again.'], 409);
-            throw $e;
-        }
-
-        // 🔔 In-app notifications (after commit) — Student, Counselor, Admins
-        if ($notify['ok']) {
-            try {
-                // Student
-                Notify::student(
-                    (int) $notify['student_id'],
-                    'Appointment rescheduled',
-                    'Your appointment was rescheduled to '.$notify['when_nice'].'.',
-                    $notify['student_url']
-                );
-
-                // Counselor
-                if (!empty($notify['counselor_id'])) {
-                    Notify::counselor(
-                        (int) $notify['counselor_id'],
-                        'Appointment rescheduled',
-                        'Student: '.$notify['student_name'].' · '.$notify['when_nice'].'.',
-                        $notify['counselor_url']
-                    );
-                }
-
-                // Admins (broadcast; deep link)
-                Notify::admins(
-                    'Appointment rescheduled (chatbot triage)',
-                    'Appointment #'.$appt->id.' was moved to '.$notify['when_nice'].'.',
-                    $notify['admin_url']
-                );
-            } catch (\Throwable $e) {
-                \Log::warning('Notify failed on reschedule', ['id'=>$appt->id, 'e'=>$e->getMessage()]);
-            }
-        }
-
-        return response()->json([
-            'ok'   => true,
-            'html' => sprintf(
-                '
-                <div class="kv-grid">
-                <div class="kv"><span class="label">Student:</span>   <span class="value">%s</span></div>
-                <div class="kv"><span class="label">Counselor:</span> <span class="value">%s</span></div>
-                <div class="kv"><span class="label">New Date:</span>  <span class="value">%s</span></div>
-                <div class="kv"><span class="label">New Time:</span>  <span class="value">%s</span></div>
-                </div>
-                <div style="margin:6px 0 2px"><b>Note sent to student:</b></div>
-                <div style="white-space:pre-wrap">%s</div>
-                ',
-                e($session->user->name ?? ('#'.$studentId)),
-                e($counselorName ?? '—'),
-                e($slot->format('M d, Y')),
-                e($slot->format('g:i A')),
-                e($note)
-            ),
-        ]);
+{
+    $session = $this->sessions->findWithOrderedChats($id);
+    if (!$session || empty($session->user_id)) {
+        return response()->json(['message' => 'Session not found.'], 404);
     }
+    $studentId = (int) $session->user_id;
+
+    // one-time guard
+    if (!empty($session->expedited_at)) {
+        return response()->json(['message' => 'This session was already moved earlier.'], 409);
+    }
+
+    // earliest FUTURE active appt to move
+    $appt = DB::table('tbl_appointments')
+        ->where('student_id', $studentId)
+        ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
+        ->where('scheduled_at', '>', now())
+        ->orderBy('scheduled_at')
+        ->first();
+
+    if (!$appt) {
+        return response()->json(['message' => 'No active appointment to reschedule.'], 409);
+    }
+
+    // validate inputs
+    $request->validate([
+        'date'         => ['required','date_format:Y-m-d'],
+        'time'         => ['required','regex:/^\d{2}:\d{2}$/'],
+        'counselor_id' => ['required','integer','exists:tbl_counselors,id'],
+    ]);
+
+    $date        = (string) $request->input('date');
+    $time        = (string) $request->input('time');
+    $counselorId = (int)    $request->input('counselor_id');
+
+    // build & check slot (30-min grid, Mon–Fri, future)
+    $raw  = Carbon::parse($date.' '.$time.':00')->second(0);
+    $slot = (function(Carbon $dt){ $m=(int)floor($dt->minute/30)*30; return $dt->copy()->setTime($dt->hour,$m,0);} )($raw);
+    if ($raw->ne($slot))                                return response()->json(['message'=>'Please choose a 30-minute step time.'], 422);
+    if ($slot->isoWeekday() < 1 || $slot->isoWeekday() > 5) return response()->json(['message'=>'Mon–Fri only.'], 422);
+    if ($slot->lte(now()))                              return response()->json(['message'=>'Please choose a future time.'], 422);
+
+    $counselorRow  = DB::table('tbl_counselors')->where('id',$counselorId)->first(['id','name','email']);
+    $counselorName = $counselorRow->name ?? null;
+
+    // Note to persist (kept from your original style)
+    $note = $this->composeRescheduleNote($session, $slot, $counselorName);
+
+    // We'll notify *after* commit to avoid duplicates on retry.
+    $notify = [
+        'student_id'    => $studentId,
+        'counselor_id'  => (int) $counselorId,
+        'student_url'   => route('appointment.view', $appt->id),
+        'counselor_url' => \Illuminate\Support\Facades\Route::has('counselor.appointments.show')
+            ? route('counselor.appointments.show', $appt->id)
+            : null,
+        'admin_url'     => \Illuminate\Support\Facades\Route::has('admin.appointments.show')
+            ? route('admin.appointments.show', $appt->id)
+            : null,
+        'when_nice'     => $slot->format('M d, Y g:i A'),
+        'student_name'  => (string) ($session->user->name ?? ('#'.$studentId)),
+        'counselor_name'=> $counselorName,
+        'ok'            => false,
+        'appt_id'       => (int) $appt->id,
+    ];
+
+    try {
+        DB::transaction(function () use ($session, $appt, $studentId, $counselorId, $slot, $note, &$notify) {
+            // lock session row (dynamic table name support)
+            $sessTable = $this->sessionsTable();
+            if ($sessTable) {
+                $sessRow = DB::table($sessTable)->where('id',$session->id)->lockForUpdate()->first();
+                if (!$sessRow || !empty($sessRow->expedited_at)) {
+                    throw new \RuntimeException('ALREADY_EXPEDITED');
+                }
+            }
+
+            // lock current appt
+            $current = DB::table('tbl_appointments')->where('id',$appt->id)->lockForUpdate()->first();
+            if (!$current || !in_array($current->status, self::SESSION_ACTIVE_STATUSES, true)) {
+                throw new \RuntimeException('APPT_GONE');
+            }
+
+            // ensure target slot free
+            $taken = DB::table('tbl_appointments')
+                ->where('counselor_id', $counselorId)
+                ->where('scheduled_at', $slot)
+                ->whereIn('status', self::BLOCKING_STATUSES)
+                ->lockForUpdate()
+                ->exists();
+            if ($taken) throw new \RuntimeException('TAKEN');
+
+            // move the appt + require student confirmation
+            DB::table('tbl_appointments')
+                ->where('id', $appt->id)
+                ->update([
+                    'counselor_id'             => $counselorId,
+                    'scheduled_at'             => $slot,
+                    'note'                     => $note,
+                    'chatbot_session_id'       => $session->id,
+                    // 🔽 para lumabas yung Confirm button sa student side
+                    'status'                   => 'pending',
+                    'student_confirm_required' => true,
+                    'student_confirmed_at'     => null,
+                    'updated_at'               => now(),
+                ]);
+
+            // mark session as expedited (if columns exist)
+            if ($sessTable) {
+                $updates = ['updated_at' => now()];
+                if (Schema::hasColumn($sessTable, 'expedited_appt_id')) $updates['expedited_appt_id'] = $appt->id;
+                if (Schema::hasColumn($sessTable, 'expedited_at'))      $updates['expedited_at']      = now();
+                DB::table($sessTable)->where('id',$session->id)->update($updates);
+            }
+
+            // mark success for post-commit notifications
+            $notify['ok'] = true;
+        });
+    } catch (\RuntimeException $e) {
+        if ($e->getMessage()==='ALREADY_EXPEDITED') return response()->json(['message'=>'This session was already moved earlier.'], 409);
+        if ($e->getMessage()==='TAKEN')            return response()->json(['message'=>'That time just filled. Pick another.'], 409);
+        if ($e->getMessage()==='APPT_GONE')        return response()->json(['message'=>'The appointment changed. Reload and try again.'], 409);
+        throw $e;
+    }
+
+    // 🔔 In-app notifications (after commit) — Student, Counselor, Admins + Emails
+    if ($notify['ok']) {
+        try {
+            // Student (in-app)
+            Notify::student(
+                (int) $notify['student_id'],
+                'Appointment rescheduled',
+                'Your appointment was rescheduled to '.$notify['when_nice'].'.',
+                $notify['student_url']
+            );
+
+            // Counselor (in-app)
+            if (!empty($notify['counselor_id'])) {
+                Notify::counselor(
+                    (int) $notify['counselor_id'],
+                    'Appointment rescheduled',
+                    'Student: '.$notify['student_name'].' · '.$notify['when_nice'].'.',
+                    $notify['counselor_url']
+                );
+            }
+
+            // Admins (in-app)
+            Notify::admins(
+                'Appointment rescheduled (chatbot triage)',
+                'Appointment #'.$notify['appt_id'].' was moved to '.$notify['when_nice'].'.',
+                $notify['admin_url']
+            );
+
+            // 📧 EMAILS (student + counselor)
+            $studentRow = DB::table('tbl_users')
+                ->where('id', $notify['student_id'])
+                ->first(['name','email']);
+
+            $counselorRowEmail = null;
+            if (!empty($notify['counselor_id'])) {
+                $counselorRowEmail = DB::table('tbl_counselors')
+                    ->where('id', $notify['counselor_id'])
+                    ->first(['name','email']);
+            }
+
+            $whenNice = $notify['when_nice'];
+
+            // Student email
+            if ($studentRow && !empty($studentRow->email)) {
+                $this->sendPlainEmail(
+                    $studentRow->email,
+                    'LumiCHAT — Appointment Rescheduled',
+                    "Hi {$studentRow->name},\n\n"
+                    ."Your counseling appointment has been rescheduled to {$whenNice}.\n"
+                    ."Please log in to LumiCHAT to review and confirm your updated schedule.\n"
+                );
+            }
+
+            // Counselor email
+            if ($counselorRowEmail && !empty($counselorRowEmail->email)) {
+                $this->sendPlainEmail(
+                    $counselorRowEmail->email,
+                    'LumiCHAT — Appointment Rescheduled',
+                    "Hi {$counselorRowEmail->name},\n\n"
+                    ."The appointment with student {$notify['student_name']} has been rescheduled to {$whenNice}.\n"
+                    ."Please check your LumiCHAT counselor dashboard for details.\n"
+                );
+            }
+
+        } catch (\Throwable $e) {
+            \Log::warning('Notify / email failed on reschedule', [
+                'id'  => $notify['appt_id'],
+                'e'   => $e->getMessage(),
+            ]);
+        }
+    }
+
+    return response()->json([
+        'ok'   => true,
+        'html' => sprintf(
+            '
+            <div class="kv-grid">
+            <div class="kv"><span class="label">Student:</span>   <span class="value">%s</span></div>
+            <div class="kv"><span class="label">Counselor:</span> <span class="value">%s</span></div>
+            <div class="kv"><span class="label">New Date:</span>  <span class="value">%s</span></div>
+            <div class="kv"><span class="label">New Time:</span>  <span class="value">%s</span></div>
+            </div>
+            <div style="margin:6px 0 2px"><b>Note sent to student:</b></div>
+            <div style="white-space:pre-wrap">%s</div>
+            ',
+            e($session->user->name ?? ('#'.$studentId)),
+            e($counselorName ?? '—'),
+            e($slot->format('M d, Y')),
+            e($slot->format('g:i A')),
+            e($note)
+        ),
+    ]);
+}
 
     /** Different message when we move an appointment earlier */
     private function composeRescheduleNote(object $session, Carbon $slot, ?string $counselorName = null): string
@@ -1354,4 +1443,22 @@ public function slots(int $id, Request $request): JsonResponse
     {
         return RiskHeuristics::containsHighRisk($text);
     }
+        /** Safe plaintext email sender (logs failures, never throws). */
+    private function sendPlainEmail(?string $to, string $subject, string $body): void
+    {
+        if (!$to) return;
+
+        try {
+            Mail::raw($body, function ($m) use ($to, $subject) {
+                $m->to($to)->subject($subject);
+            });
+        } catch (\Throwable $e) {
+            \Log::warning('Urgent booking mail failed', [
+                'to'      => $to,
+                'subject' => $subject,
+                'error'   => $e->getMessage(),
+            ]);
+        }
+    }
+
 }
