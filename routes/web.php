@@ -17,13 +17,15 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\LegalController;
 use App\Http\Controllers\CounselorChangeRequestController;
 
-
+// ✅ NEW: admin controller alias for signed links
+use App\Http\Controllers\Admin\AppointmentController as AdminAppointmentController;
 
 // Consent page + accept action
 // Legal
 Route::get('/legal/consent', [LegalController::class, 'consent'])->name('legal.consent');
 Route::post('/legal/accept', [LegalController::class, 'accept'])->name('legal.accept');
 Route::post('/legal/decline', [LegalController::class, 'decline'])->name('legal.decline');
+
 /*
 |--------------------------------------------------------------------------
 | Web Routes (Student-facing)
@@ -69,6 +71,21 @@ Route::get('/rasa-health', function () {
     }
 })->name('rasa.health');
 
+/*
+|--------------------------------------------------------------------------
+| ✅ NEW — Public signed links for student Confirm/Decline
+|   (used by emails sent for urgent bookings / reschedules)
+|--------------------------------------------------------------------------
+*/
+Route::get('/appointments/{id}/confirm', [AdminAppointmentController::class, 'studentConfirm'])
+    ->whereNumber('id')
+    ->middleware('signed')
+    ->name('appointments.student.confirm');
+
+Route::get('/appointments/{id}/decline', [AdminAppointmentController::class, 'studentDecline'])
+    ->whereNumber('id')
+    ->middleware('signed')
+    ->name('appointments.student.decline');
 
 /*
 |--------------------------------------------------------------------------
@@ -78,7 +95,6 @@ Route::get('/rasa-health', function () {
 Route::middleware('auth' , 'tos')->group(function () {
 
     /* ----------------------------- Chat ------------------------------ */
-    
     Route::get('/chat',                 [ChatController::class, 'index'])->name('chat.index');
     Route::get('/chat/new',             [ChatController::class, 'newChat'])->name('chat.new');
     Route::get('/chat/history',         [ChatController::class, 'history'])->name('chat.history');
@@ -120,11 +136,11 @@ Route::middleware('auth' , 'tos')->group(function () {
         ->whereNumber('id')
         ->name('appointment.show.export.pdf');
 
-     // Student: request a different counselor
+    // Student: request a different counselor
     Route::post('/appointments/{id}/request-change', [AppointmentController::class, 'requestCounselorChange'])
-    ->name('appointment.request_change');
+        ->name('appointment.request_change');
 
-     // 🔹 NEW – poll for live updates
+    // 🔹 NEW – poll for live updates
     Route::get('/appointment/history/poll', [AppointmentController::class, 'historyPoll'])
         ->name('appointment.history.poll');
 
@@ -134,8 +150,10 @@ Route::middleware('auth' , 'tos')->group(function () {
     Route::get('/appointment/slots-pooled', [AppointmentController::class, 'slotsPooled'])->name('appointment.slots.pooled');
     Route::get('/appointment/view/{id}', [AppointmentController::class, 'show'])->name('appointment.view');
     Route::patch('/appointment/{id}/cancel', [AppointmentController::class, 'cancel'])->name('appointment.cancel');
+
+    // Existing logged-in confirm API (kept)
     Route::patch('/appointment/{appointment}/confirm', [AppointmentController::class, 'studentConfirm'])
-    ->name('appointment.confirm');
+        ->name('appointment.confirm');
 
     /* ------------------------ Self-Assessment ------------------------ */
     Route::get('/self-assessment',        [SelfAssessmentController::class,'create'])->name('self-assessment.create');
@@ -147,17 +165,14 @@ Route::middleware('auth' , 'tos')->group(function () {
         ->name('features.enable_appointment')
         ->middleware('signed');
 
-
- // Notifications (student side)
+    // Notifications (student side)
     Route::get('/notifications/feed', [NotificationController::class, 'feed'])->name('notifications.feed');
     Route::post('/notifications/{id}/mark', [NotificationController::class, 'mark'])->name('notifications.mark');
     Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
 
     Route::post('/notifications/mark-all', [NotificationController::class, 'markAll'])
-  ->name('notifications.mark_all')
-  ->middleware('auth');
-
-
+        ->name('notifications.mark_all')
+        ->middleware('auth');
 });
 
 /*
