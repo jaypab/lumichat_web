@@ -290,8 +290,8 @@
 
       {{-- Chatbot Sessions --}}
       <a href="{{ route('admin.chatbot-sessions.index') }}"
-         aria-current="{{ request()->routeIs('admin.chatbot-sessions.*') ? 'page' : 'false' }}"
-         class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
+        aria-current="{{ request()->routeIs('admin.chatbot-sessions.*') ? 'page' : 'false' }}"
+        class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
                 hover:bg-white/10 hover:ring-white/10
                 {{ request()->routeIs('admin.chatbot-sessions.*') ? 'is-active bg-white/15 ring-white/10' : '' }}">
         <span class="inline-flex w-10 h-10 items-center justify-center">
@@ -299,6 +299,16 @@
         </span>
         <span class="nav-label font-medium">Chatbot Sessions</span>
         <span class="rail-tip">Chatbot Sessions</span>
+
+        @if(($adminHighRiskCount ?? 0) > 0)
+          <span
+            class="absolute -top-1.5 right-3 min-w-[1.45rem] px-1.5 py-[2px]
+                  rounded-full text-[11px] font-semibold
+                  bg-rose-500 text-white flex items-center justify-center
+                  shadow-sm ring-1 ring-rose-300/70">
+            +{{ $adminHighRiskCount > 9 ? '9' : $adminHighRiskCount }}
+          </span>
+        @endif
       </a>
 
       <p class="mt-4 px-3 text-[11px] uppercase tracking-wider/relaxed opacity-90 nav-label">Analytics</p>

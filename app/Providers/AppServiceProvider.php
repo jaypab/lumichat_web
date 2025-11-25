@@ -103,6 +103,40 @@ class AppServiceProvider extends ServiceProvider
 
             $view->with('cslPendingCount', $pending);
         });
+
+        // Admin layout: high-risk chatbot sessions badge in sidebar
+        View::composer('layouts.admin', function ($view) {
+            $count = 0;
+
+            try {
+                // Resolve the actual table used by the ChatSession model
+                if (class_exists(ChatSession::class)) {
+                    $table = app(ChatSession::class)->getTable(); // e.g. chat_sessions or tbl_chat_sessions
+
+                    if (Schema::hasTable($table)) {
+                        $q = DB::table($table);
+
+                        if (Schema::hasColumn($table, 'risk_level')) {
+                            $q->whereIn('risk_level', ['high', 'high-risk', 'high_risk']);
+                        } elseif (Schema::hasColumn($table, 'risk')) {
+                            $q->whereIn('risk', ['high', 'high-risk', 'high_risk']);
+                        } else {
+                            // no risk column, nothing to count
+                            $q = null;
+                        }
+
+                        if ($q) {
+                            $count = (int) $q->count();
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                $count = 0; // safe default on any error
+            }
+
+            $view->with('adminHighRiskCount', $count);
+        });
+
         /* ================================================================= */
 
         /* --------------------- Activity log hooks ------------------------ */
