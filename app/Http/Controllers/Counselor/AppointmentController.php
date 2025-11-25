@@ -81,13 +81,13 @@ class AppointmentController extends Controller
         $hasCrCreated = Schema::hasColumn('tbl_appointments', 'cr_created_at');
 
         // ===== AUTO NO-SHOW SWEEP (for this counselor) =====
-        // Any pending/confirmed appointment whose slot + grace has fully passed
-        // (scheduled_at + STEP_MINUTES + NO_SHOW_GRACE_MIN <= now) becomes no_show.
-        $autoCutoff = $now->copy()->subMinutes(self::STEP_MINUTES + self::NO_SHOW_GRACE_MIN);
+        // Any pending/confirmed appointment whose slot has fully passed
+        // (scheduled_at + STEP_MINUTES <= now) becomes no_show.
+        $autoCutoff = $now->copy()->subMinutes(self::STEP_MINUTES);
 
         DB::table('tbl_appointments')
             ->where('counselor_id', $cid)
-            ->where('status', 'confirmed')
+            ->whereIn('status', ['pending', 'confirmed'])   // ✅ kasama na pending
             ->where('scheduled_at', '<=', $autoCutoff)
             ->update([
                 'status'     => 'no_show',
@@ -322,12 +322,12 @@ class AppointmentController extends Controller
             ->first();
 
         // ===== AUTO NO-SHOW (per appointment) =====
-        if ($row && strtolower((string)$row->status) === 'confirmed') {
+        if ($row && in_array(strtolower((string)$row->status), ['pending', 'confirmed'], true)) {
             $now   = now();
             $start = Carbon::parse($row->scheduled_at);
 
-            // After slot length + grace (STEP_MINUTES + NO_SHOW_GRACE_MIN) → auto no_show
-            if ($now->gte($start->copy()->addMinutes(self::STEP_MINUTES + self::NO_SHOW_GRACE_MIN))) {
+            // After full slot length (STEP_MINUTES) → auto no_show
+            if ($now->gte($start->copy()->addMinutes(self::STEP_MINUTES))) {
                 DB::table('tbl_appointments')
                     ->where('id', $row->id)
                     ->update([
