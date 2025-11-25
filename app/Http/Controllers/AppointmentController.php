@@ -10,6 +10,7 @@ use Carbon\Carbon;
 use App\Notifications\SimpleDatabaseNotification;
 use App\Models\User; 
 use App\Support\Notify;
+use Illuminate\Http\JsonResponse;
 
 // ⬇️ ADD THESE
 use App\Models\Appointment;
@@ -470,23 +471,22 @@ public function store(Request $request)
         $now = now();
 
         $query = DB::table('tbl_appointments as a')
-        ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
-        // ⬇️ pick latest counselor_change_request per appointment
-        ->leftJoin(DB::raw('
-            (SELECT appointment_id, MAX(id) AS last_id
-            FROM counselor_change_requests
-            GROUP BY appointment_id) last_cr
-        '), 'last_cr.appointment_id', '=', 'a.id')
-        ->leftJoin('counselor_change_requests as cr', 'cr.id', '=', 'last_cr.last_id')
-        ->select([
-            'a.id','a.student_id','a.counselor_id','a.scheduled_at','a.status',
-            'c.name as counselor_name','c.email as counselor_email','c.phone as counselor_phone',
-            'a.final_note','a.finalized_at',
-            // ⬇️ expose to the blade
-            DB::raw('cr.status as cr_status'),
-            DB::raw('cr.created_at as cr_created_at'),
-        ])
-        ->where('a.student_id', Auth::id());
+            ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
+            // ⬇️ pick latest counselor_change_request per appointment
+            ->leftJoin(DB::raw('
+                (SELECT appointment_id, MAX(id) AS last_id
+                FROM counselor_change_requests
+                GROUP BY appointment_id) last_cr
+            '), 'last_cr.appointment_id', '=', 'a.id')
+            ->leftJoin('counselor_change_requests as cr', 'cr.id', '=', 'last_cr.last_id')
+            ->select([
+                'a.id','a.student_id','a.counselor_id','a.scheduled_at','a.status',
+                'c.name as counselor_name','c.email as counselor_email','c.phone as counselor_phone',
+                'a.final_note','a.finalized_at',
+                DB::raw('cr.status as cr_status'),
+                DB::raw('cr.created_at as cr_created_at'),
+            ])
+            ->where('a.student_id', Auth::id());
 
         if ($status !== 'all') $query->where('a.status', $status);
 
@@ -502,7 +502,7 @@ public function store(Request $request)
         if ($q !== '') {
             $query->where(function($w) use ($q) {
                 $w->where('c.name', 'like', "%{$q}%")
-                  ->orWhereNull('c.id');
+                ->orWhereNull('c.id');
             });
         }
 
@@ -514,25 +514,62 @@ public function store(Request $request)
             $query->orderBy('a.scheduled_at', 'asc');
         } else {
             $query->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN 0 ELSE 1 END", [$now])
-                  ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN a.scheduled_at END ASC",  [$now])
-                  ->orderByRaw("CASE WHEN a.scheduled_at <  ? THEN a.scheduled_at END DESC", [$now])
-                  ->orderByRaw("CASE WHEN a.status = 'completed' THEN a.scheduled_at END DESC");
+                ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN a.scheduled_at END ASC",  [$now])
+                ->orderByRaw("CASE WHEN a.scheduled_at <  ? THEN a.scheduled_at END DESC", [$now])
+                ->orderByRaw("CASE WHEN a.status = 'completed' THEN a.scheduled_at END DESC");
         }
 
         $appointments = $query->paginate(10)->withQueryString();
 
+        // 🔹 NEW: latest updated_at for THIS student's appointments (for polling)
+        $lastUpdatedAt = DB::table('tbl_appointments')
+            ->where('student_id', Auth::id())
+            ->max('updated_at');
+
         $view = view('appointment.history', [
-            'appointments' => $appointments,
-            'status'       => $status,
-            'period'       => $period,
-            'q'            => $q,
+            'appointments'  => $appointments,
+            'status'        => $status,
+            'period'        => $period,
+            'q'             => $q,
+            'lastUpdatedAt' => $lastUpdatedAt,
         ]);
 
+        // keep your last_seen logic
         \App\Models\User::where('id', Auth::id())->update([
             'last_seen_appt_at' => now(),
         ]);
 
         return $view;
+    }
+
+    public function historyPoll(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $userId = Auth::id();
+        if (!$userId) {
+            return response()->json(['ok' => false, 'error' => 'unauthenticated'], 401);
+        }
+
+        $last = $request->query('last');
+
+        $latest = DB::table('tbl_appointments')
+            ->where('student_id', $userId)
+            ->max('updated_at');
+
+        if (!$latest) {
+            return response()->json([
+                'ok'           => true,
+                'has_changes'  => false,
+                'last_updated' => null,
+            ]);
+        }
+
+        $latestStr = (string) $latest;
+
+        return response()->json([
+            'ok'           => true,
+            'has_changes'  => $last && $latestStr !== $last,
+            'last_updated' => $latestStr,
+        ]);
     }
 
     public function unseenCount(Request $request)

@@ -121,6 +121,10 @@ Route::middleware('auth' , 'tos')->group(function () {
     Route::post('/appointments/{id}/request-change', [AppointmentController::class, 'requestCounselorChange'])
     ->name('appointment.request_change');
 
+     // 🔹 NEW – poll for live updates
+    Route::get('/appointment/history/poll', [AppointmentController::class, 'historyPoll'])
+        ->name('appointment.history.poll');
+
     // Actions / APIs
     Route::post('/appointment', [AppointmentController::class, 'store'])->name('appointment.store');
     Route::get('/appointment/slots', [AppointmentController::class, 'slots'])->name('appointment.slots');
