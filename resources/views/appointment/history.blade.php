@@ -302,51 +302,14 @@
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-  // ===== Real-time polling for admin assignment / status changes =====
-  const root = document.getElementById('student-appt-root');
-  let lastUpdated = root ? (root.getAttribute('data-last-updated') || '') : '';
-
-  async function checkStudentAppointments() {
-    if (!root) return;
-
-    try {
-      const url = "{{ route('appointment.history.poll') }}" +
-                  '?last=' + encodeURIComponent(lastUpdated || '');
-
-      const res = await fetch(url, {
-        headers: { 'Accept': 'application/json' }
-      });
-
-      if (!res.ok) return;
-
-      const data = await res.json();
-      if (!data.ok) return;
-
-      if (data.last_updated) {
-        lastUpdated = data.last_updated;
-      }
-
-      if (data.has_changes) {
-        // Admin changed something for this student's appointments
-        window.location.reload();
-      }
-    } catch (err) {
-      console.error('Student appointment history poll failed:', err);
-    }
-  }
-
-  // Check every 15 seconds (adjust if you want it faster/slower)
-  setInterval(checkStudentAppointments, 15000);
-
-  // ===== Existing SweetAlert + filters + debounce =====
   const successMsg = @json(session('success') ?? session('status'));
   if (successMsg) {
     Swal.fire({
-      icon: 'success',
-      title: 'Success',
+      icon:'success',
+      title:'Success',
       text: successMsg,
-      timer: 2200,
-      showConfirmButton: false
+      timer:2200,
+      showConfirmButton:false
     });
   }
 
@@ -364,7 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
     Swal.fire({ icon:'error', title:'Unable to proceed', html });
   }
 
-  // Debounce search
+  // debounce search
   const q = document.getElementById('student-appt-q');
   let t = null;
   if (q && f) {
@@ -373,8 +336,33 @@ document.addEventListener('DOMContentLoaded', () => {
       t = setTimeout(() => f.submit(), 300);
     });
   }
+
+  // ===========================
+  // 🔔 AUTO-REFRESH LOGIC
+  // ===========================
+  const pollUrl = @json(route('appointment.unseen'));
+
+  async function pollUpdates() {
+    try {
+      const res = await fetch(pollUrl, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      if (!res.ok) return;
+
+      const data = await res.json();
+      // kung may kahit 1 updated appointment → reload page
+      if (data.count && data.count > 0) {
+        window.location.reload();
+      }
+    } catch (e) {
+      // tahimik lang pag error, next poll na lang ulit
+      console.warn('pollUpdates failed', e);
+    }
+  }
+
+  // check every 10 seconds (pwede mo higpitan sa 5s kung gusto mo mas “live”)
+  setInterval(pollUpdates, 5000);
 });
 </script>
 @endpush
 @endsection
-
