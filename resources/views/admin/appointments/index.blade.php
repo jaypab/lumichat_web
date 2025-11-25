@@ -32,7 +32,9 @@
 @endphp
 
 @section('content')
-<div class="max-w-7xl mx-auto p-6 space-y-6">
+<div id="appointments-root"
+     class="max-w-7xl mx-auto p-6 space-y-6"
+     data-last-updated="{{ $lastUpdatedAt ?? '' }}">
 
   {{-- ========= Header band (gradient) ========= --}}
   @php $totalAppointments = $appointments->total(); @endphp
@@ -380,44 +382,81 @@
     const statusSelect = document.querySelector('select[name="status"]');
     const periodSelect = document.querySelector('select[name="period"]');
 
-    if (!form) return;
-
-    // Helper: clear paginator page then submit
-    function submitWithResetPage() {
-      let pageInput = form.querySelector('input[name="page"]');
-      if (!pageInput) {
-        pageInput = document.createElement('input');
-        pageInput.type = 'hidden';
-        pageInput.name = 'page';
-        form.appendChild(pageInput);
-      }
-      pageInput.value = ''; // back to first page
-      form.submit();
-    }
-
-    // SEARCH: submit only when user presses Enter (walang auto-refresh habang nagta-type)
-    if (qInput) {
-      qInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          submitWithResetPage();
+    if (form) {
+      // Helper: clear paginator page then submit
+      function submitWithResetPage() {
+        let pageInput = form.querySelector('input[name="page"]');
+        if (!pageInput) {
+          pageInput = document.createElement('input');
+          pageInput.type = 'hidden';
+          pageInput.name = 'page';
+          form.appendChild(pageInput);
         }
-      });
+        pageInput.value = ''; // back to first page
+        form.submit();
+      }
+
+      // SEARCH: submit only when user presses Enter
+      if (qInput) {
+        qInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            submitWithResetPage();
+          }
+        });
+      }
+
+      // STATUS: auto-submit on change
+      if (statusSelect) {
+        statusSelect.addEventListener('change', () => {
+          submitWithResetPage();
+        });
+      }
+
+      // DATE RANGE: auto-submit on change
+      if (periodSelect) {
+        periodSelect.addEventListener('change', () => {
+          submitWithResetPage();
+        });
+      }
     }
 
-    // STATUS: auto-submit on change (focus stays on dropdown)
-    if (statusSelect) {
-      statusSelect.addEventListener('change', () => {
-        submitWithResetPage();
-      });
+    // ========== AUTO UPDATE (POLLING) ==========
+    const root = document.getElementById('appointments-root');
+    if (!root) return;
+
+    let lastUpdated = root.getAttribute('data-last-updated') || '';
+
+    async function checkForNewAppointments() {
+      try {
+        const url = "{{ route('admin.appointments.poll') }}" + '?last=' + encodeURIComponent(lastUpdated);
+        const res = await fetch(url, {
+          headers: {
+            'Accept': 'application/json'
+          }
+        });
+
+        if (!res.ok) return; // silent fail
+
+        const data = await res.json();
+        if (!data.ok) return;
+
+        if (data.last_updated) {
+          // update our known timestamp
+          lastUpdated = data.last_updated;
+        }
+
+        if (data.has_changes) {
+          // simplest: reload the page so filters + pagination stay consistent
+          window.location.reload();
+        }
+      } catch (err) {
+        console.error('Appointment poll failed:', err);
+      }
     }
 
-    // DATE RANGE: auto-submit on change (focus stays on dropdown)
-    if (periodSelect) {
-      periodSelect.addEventListener('change', () => {
-        submitWithResetPage();
-      });
-    }
+    // Check every 15 seconds (adjust if you want)
+    setInterval(checkForNewAppointments, 15000);
   });
 
   function printAppointments() {

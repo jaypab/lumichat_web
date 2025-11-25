@@ -85,7 +85,6 @@ class AppointmentController extends Controller
         $now   = now();
         $table = (new \App\Models\Appointment)->getTable(); // normally "tbl_appointments"
 
-        // 🚫 NO alias here, just the normal table
         $query = \App\Models\Appointment::query()
             ->with(['student','counselor'])
             ->select($table.'.*')
@@ -104,11 +103,9 @@ class AppointmentController extends Controller
 
         // ---- status filter ----
         if ($status !== self::STATUS_ALL && $status !== 'reassigned') {
-            // normal statuses: pending / confirmed / completed / canceled / no_show
             $query->where($table.'.status', $status);
         }
 
-        // special: "Re-assigned only" → appointments that have history rows
         if ($status === 'reassigned' && \Schema::hasTable('tbl_appointment_counselor_history')) {
             $query->whereExists(function ($sub) use ($table) {
                 $sub->from('tbl_appointment_counselor_history as h')
@@ -122,35 +119,30 @@ class AppointmentController extends Controller
             case 'today':
                 $query->whereDate($table.'.scheduled_at', $now->toDateString());
                 break;
-
             case 'upcoming':
                 $query->where($table.'.scheduled_at', '>=', $now);
                 break;
-
             case 'this_week':
                 $query->whereBetween($table.'.scheduled_at', [
                     $now->copy()->startOfWeek(),
                     $now->copy()->endOfWeek(),
                 ]);
                 break;
-
             case 'this_month':
                 $query->whereBetween($table.'.scheduled_at', [
                     $now->copy()->startOfMonth(),
                     $now->copy()->endOfMonth(),
                 ]);
                 break;
-
             case 'past':
                 $query->where($table.'.scheduled_at', '<', $now);
                 break;
-
             default:
-                // 'all' → no date filter
+                // 'all'
                 break;
         }
 
-        // ---- search by student or counselor name ----
+        // ---- search by student / counselor ----
         if ($q !== '') {
             $query->where(function ($w) use ($q) {
                 $w->whereHas('student', function ($s) use ($q) {
@@ -161,7 +153,7 @@ class AppointmentController extends Controller
             });
         }
 
-        // ---- ordering: completed at bottom + date-aware ordering ----
+        // ---- ordering ----
         $query->orderByRaw("CASE WHEN {$table}.status = 'completed' THEN 1 ELSE 0 END ASC");
 
         if ($period === 'past') {
@@ -201,14 +193,19 @@ class AppointmentController extends Controller
             }
         }
 
-        return view('admin.appointments.index', compact(
-            'appointments',
-            'status',
-            'period',
-            'q',
-            'historyByAppt'
-        ));
+        // 🔹 latest updated_at for polling
+        $lastUpdatedAt = \DB::table($table)->max('updated_at');
+
+        return view('admin.appointments.index', [
+            'appointments'   => $appointments,
+            'status'         => $status,
+            'period'         => $period,
+            'q'              => $q,
+            'historyByAppt'  => $historyByAppt,
+            'lastUpdatedAt'  => $lastUpdatedAt,
+        ]);
     }
+
 
     public function show(int $id): \Illuminate\View\View
     {
@@ -1407,5 +1404,30 @@ public function updateStatus(Request $r, int $id): RedirectResponse
                 $adminUrl
             );
         }
+    }
+
+    public function poll(Request $request): \Illuminate\Http\JsonResponse
+    {
+        // last value the frontend knows
+        $last = $request->query('last');
+
+        // global latest update in tbl_appointments
+        $latest = \DB::table('tbl_appointments')->max('updated_at');
+
+        if (!$latest) {
+            return response()->json([
+                'ok'           => true,
+                'has_changes'  => false,
+                'last_updated' => null,
+            ]);
+        }
+
+        $latestStr = (string) $latest;
+
+        return response()->json([
+            'ok'           => true,
+            'has_changes'  => $last && $latestStr !== $last,  // only true if something changed
+            'last_updated' => $latestStr,
+        ]);
     }
 }

@@ -81,6 +81,7 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
 
     // APPOINTMENTS
     Route::get('/appointments', [AdminAppointmentController::class, 'index'])->name('appointments.index');
+    Route::get('/appointments/poll', [AdminAppointmentController::class, 'poll'])->name('appointments.poll');
     Route::get('/appointments/{id}', [AdminAppointmentController::class, 'show'])->whereNumber('id')->name('appointments.show');
     Route::get('/appointments/export/pdf', [AdminAppointmentController::class, 'exportPdf'])->name('appointments.export.pdf');
     Route::get('/appointments/{id}/export/pdf', [AdminAppointmentController::class, 'exportShowPdf'])->whereNumber('id')->name('appointments.export.show.pdf');
