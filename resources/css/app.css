@@ -344,6 +344,93 @@ html[data-app="student"].compact .h-11{ height:2.5rem !important; }
 /* =========================================================
    14) FORM INPUT POLISH
    ========================================================= */
+@layer components {
+  .lumi-logout-btn {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    width: 100%;
+    padding: .9rem 1.4rem;
+    border-radius: 999px;
+
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,120,120,0.45);
+    backdrop-filter: blur(6px);
+
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.9rem;
+    letter-spacing: .01em;
+
+    transition:
+      border-color .18s ease,
+      box-shadow .18s ease,
+      background .18s ease,
+      transform .12s ease;
+  }
+
+  /* maliit na linya baseline */
+  .lumi-logout-btn::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    border: 1px solid rgba(255,120,120,0.25);
+    pointer-events: none;
+    transition:
+      border-color .2s ease,
+      box-shadow .2s ease;
+  }
+
+  /* hover glow */
+  .lumi-logout-btn:hover {
+    background: rgba(255,120,120,0.14);
+    border-color: rgba(255,130,190,0.75);
+    box-shadow:
+      0 0 14px rgba(255,110,150,0.55),
+      0 0 30px rgba(255,130,160,0.35),
+      inset 0 0 10px rgba(255,160,180,0.25);
+    transform: translateY(-1px);
+  }
+
+  .lumi-logout-btn:hover::before {
+    border-color: rgba(255,160,210,0.95);
+    box-shadow: 0 0 18px rgba(255,150,200,.75);
+  }
+
+  /* click press */
+  .lumi-logout-btn:active {
+    transform: translateY(1px) scale(.985);
+    box-shadow: 0 0 8px rgba(255,110,150,.45);
+  }
+
+  .lumi-logout-btn img {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+  }
+}
+
+    /* === Premium logout modal === */
+.lumi-logout-icon{
+  width:80px;
+  height:80px;
+  margin:0 auto 10px;
+  border-radius:999px;
+  display:grid;
+  place-items:center;
+  background: linear-gradient(135deg, #fb7185, #f97316);
+  border: 2px solid rgba(248,113,113,.7);
+  box-shadow: none;
+}
+
+.lumi-logout-icon svg{
+  width:40px;
+  height:40px;
+  color:#fff;
+}
+
 @layer components{
   .select-ui{
     @apply h-11 w-full rounded-xl border border-gray-300 bg-white pl-3 pr-10 text-[15px] text-gray-900 shadow-sm transition

@@ -316,9 +316,9 @@
       </nav>
 
       <div class="px-3 py-4 border-t border-white/10 mt-auto">
-        <form method="POST" action="{{ route('logout') }}">
+        <form method="POST" action="{{ route('logout') }}" data-lumi-logout="1">
           @csrf
-          <button type="submit" class="nav-pill nav-pill--danger w-full">
+          <button type="submit" class="lumi-logout-btn">
             <img src="{{ asset('images/icons/logout.png') }}" alt="" class="sidebar-icon logout-icon">
             <span class="font-medium">Logout</span>
           </button>
@@ -416,7 +416,7 @@
               <a href="{{ route('settings.index') }}" class="dropdown-item">Settings</a>
             @endif
             <div class="dropdown-sep"></div>
-            <form method="POST" action="{{ route('logout') }}">
+            <form method="POST" action="{{ route('logout') }}" data-lumi-logout="1">
               @csrf
               <button type="submit" class="dropdown-item text-rose-600">Logout</button>
             </form>
@@ -563,6 +563,47 @@
           }
         });
       };
+    })();
+
+    // Premium logout confirmation (sidebar + user menu)
+    (function () {
+      const forms = document.querySelectorAll('form[data-lumi-logout="1"]');
+      if (!forms.length) return;
+
+      forms.forEach(form => {
+        form.addEventListener('submit', function (e) {
+          e.preventDefault();
+
+          if (typeof Swal === 'undefined') {
+            form.submit();
+            return;
+          }
+
+          Swal.fire({
+            title: 'Sign out of LumiCHAT?',
+            html: `
+              <p class="mt-2 text-[14px] text-slate-600 dark:text-slate-300">
+                You’ll be logged out from this device. Your conversations and appointments will stay saved in your account.
+              </p>
+            `,
+            focusConfirm: false,
+            showCancelButton: true,
+            showCloseButton: true,
+            confirmButtonText: 'Logout',
+            cancelButtonText: 'Stay signed in',
+            reverseButtons: true,
+            customClass: {
+              popup: 'swal2-logout-popup',
+              confirmButton: 'swal2-logout-confirm',
+              cancelButton: 'swal2-logout-cancel'
+            }
+          }).then(result => {
+            if (result.isConfirmed) {
+              form.submit();
+            }
+          });
+        });
+      });
     })();
 
     // Compact toast helper

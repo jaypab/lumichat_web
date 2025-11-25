@@ -7,7 +7,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ trim($__env->yieldContent('title')) ?: 'Counselor • Dashboard' }}</title>
 
-  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  {{-- SweetAlert2 (aligned with student/admin) --}}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11.12.4/dist/sweetalert2.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.12.4/dist/sweetalert2.all.min.js" defer></script>
+
   @vite(['resources/css/app.css','resources/js/app.js'])
   @include('layouts.partials.favicons')
   @include('layouts.partials.tour')
@@ -29,16 +32,14 @@
     /* Backdrop: dark tint + blur */
     .modal-zp .modal-backdrop{
       position: absolute; inset: 0;
-      background: rgba(2, 6, 23, 0.60); /* slate-950 with alpha */
+      background: rgba(2, 6, 23, 0.60);
       backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px); /* Safari */
+      -webkit-backdrop-filter: blur(6px);
       z-index: var(--z-backdrop);
     }
 
-    /* Panel should stack above the backdrop */
     .modal-zp .modal-panel{ position: relative; z-index: calc(var(--z-modal) + 1); }
 
-    /* Optional: stronger blur for “glass” modals */
     .modal-zp .modal-backdrop--lg{
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
@@ -129,7 +130,7 @@
       border-radius:9999px; border:2px solid rgba(255,255,255,.25); background-clip:padding-box;
     }
 
-    /* ------- Tooltips for collapsed rail (fixes duplicate labels) ------- */
+    /* ------- Tooltips for collapsed rail ------- */
     .nav-item .rail-tip{
       position:absolute; inset:auto auto 50% 100%;
       transform: translateY(50%) translateX(8px);
@@ -143,21 +144,102 @@
       .csl-collapsed .nav-item:hover .rail-tip{
         opacity:1; transform: translateY(50%) translateX(12px);
       }
-      /* Red color for the High-Risk icon */
       .nav-item .danger { color:#ef4444; }
       .nav-item:hover .danger { color:#f87171; }
       .nav-item.is-active .danger { color:#fecaca; }
     }
 
-    /* Prevent horizontal scroll inside rail */
     #cslSidebar{ overflow-x:clip; }
   </style>
 
   {{-- === Notification popover z-index fix (same as student/admin) === --}}
   <style id="nb-popover-z">
-    /* High stacking context for the bell and its popover */
     [data-nb-root]{ position:relative; z-index:2147483641; }
     .nb-portal, [data-nb-portal], #nb-portal{ position:absolute; z-index:2147483642 !important; }
+  </style>
+
+  {{-- === Global SweetAlert theme (same as student/admin) === --}}
+  <style id="lumi-swal-theme">
+    .swal2-container.swal2-backdrop-show{
+      background:rgba(15,23,42,.55)!important;
+      backdrop-filter:blur(4px) saturate(110%);
+    }
+    .swal2-container.swal2-top-start,
+    .swal2-container.swal2-top,
+    .swal2-container.swal2-top-end,
+    .swal2-container.swal2-bottom-start,
+    .swal2-container.swal2-bottom,
+    .swal2-container.swal2-bottom-end{
+      background:transparent!important;
+      backdrop-filter:none!important;
+      pointer-events:none!important;
+      z-index:2147483000!important;
+    }
+    .swal2-container .swal2-popup{ pointer-events:auto!important; }
+    .swal2-container.swal2-top-end{
+      padding-top:max(12px, env(safe-area-inset-top))!important;
+      padding-right:max(12px, env(safe-area-inset-right))!important;
+      padding-bottom:12px!important;
+      padding-left:12px!important;
+    }
+
+    .swal2-popup:not(.swal2-toast){
+      background:#fff!important;
+      border-radius:22px!important;
+      padding:28px 32px!important;
+      box-shadow:
+        0 40px 80px -20px rgba(2,6,23,.35),
+        0 0 0 1px rgba(2,6,23,.05),
+        0 30px 60px rgba(109,40,217,.08)!important;
+      max-width:680px;
+    }
+    .dark .swal2-popup:not(.swal2-toast){
+      background:rgba(17,24,39,.96)!important;
+      color:#e5e7eb!important;
+    }
+    .swal2-popup:not(.swal2-toast) .swal2-title{
+      margin:12px 0 0!important;
+      font-weight:700;
+      font-size:26px!important;
+      letter-spacing:.2px;
+      text-align:center;
+      color:#0f172a;
+    }
+    .dark .swal2-popup:not(.swal2-toast) .swal2-title{ color:#f8fafc; }
+    .swal2-popup:not(.swal2-toast) .swal2-html-container{
+      margin-top:6px!important;
+      font-size:15px!important;
+      color:#475569!important;
+    }
+    .dark .swal2-popup:not(.swal2-toast) .swal2-html-container{
+      color:#cbd5e1!important;
+    }
+    .swal2-popup:not(.swal2-toast) .swal2-actions{
+      margin-top:22px!important;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .swal2-styled{
+      border-radius:14px!important;
+      padding:10px 18px!important;
+      font-weight:700!important;
+      box-shadow:none!important;
+    }
+    .swal2-confirm{
+      background:linear-gradient(90deg,#7c3aed,#6366f1)!important;
+      color:#fff!important;
+      box-shadow:0 10px 24px rgba(99,102,241,.35)!important;
+    }
+    .swal2-cancel,.swal2-deny{
+      background:#fff!important;
+      color:#334155!important;
+      border:1px solid #e5e7eb!important;
+    }
+    .dark .swal2-cancel,.dark .swal2-deny{
+      background:#1f2937!important;
+      color:#e5e7eb!important;
+      border-color:#334155!important;
+    }
   </style>
 </head>
 
@@ -218,10 +300,11 @@
     </div>
 
     <div class="px-3 py-3 border-t border-white/15 hide-when-collapsed">
-      <form method="POST" action="{{ route('logout') }}">
+      <form method="POST" action="{{ route('logout') }}" data-lumi-logout="1">
         @csrf
-        <button type="submit" class="w-full text-left px-3 py-2.5 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white font-medium">
-          Logout
+        <button type="submit" class="lumi-logout-btn">
+          <img src="{{ asset('images/icons/logout.png') }}" alt="" class="sidebar-icon logout-icon">
+          <span class="font-medium">Logout</span>
         </button>
       </form>
     </div>
@@ -245,7 +328,6 @@
         <h1 class="text-lg font-semibold">@yield('page_title','Dashboard')</h1>
       </div>
 
-      {{-- define display name + initials BEFORE using them --}}
       @php
         $u = auth()->user();
         $displayName = trim((string)($u->name ?? 'Counselor'));
@@ -258,19 +340,17 @@
 
       {{-- RIGHT cluster: bell + user chip --}}
       <div class="flex items-center gap-3">
-        {{-- 🔔 Notification bell (wrapped with high z-index root) --}}
         @auth
           <div data-nb-root class="relative z-[2147483641]">
-          <x-notification-bell
-            :indexRoute="route('counselor.notifications.index')"
-            :feedRoute="route('counselor.notifications.feed')"
-            :markRoute="route('counselor.notifications.mark', ['id' => ':id'])"
-            :markAllRoute="route('counselor.notifications.mark_all')"
-          />
+            <x-notification-bell
+              :indexRoute="route('counselor.notifications.index')"
+              :feedRoute="route('counselor.notifications.feed')"
+              :markRoute="route('counselor.notifications.mark', ['id' => ':id'])"
+              :markAllRoute="route('counselor.notifications.mark_all')"
+            />
           </div>
         @endauth
 
-        {{-- User chip + menu --}}
         <div class="relative">
           <button id="cslUserBtn"
             class="inline-flex items-center gap-2 h-10 px-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
@@ -293,7 +373,7 @@
               <a href="{{ route('settings.index') }}" class="block px-3 py-2.5 text-sm hover:bg-slate-50">Settings</a>
             @endif
             <div class="h-px bg-slate-200 my-1"></div>
-            <form method="POST" action="{{ route('logout') }}">
+            <form method="POST" action="{{ route('logout') }}" data-lumi-logout="1">
               @csrf
               <button type="submit" class="w-full text-left px-3 py-2.5 text-sm text-rose-600 hover:bg-rose-50">Logout</button>
             </form>
@@ -453,5 +533,57 @@
     })();
   </script>
 @endif
+
+{{-- === Premium logout confirmation for counselor (same as student/admin) === --}}
+<script>
+  (function () {
+    const forms = document.querySelectorAll('form[data-lumi-logout="1"]');
+    if (!forms.length) return;
+
+    forms.forEach(form => {
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+
+        if (typeof Swal === 'undefined') {
+          form.submit();
+          return;
+        }
+
+        const iconHtml = `
+              <path d="M12 7v7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+              <circle cx="12" cy="16.5" r="1.2" fill="currentColor"></circle>
+            </svg>
+          </div>
+        `;
+
+        Swal.fire({
+          title: 'Sign out of LumiCHAT?',
+          html: `
+            ${iconHtml}
+            <p class="mt-2 text-[14px] text-slate-600 dark:text-slate-300">
+              You’ll be logged out from this device. Your conversations and appointments will stay saved in your account.
+            </p>
+          `,
+          focusConfirm: false,
+          showCancelButton: true,
+          showCloseButton: true,
+          confirmButtonText: 'Logout',
+          cancelButtonText: 'Stay signed in',
+          reverseButtons: true,
+          customClass: {
+            popup: 'swal2-logout-popup',
+            confirmButton: 'swal2-logout-confirm',
+            cancelButton: 'swal2-logout-cancel'
+          }
+        }).then(result => {
+          if (result.isConfirmed) {
+            form.submit();
+          }
+        });
+      });
+    });
+  })();
+</script>
+
 </body>
 </html>
