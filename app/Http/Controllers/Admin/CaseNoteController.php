@@ -9,6 +9,24 @@ use Illuminate\Support\Facades\DB;
 class CaseNoteController extends Controller
 {
     /**
+     * Simple helper: check if admin re-auth window is still valid.
+     * Reuses the same session key used by ChatbotSessionController.
+     */
+    private function reauthOkay(): bool
+    {
+        $until = session('admin.reauth_until');
+        if (!$until) {
+            return false;
+        }
+
+        try {
+            return now()->lt(\Carbon\Carbon::parse($until));
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
      * GET /admin/case-notes
      */
     public function index(Request $request)
@@ -40,6 +58,13 @@ class CaseNoteController extends Controller
      */
     public function show(int $id)
     {
+        // 🔒 Require second verification (same behavior as chatbot sessions)
+        if (!$this->reauthOkay()) {
+            return view('admin.case-notes.show_gate', [
+                'noteId' => $id,
+            ]);
+        }
+
         $note = DB::table('tbl_case_notes as n')
             ->leftJoin('tbl_counselors as c', 'c.id', '=', 'n.counselor_id')
             ->leftJoin('tbl_students   as s', 's.id', '=', 'n.student_id')
@@ -97,6 +122,12 @@ class CaseNoteController extends Controller
      */
     public function exportOne(int $id)
     {
+        // Optional: also enforce re-auth for direct PDF access
+        if (!$this->reauthOkay()) {
+            // Just block with 403 so they can't bypass the gate via direct link
+            abort(403, 'Second verification required to export this case note.');
+        }
+
         $note = DB::table('tbl_case_notes as n')
             ->leftJoin('tbl_counselors as c', 'c.id', '=', 'n.counselor_id')
             ->leftJoin('tbl_students   as s', 's.id', '=', 'n.student_id')
