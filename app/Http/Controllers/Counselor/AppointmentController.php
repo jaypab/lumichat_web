@@ -1147,33 +1147,31 @@ class AppointmentController extends Controller
         }
         return $insideAvailable;
     }
-    
-    /** Safe plaintext email sender (logs success + failures, never throws). */
-    private function sendPlainEmail(?string $to, string $subject, string $body): void
-    {
-        if (!$to) {
-            return;
-        }
-
-        try {
-            Mail::raw($body, function ($m) use ($to, $subject) {
-                $m->to($to)->subject($subject);
-            });
-
-            // ✅ success log
-            \Log::info('Mail sent OK', [
-                'to'      => $to,
-                'subject' => $subject,
-                'from'    => 'Counselor\\AppointmentController',
-            ]);
-        } catch (\Throwable $e) {
-            \Log::warning('Mail send failed', [
-                'to'      => $to,
-                'subject' => $subject,
-                'from'    => 'Counselor\\AppointmentController',
-                'error'   => $e->getMessage(),
-            ]);
-        }
+    /**
+ * Simple plain-text email helper for counselor actions.
+ */
+private function sendPlainEmail(string $to, string $subject, string $body): void
+{
+    // If mail is not configured, silently skip
+    if (!config('mail.default')) {
+        \Log::info('Mail disabled / not configured, skipping sendPlainEmail.', [
+            'to'      => $to,
+            'subject' => $subject,
+        ]);
+        return;
     }
+
+    try {
+        Mail::raw($body, function ($m) use ($to, $subject) {
+            $m->to($to)->subject($subject);
+        });
+    } catch (\Throwable $e) {
+        \Log::warning('sendPlainEmail failed in Counselor\\AppointmentController', [
+            'to'      => $to,
+            'subject' => $subject,
+            'error'   => $e->getMessage(),
+        ]);
+    }
+}
 
 }

@@ -34,6 +34,13 @@ class AppointmentAssignedStudent extends Mailable
     public function build()
     {
         return $this->subject('LumiCHAT — Appointment Approved')
-            ->view('emails.appointments.assigned-student');
+            ->view('emails.appointments.assigned-student')
+            ->with([
+                'appointmentId' => $this->appointmentId,
+                'studentName'   => $this->studentName,
+                'counselorName' => $this->counselorName,
+                'scheduledAt'   => $this->scheduledAt,
+                'whenNice'      => $this->whenNice,
+            ]);
     }
 }
