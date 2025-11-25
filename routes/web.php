@@ -1,7 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades.Http;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Auth; // ✅ needed for Auth::check()
 
 use App\Http\Controllers\ChatController;
