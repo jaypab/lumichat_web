@@ -95,9 +95,10 @@
 
         <div class="mt-3 flex flex-wrap items-center gap-2">
           {{-- Session code pill --}}
-          <span class="inline-flex.items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm ring-1 ring-white/20">
+          <span class="inline-flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm ring-1 ring-white/20">
             <svg class="h-4 w-4 opacity-90" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <rect x="8" y="8" width="10" height="12" rx="2"></rect><rect x="6" y="4" width="10" height="12" rx="2" opacity=".8"></rect>
+              <rect x="8" y="8" width="10" height="12" rx="2"></rect>
+              <rect x="6" y="4" width="10" height="12" rx="2" opacity=".8"></rect>
             </svg>
             <strong class="font-semibold">{{ $code }}</strong>
           </span>
