@@ -999,16 +999,17 @@ public function store(Request $request)
         ];
         $v = $validate[$primary] ?? "Thank you for trusting me with this";
 
-        switch ($stage) {
-            case 1:
-                return "{$v}{$mirror}, {USER_FIRST}. I’m really glad you told me. You don’t have to hold anything back here. If you feel okay to share, what’s been weighing on you the most right now?";
+       switch ($stage) {
+    case 1:
+        return "{$v}{$mirror}, {USER_FIRST}. I’m really glad you told me. You don’t have to hold anything back here. If you feel okay to share, what’s been weighing on you the most right now?";
 
-            case 2:
-                return "I’m here with you, no rush at all. When you’re ready, could you tell me what was happening before these feelings started? Even a little detail is okay.";
+    case 2:
+        return "I’m here with you, no rush at all. When you’re ready, could you tell me what was happening before these feelings started? Even a little detail is okay.";
 
-            default:
-                return "Thank you for opening up, {USER_FIRST}. We can stay with what you’re feeling, or—only if you want—we can try a small next step. Would you rather keep talking, take a moment to slow your breathing together, or think of one small thing you wish felt a bit better this week?";
-        }
+    default:
+        return "Thank you for opening up, {USER_FIRST}. I want to understand this the way *you* feel it. If you had to put it into your own words, how would you describe what you’re feeling right now? It’s also okay if it feels mixed or hard to name—we can figure it out together.";
+}
+
     }
 
     /** Heuristic: should we bypass vent window and go straight to Rasa? */
@@ -1251,8 +1252,7 @@ private function hasAnyWordExact(string $text, array $terms): bool
                 'broken','brokenhearted','hurt inside',
                 'depressed','depressd','depresed','deprssd','deprsd',
                 'empty inside','numb inside','numb',
-                // disappointment often feels like sadness
-                'disappoint','disappointed','dissapointed','dissappointed','disapointed',
+               
             ],
 
             'disappointed' => [
