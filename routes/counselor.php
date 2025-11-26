@@ -5,6 +5,7 @@ use App\Http\Controllers\Counselor\CounselorDashboardController;
 use App\Http\Controllers\Counselor\CounselorAvailabilityController;
 use App\Http\Controllers\Counselor\AppointmentController as CounselorAppointmentController;
 use App\Http\Controllers\Counselor\CounselorNotificationController;
+use App\Http\Controllers\Counselor\WalkInController;
 
 Route::middleware(['auth','counselor'])
     ->prefix('counselor')
@@ -38,6 +39,12 @@ Route::middleware(['auth','counselor'])
         Route::get('/appointments/{appointment}/follow-up/slots', [CounselorAppointmentController::class,'followUpSlots'])->whereNumber('appointment')->name('appointments.follow.slots');
 
         // Appointments
+        Route::get('/walk-ins/create', [WalkInController::class, 'create'])
+            ->name('walkins.create');
+
+        Route::post('/walk-ins', [WalkInController::class, 'store'])
+            ->name('walkins.store');
+
         Route::get('/appointments',                 [CounselorAppointmentController::class,'index'])->name('appointments.index');
         Route::get('/appointments/{id}',            [CounselorAppointmentController::class,'show'])->whereNumber('id')->name('appointments.show');
         Route::patch('/appointments/{id}/status',   [CounselorAppointmentController::class,'status'])->whereNumber('id')->name('appointments.status');

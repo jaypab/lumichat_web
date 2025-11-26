@@ -297,6 +297,18 @@
         <span class="rail-tip">Appointments</span>
       </a>
 
+      {{-- Walk-in Session --}}
+      <a href="{{ route('counselor.walkins.create') }}"
+         aria-current="{{ request()->routeIs('counselor.walkins.*') ? 'page' : 'false' }}"
+         class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
+                {{ request()->routeIs('counselor.walkins.*') ? 'is-active' : '' }}">
+        <span class="inline-flex w-10 h-10 items-center justify-center">
+          <img src="{{ asset('images/icons/appointment.png') }}" alt="">
+        </span>
+        <span class="nav-label font-medium">Walk-in Session</span>
+        <span class="rail-tip">Walk-in Session</span>
+      </a>
+
     </div>
 
     <div class="px-3 py-3 border-t border-white/15 hide-when-collapsed">

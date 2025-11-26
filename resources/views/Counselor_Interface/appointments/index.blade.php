@@ -37,6 +37,9 @@
     'canceled'  => ['bg'=>'bg-rose-50','text'=>'text-rose-700','ring'=>'ring-rose-200','dot'=>'bg-rose-500','label'=>'Canceled'],
     'no_show'   => ['bg'=>'bg-rose-50','text'=>'text-rose-700','ring'=>'ring-rose-200','dot'=>'bg-rose-500','label'=>'No Show'],
   ];
+
+  // 🔹 current time reused for “ongoing walk-in” detection
+  $now = Carbon::now();
 @endphp
 
 @section('content')
@@ -121,10 +124,40 @@
               $dt       = Carbon::parse($row->scheduled_at);
               $bookedAt = $row->booked_at ? Carbon::parse($row->booked_at) : null;
 
-              $s      = $statusMap[$row->status] ?? ['bg'=>'bg-slate-50','text'=>'text-slate-700','ring'=>'ring-slate-200','dot'=>'bg-slate-400','label'=>ucfirst($row->status)];
+              // --- detect if this is an active walk-in session ---
+              $effectiveStatus = $row->status;
+
+              // some queries may not select "type" or "end_at", so guard them
+              $hasType  = property_exists($row, 'type');
+              $hasEndAt = property_exists($row, 'end_at');
+
+              $isWalkIn = $hasType && $row->type === 'walk-in';
+
+              // if end_at is missing or null, assume 1-hour window from scheduled_at
+              if ($hasEndAt && !empty($row->end_at)) {
+                  $endAt = Carbon::parse($row->end_at);
+              } else {
+                  $endAt = $dt->copy()->addMinutes(60);
+              }
+
+              if (
+                  $isWalkIn &&
+                  $row->status === 'completed' &&   // DB marked completed
+                  $now->between($dt, $endAt)        // but time window is still ongoing
+              ) {
+                  $effectiveStatus = 'ongoing';
+              }
+
+              // use effective status for the chip
+              $s      = $statusMap[$effectiveStatus] ?? [
+                  'bg'=>'bg-slate-50','text'=>'text-slate-700',
+                  'ring'=>'ring-slate-200','dot'=>'bg-slate-400',
+                  'label'=>ucfirst($effectiveStatus),
+              ];
               $chipCl = "{$s['bg']} {$s['text']} ring-1 {$s['ring']}";
               $dotCl  = $s['dot'];
               $label  = $s['label'];
+
               $crPending = isset($row->cr_status) && $row->cr_status === 'requested';
               $crTime    = !empty($row->cr_created_at)
                           ? Carbon::parse($row->cr_created_at)->diffForHumans()
