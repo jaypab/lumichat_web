@@ -437,37 +437,158 @@ public function store(Request $request)
         ]);
     }
 
-    // ===== 4.b) HARD SHORT-CIRCUIT FOR NON-MENTAL TOPICS =====
-    if ($nonMental && !$unreadable) {
-        $replyText = "I might not be the best fit for that topic, {$first}. "
-            . "LumiCHAT is focused on supporting your mental health and well-being—things like stress, emotions, "
-            . "and what you’re going through. If this situation is affecting how you feel, you can tell me more "
-            . "about that and we can talk about it.";
+ // ===== 4.b) NON-MENTAL TOPICS → CONTEXTUAL BOUNDARY + GENTLE BRIDGE =====
+if ($nonMental && !$unreadable) {
+    // What kind of non-mental topic is this? (games / tech / food / school / etc.)
+    $category   = $this->classifyNonMentalCategory($norm);
+    $isQuestion = $flags['is_question'] ?? false;
 
-        $bot = Chat::create([
-            'user_id'         => $userId,
-            'chat_session_id' => $sessionId,
-            'sender'          => 'bot',
-            'message'         => Crypt::encryptString($replyText),
-            'sent_at'         => now(),
-        ]);
+    $replyText = '';
 
-        return response()->json([
-            'user_message' => [
-                'text'       => $storedText,
-                'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
-                'sent_at'    => now()->toIso8601String(),
-            ],
-            'bot_reply' => [[
-                'id'         => $bot->id,
-                'text'       => $replyText,
-                'buttons'    => [],
-                'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
-                'sent_at'    => $bot->sent_at->toIso8601String(),
-            ]],
-            'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
-        ]);
+    switch ($category) {
+        case 'games':
+            if ($isQuestion) {
+                $replyText =
+                    "Playing and talking about games is totally normal, {$first}. "
+                    ."I’m mainly focused on your mental health and well-being, so I might not be the best at game guides or meta strategies. "
+                    ."If gaming, ranks, or pressure from your teammates has been affecting your mood or stress, we can talk about that side of it.";
+            } else {
+                $replyText =
+                    "Playing video games can be a fun break, {$first}. "
+                    ."Lumi is focused on your mental health, so I might not give detailed game tips. "
+                    ."But if you’re using games to escape, relax, or if losing/rank pressure is stressing you out, you can tell me more about how it feels.";
+            }
+            break;
+
+        case 'entertainment':
+            $replyText =
+                "Movies, series, and shows can be a big part of how we unwind, {$first}. "
+                ."I’m not a full review or recommendation bot, but if something you watched is making you overthink, feel triggered, or reminding you of your own situation, we can explore those feelings together.";
+            break;
+
+        case 'food':
+            $replyText =
+                "Food, cravings, and what we eat are all normal to talk about, {$first}. "
+                ."I’m more focused on emotions than recipes, but if appetite, body image, or guilt around eating has been bothering you, I’m here to listen to that part.";
+            break;
+
+        case 'travel':
+            $replyText =
+                "Planning trips or thinking about travel can be exciting, {$first}. "
+                ."I can’t really help with booking or itineraries, but if you’re hoping this trip will help you rest from stress—or you’re anxious about going—I can support you with what you’re feeling about it.";
+            break;
+
+        case 'shopping':
+            $replyText =
+                "Shopping and online orders can be fun, and sometimes stressful too, {$first}. "
+                ."I can’t track parcels or manage payments, but if money, spending, or waiting for things is making you worried or pressured, we can talk about that.";
+            break;
+
+        case 'sports':
+            $replyText =
+                "Sports and exercise can really affect confidence, pressure, and energy, {$first}. "
+                ."I’m not a performance coach, but if games, training, or expectations from others are affecting how you feel, I’m here to support you with that side of it.";
+            break;
+
+        case 'tech':
+            if ($isQuestion) {
+                $replyText =
+                    "It sounds like you’re asking something technical (coding, apps, devices), {$first}. "
+                    ."Lumi is focused on your mental health, so I might not be able to walk through full tech fixes here. "
+                    ."If tech issues, deadlines, or school projects around this are stressing you out, we can talk about that pressure and how it’s been affecting you.";
+            } else {
+                $replyText =
+                    "Tech, coding, and devices can be really frustrating or tiring sometimes, {$first}. "
+                    ."I’m not a full technical support bot, but if errors, requirements, or expectations around this are stressing you or making you doubt yourself, you can share more about that and I’ll focus on how you’re feeling.";
+            }
+            break;
+
+        case 'creative':
+            $replyText =
+                "Creative work like drawing, editing, or design can be a big outlet—and also a source of pressure, {$first}. "
+                ."I might not be able to give full tutorials, but if you’re dealing with burnout, self-doubt, or pressure to be “good enough” with your work, we can talk about that.";
+            break;
+
+        case 'academics':
+            if ($isQuestion) {
+                $replyText =
+                    "It sounds like an academic or homework question, {$first}. "
+                    ."Lumi is here mainly to support your mental and emotional well-being, so I might not give a full solution or full lecture-style explanation. "
+                    ."If this subject, exam, or requirement is stressing you, making you feel overwhelmed, or hurting your confidence, we can talk about that part so you’re not carrying it alone.";
+            } else {
+                $replyText =
+                    "School topics and requirements can be heavy, {$first}. "
+                    ."I’m not a full homework or exam-solver, but if you’re feeling pressured, burned out, or discouraged about your studies, you can tell me more about that and we’ll focus on how it’s affecting you.";
+            }
+            break;
+
+        case 'social_media':
+            $replyText =
+                "Social media and online stuff can really influence how we feel about ourselves, {$first}. "
+                ."I might not be updated on every trend or drama, but if posts, comments, or comparisons online are affecting your mood, self-esteem, or stress, we can talk about that impact on you.";
+            break;
+
+        case 'money_career':
+            $replyText =
+                "Money, work, and future plans can be stressful topics, {$first}. "
+                ."I can’t give official financial or career decisions, but I can support you if you’re feeling pressured, worried about your future, or overwhelmed by expectations around these things.";
+            break;
+
+        case 'health_body':
+            $replyText =
+                "Physical health and body concerns are important, {$first}. "
+                ."I’m not a medical bot and can’t give medical advice—seeing a health professional is still important. "
+                ."But if what you’re going through physically is affecting your mood, energy, or self-esteem, I’m here to listen to that side and support you emotionally.";
+            break;
+
+        case 'admin_school':
+            $replyText =
+                "For official school processes (accounts, forms, requirements, enrollment, and similar things), it’s usually best to contact the registrar, IT, or your teacher/adviser, {$first}. "
+                ."What I can do is support you if these processes are stressing you out, confusing you, or making you feel pressured or stuck.";
+            break;
+
+        default:
+            // Generic non-mental content: keep it gentle and clear about Lumi’s role
+            if ($isQuestion) {
+                $replyText =
+                    "Thank you for your question, {$first}. "
+                    ."Lumi is focused on your mental and emotional well-being, so I might not always be able to answer detailed questions about this topic. "
+                    ."If this situation is affecting your mood, stress, or how you see yourself, you can tell me more about that part and we’ll stay there.";
+            } else {
+                $replyText =
+                    "Thank you for sharing that, {$first}. "
+                    ."Lumi is focused on your mental and emotional well-being, so I might not always go deep into this kind of topic. "
+                    ."But if it’s affecting your stress, mood, or confidence in any way, you can talk to me about how it feels for you.";
+            }
+            break;
     }
+
+    $bot = Chat::create([
+        'user_id'         => $userId,
+        'chat_session_id' => $sessionId,
+        'sender'          => 'bot',
+        'message'         => Crypt::encryptString($replyText),
+        'sent_at'         => now(),
+    ]);
+
+    return response()->json([
+        'user_message' => [
+            'text'       => $storedText,
+            'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => now()->toIso8601String(),
+        ],
+        'bot_reply' => [[
+            'id'         => $bot->id,
+            'text'       => $replyText,
+            'buttons'    => [],
+            'time_human' => $bot->sent_at->timezone(config('app.timezone'))->format('g:i:s A'),
+            'sent_at'    => $bot->sent_at->toIso8601String(),
+        ]],
+        'time_human' => now()->timezone(config('app.timezone'))->format('g:i:s A'),
+    ]);
+}
+
+
 
     // ===== 5) Flow control (venting, coping, Rasa) – ONLY MENTAL CONTENT REACHES HERE =====
     $botReplies = [];
@@ -1714,51 +1835,51 @@ private function isNonMentalTopic(string $norm, array $labels, array $riskStruct
         return false;
     }
 
-    // 3) Keywords that usually indicate general / non-mental-health / factual topics
+       // 3) Keywords that usually indicate general / non-mental-health / factual topics
     $nonMentalKeywords = [
 
         // ===== Games / entertainment / pop culture =====
-        'game','games','gaming','gamer','steam','valorant','dota','gta',
-        'minecraft','roblox','ml','mobile legends','mlbb','league of legends',
-        'lol','wild rift','cod','call of duty','pubg','genshin','honkai',
-        'fortnite','ps4','ps5','playstation','xbox','nintendo','switch',
-        'console','rank','mmr','matchmaking','skin','skins','battle pass',
+        'game','games','gaming','gamer','rank','mmr',
+        'steam','valorant','valo','dota','gta','minecraft','roblox',
+        'ml','mobile legends','mlbb','league of legends','lol','wild rift',
+        'cod','call of duty','pubg','genshin','honkai','fortnite',
+        'ps4','ps5','playstation','xbox','nintendo','switch','console','skin','skins','battle pass',
+
         'music','song','songs','album','playlist','lyrics',
         'movie','movies','film','films','cinema','series','episode','episodes',
-        'kdrama','anime','manga','netflix','disney','spotify','tiktok','youtube',
+        'kdrama','anime','manga','netflix','disney','disney+','spotify','tiktok','youtube',
         'idol','kpop','bts','blackpink','twice','enhypen','newjeans',
         'celebrity','celeb','actor','actress','influencer','streamer','vlogger',
 
-       
         // ===== Food, recipes, places to eat =====
         'food','foods','recipe','recipes','cook','cooking','bake','baking',
-        'restaurant','restaurants','cafe','cafes','milk tea','milktea','coffee shop',
+        'restaurant','restaurants','cafe','cafes','milk tea','milktea','coffee shop','coffee',
         'fastfood','fast food','jollibee','mcdonalds','kfc','pizza','burger',
         'fries','ramen','sushi','buffet','menu','order','delivery','grab','foodpanda',
 
-        
         // ===== Tech / coding / computer support =====
         'programming','coding','code','source code','script','scripting',
         'algorithm','pseudocode','flowchart','debug','debugging','bug','bugs',
         'error','errors','exception','stack trace',
-        'javascript','typescript','node','nodejs','php','laravel','symfony',
-        'django','flask','python','java','csharp','c#','cpp','c++','ruby','rails',
-        'html','css','react','vue','angular','svelte','tailwind','bootstrap',
-        'mysql','postgres','database','sql','query','queries','migration','seeder',
+        'javascript','typescript','node','nodejs','php','laravel','django','flask','python',
+        'java','csharp','c#','cpp','c++','ruby','rails','html','css',
+        'react','vue','angular','svelte','tailwind','bootstrap',
+        'mysql','postgres','database','databases','sql','query','queries','migration','seeder',
         'api','rest api','endpoint','request','response','json','jwt',
-        'github','gitlab','bitbucket','git','branch','merge','commit','pull request',
+        'github','gitlab','bitbucket','git','branch','merge','commit','pull request','push','pull',
         'vscode','visual studio','eclipse','intellij','pycharm','ide',
         'server','hosting','hostinger','domain','dns','nginx','apache','iis',
-        'wifi','router','modem','internet','signal','lag','ping','ms','fps',
-        'laptop','pc','desktop','computer','monitor','keyboard','mouse',
-        'android','iphone','ios','windows','macos','linux','ubuntu','update',
+        'wifi','router','modem','internet','signal','lag','ping','fps','ms',
+        'laptop','pc','desktop','computer','monitor','keyboard','mouse','headset',
+        'android','iphone','ios','windows','macos','linux','ubuntu','update','upgrade',
         'install','installation','download','setup','config','configuration',
 
-        // ===== Shopping / money / finance =====
+        // ===== Shopping / money / finance (neutral use) =====
         'shopping','shop','shops','mall','malls','grocery','groceries',
         'cart','checkout','order','orders','parcel','package','tracking',
-        'sale','discount','promo','voucher','free shipping',
+        'sale','discount','promo','voucher','free shipping','cashback',
         'shopee','lazada','zalora','amazon','aliexpress',
+        'price','prices','cheap','cheaper','expensive',
         'peso','dollar','php','usd',
 
         // ===== Travel / locations / itineraries =====
@@ -1790,13 +1911,52 @@ private function isNonMentalTopic(string $norm, array $labels, array $riskStruct
         'shoes','sneakers','bag','bags','accessories','necklace','bracelet',
         'haircut','hairstyle','salon','nail','nails','manicure','pedicure',
 
-       
+        // ===== Academics / subject-only content (NO emotion words) =====
+        'math','algebra','geometry','trigonometry','calculus','statistic','statistics',
+        'physics','chemistry','biology','science','scientific',
+        'history','geography','economics',
+        'formula','formulas','equation','equations',
+        'solve','solution','answer key','proof',
+        'definition','define','explain','explanation',
+        'module','modules','assignment','assignments','homework','seatwork',
+        'quiz','quizzes','exam','exams','test','tests','midterm','finals',
+        'topic','lesson','chapter',
+
+        // ===== Social media / online platforms =====
+        'facebook','fb','messenger','instagram','ig','tiktok','twitter','x',
+        'snapchat','discord','server','group chat','gc',
+        'post','posts','comment','comments','dm','dms',
+        'fyp','timeline','newsfeed','story','stories','reels','shorts',
+
+        // ===== Money / career (neutral info) =====
+        'salary','salaries','income','allowance',
+        'budget','budgeting','savings','save money',
+        'job','jobs','hiring','applicant','application','resume','cv',
+        'interview','interviews','offer','promotion',
+        'career','careers','position','positions',
+
+        // ===== Health / body (non-emotional use) =====
+        'fever','cough','cold','flu','sore throat','headache','migraine',
+        'covid','virus','infection',
+        'medicine','medication','tablet','capsule','syrup',
+        'doctor','clinic','hospital','checkup','check up',
+        'diet','keto','calories',
+        'height','weight','bmi',
+
+        // ===== School admin / process =====
+        'enrollment','enrolment','enroll','enrol',
+        'registration','register','account','portal','student portal',
+        'sis','lms','canvas','moodle','google classroom',
+        'password','username','login','log in','log out','logout',
+        'reset password','change password',
+        'form','forms','clearance','requirements','document','documents',
+        'registrar','scholarship','scholarships','grant','grants','school id','id card',
+
         // ===== Random factual / how-to topics =====
         'capital','history of','invention','inventor','discover','discovery',
         'tutorial','guide','step by step','steps to','how to make',
         'recipe for','requirements','qualifications','eligibility',
-        'job hiring','resume','cv','cover letter','interview questions',
-        'scholarship','scholarships','grant','grants',
+        'job hiring','cover letter','interview questions',
         'law','legal','crime','case','court','constitution',
     ];
 
@@ -2097,5 +2257,185 @@ private function looksLikeSelfDisclosure(string $norm): bool
 
     return false;
 }
+/**
+ * Roughly classify non-mental topics so we can respond more appropriately.
+ * This only runs AFTER isNonMentalTopic() already decided "non-mental".
+ */
+/**
+ * Roughly classify non-mental topics so we can respond more appropriately.
+ * This only runs AFTER isNonMentalTopic() already decided "non-mental".
+ */
+private function classifyNonMentalCategory(string $norm): string
+{
+    // Games / gaming
+    if ($this->hasAnyWord($norm, [
+        'game','games','gaming','gamer',
+        'play','playing','rank','mmr',
+        'valorant','valo','dota','doto','ml','mlbb',
+        'mobile legends','league','lol','wild rift',
+        'minecraft','roblox','gta','cod','pubg',
+        'genshin','honkai','fortnite',
+        'ps4','ps5','playstation','xbox','switch','nintendo',
+        'console',
+    ])) {
+        return 'games';
+    }
+
+    // Movies / series / anime / general entertainment / music
+    if ($this->hasAnyWord($norm, [
+        'movie','movies','film','films','cinema',
+        'series','episode','episodes','show','shows',
+        'netflix','disney','disney+','hbo','prime video',
+        'kdrama','anime','manga',
+        'spotify','playlist','music','songs','song','album',
+        'lyrics','mv',
+        'tiktok','youtube','stream','streams','streamer','vlogger',
+        'concert','tour','idol','kpop','bts','blackpink','twice','enhypen','newjeans',
+    ])) {
+        return 'entertainment';
+    }
+
+    // Food / eating
+    if ($this->hasAnyWord($norm, [
+        'food','foods','eat','eating','ate','hungry','craving','cravings','snack','snacks',
+        'restaurant','restaurants','cafe','cafes','milk tea','milktea','coffee',
+        'fastfood','fast food','jollibee','mcdonalds','kfc',
+        'pizza','burger','fries','ramen','sushi','buffet',
+        'cook','cooking','bake','baking','recipe','recipes','ingredients','menu',
+        'order','delivery','takeout','grab','foodpanda',
+    ])) {
+        return 'food';
+    }
+
+    // Travel
+    if ($this->hasAnyWord($norm, [
+        'travel','trip','trips','tour','tourist','vacation','staycation',
+        'itinerary','hotel','resort','hostel','airbnb',
+        'flight','flights','airport','ticket','tickets','plane','boarding','terminal',
+        'beach','mountain','island','city','province',
+        'boracay','palawan','siargao','baguio','cebu','davao','manila',
+    ])) {
+        return 'travel';
+    }
+
+    // Shopping / money stuff (non-emotional use)
+    if ($this->hasAnyWord($norm, [
+        'shopping','shop','shops','mall','malls','grocery','groceries',
+        'cart','checkout','order','orders','parcel','package','tracking',
+        'sale','discount','promo','voucher','free shipping','cashback',
+        'shopee','lazada','zalora','amazon','aliexpress',
+        'price','prices','cheap','cheaper','expensive',
+    ])) {
+        return 'shopping';
+    }
+
+    // Sports / exercise
+    if ($this->hasAnyWord($norm, [
+        'basketball','volleyball','football','soccer','futsal',
+        'badminton','tennis','table tennis','pingpong','ping pong',
+        'swimming','run','running','jogging','gym','workout','exercise','training','practice',
+        'league','tournament','match','game day','coach','team','teammate','teammates',
+    ])) {
+        return 'sports';
+    }
+
+    // Tech / coding / devices
+    if ($this->hasAnyWord($norm, [
+        'programming','coding','code','codes','script','scripts',
+        'bug','bugs','debug','debugging','error','errors','exception',
+        'javascript','typescript','node','nodejs','php','laravel',
+        'python','java','csharp','c#','cpp','c++','html','css',
+        'react','vue','angular','svelte','tailwind','bootstrap',
+        'mysql','postgres','database','databases','sql','query','queries','migration','seeder',
+        'api','rest api','endpoint','request','response','json','jwt',
+        'github','gitlab','bitbucket','git','branch','merge','commit','pull','push',
+        'vscode','visual studio','ide','editor',
+        'server','hosting','hostinger','domain','dns','nginx','apache','iis',
+        'wifi','router','modem','internet','signal','lag','ping','fps','ms',
+        'laptop','pc','desktop','computer','monitor','keyboard','mouse','headset',
+        'android','iphone','ios','windows','macos','linux','ubuntu','update','upgrade',
+        'install','installation','download','setup','config','configuration',
+    ])) {
+        return 'tech';
+    }
+
+    // Creative / editing / design
+    if ($this->hasAnyWord($norm, [
+        'drawing','draw','art','artist','painting','paint','sketch','sketching',
+        'design','logo','poster','layout','banner','thumbnail',
+        'editing','edit','edits','video edit','photo edit',
+        'photoshop','illustrator','canva','figma','premiere','after effects','capcut',
+        'camera','dslr','mirrorless','lens','tripod','gimbal',
+    ])) {
+        return 'creative';
+    }
+
+    // Academics / homework / purely subject content
+    if ($this->hasAnyWord($norm, [
+        'math','algebra','geometry','trigonometry','calculus','statistic','statistics',
+        'physics','chemistry','biology','science','scientific',
+        'history','geography','economics',
+        'formula','formulas','equation','equations',
+        'solve','solution','answer key','proof',
+        'definition','define','explain','explanation',
+        'module','modules','assignment','assignments','homework','seatwork',
+        'quiz','quizzes','exam','exams','test','tests','midterm','finals',
+        'topic','lesson','chapter',
+    ])) {
+        return 'academics';
+    }
+
+    // Social media / online platforms (separate from generic entertainment)
+    if ($this->hasAnyWord($norm, [
+        'facebook','fb','messenger','instagram','ig','tiktok','twitter','x',
+        'snapchat','discord','server','group chat','gc',
+        'post','posts','comment','comments','dm','dms',
+        'fyp','timeline','newsfeed','story','stories','reels','shorts',
+    ])) {
+        return 'social_media';
+    }
+
+    // Money / career / future in a neutral, factual way
+    if ($this->hasAnyWord($norm, [
+        'salary','salaries','income','allowance',
+        'budget','budgeting','savings','save money',
+        'peso','php','dollar','usd',
+        'job','jobs','hiring','applicant','application','resume','cv',
+        'interview','interviews','offer','promotion',
+        'career','careers','position','positions',
+    ])) {
+        return 'money_career';
+    }
+
+    // Physical health / body (non-emotional use)
+    if ($this->hasAnyWord($norm, [
+        'fever','cough','cold','flu','sore throat','headache','migraine',
+        'covid','virus','infection',
+        'medicine','medication','tablet','capsule','syrup',
+        'doctor','clinic','hospital','checkup','check up',
+        'diet','workout plan','keto','calories',
+        'height','weight','bmi',
+    ])) {
+        return 'health_body';
+    }
+
+    // School admin / accounts / process support
+    if ($this->hasAnyWord($norm, [
+        'enrollment','enrolment','enroll','enrol',
+        'registration','register','account','portal','student portal',
+        'sis','lms','canvas','moodle','google classroom',
+        'password','username','login','log in','log out','logout',
+        'reset password','change password',
+        'form','forms','clearance','requirements','document','documents',
+        'registrar','scholarship','grant','id card','school id',
+    ])) {
+        return 'admin_school';
+    }
+
+    // Fallback non-mental
+    return 'other';
+}
+
+
 
 }
