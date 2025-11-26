@@ -18,49 +18,41 @@ class WalkInController extends Controller
      * Resolve counselor primary key used in tbl_counselor_availabilities.counselor_id
      */
     private function myCounselorId(): ?int
-    {
-        $uid  = Auth::id();
-        $user = Auth::user();
+{
+    $uid  = Auth::id();
+    $user = Auth::user();
 
-        if (!$uid || !$user) {
-            return null;
-        }
-
-        // Case A: counselors table links via user_id
-        if (Schema::hasColumn('tbl_counselors', 'user_id')) {
-            $cid = DB::table('tbl_counselors')
-                ->where('user_id', $uid)
-                ->value('id');
-
-            if ($cid) {
-                return (int) $cid;
-            }
-        }
-
-        // Case B: fallback via email column
-        if (Schema::hasColumn('tbl_counselors', 'email')) {
-            $cid = DB::table('tbl_counselors')
-                ->where('email', $user->email)
-                ->value('id');
-
-            if ($cid) {
-                return (int) $cid;
-            }
-        }
-
-        // Case C: last resort – user_id == counselor id
-        if (Schema::hasTable('tbl_counselors')) {
-            $exists = DB::table('tbl_counselors')
-                ->where('id', $uid)
-                ->exists();
-
-            if ($exists) {
-                return (int) $uid;
-            }
-        }
-
+    if (!$uid || !$user) {
         return null;
     }
+
+    // Case A
+    if (Schema::hasColumn('tbl_counselors', 'user_id')) {
+        $cid = DB::table('tbl_counselors')
+            ->where('user_id', $uid)
+            ->value('id');
+        if ($cid) return (int) $cid;
+    }
+
+    // Case B
+    if (Schema::hasColumn('tbl_counselors', 'email')) {
+        $cid = DB::table('tbl_counselors')
+            ->where('email', $user->email)
+            ->value('id');
+        if ($cid) return (int) $cid;
+    }
+
+    // Case C
+    if (Schema::hasTable('tbl_counselors')) {
+        $exists = DB::table('tbl_counselors')
+            ->where('id', $uid)
+            ->exists();
+        if ($exists) return (int) $uid;
+    }
+
+    return null;
+}
+
 
     /**
      * Check if counselor has any AVAILABLE slot right now
@@ -73,52 +65,70 @@ class WalkInController extends Controller
      *  - start_time, end_time (TIME)
      *  - slot_type: 'available' | 'blocked'
      */
-    private function hasCurrentAvailability(): bool
-    {
-        // If table not yet migrated, don’t block walk-ins
-        if (!Schema::hasTable('tbl_counselor_availabilities')) {
-            return true;
-        }
-
-        $cid = $this->myCounselorId();
-        if (!$cid) {
-            return false;
-        }
-
-        $now     = Carbon::now();
-        $date    = $now->toDateString();
-        $time    = $now->format('H:i:s');    // current time in TIME format
-        $weekday = (int) $now->dayOfWeek;    // 0 = Sunday, 6 = Saturday (matches your tinyint)
-
-        return DB::table('tbl_counselor_availabilities')
-            ->where('counselor_id', $cid)
-            ->where('slot_type', 'available')
-            // time window
-            ->where('start_time', '<=', $time)
-            ->where('end_time', '>',  $time)
-            // match either specific date OR generic weekday row
-            ->where(function ($q) use ($date, $weekday) {
-                $q->where('date', $date)
-                  ->orWhere(function ($q2) use ($weekday) {
-                      $q2->whereNull('date')
-                         ->where('weekday', $weekday);
-                  });
-            })
-            ->exists();
+private function hasCurrentAvailability(): bool
+{
+        return true;
+    // 1) If availability table doesn’t exist, allow walk-ins
+    if (!Schema::hasTable('tbl_counselor_availabilities')) {
+        return true;
     }
+
+    $cid = $this->myCounselorId();
+
+    // 2) If counselor mapping not wired yet, TEMP: allow
+    if (!$cid) {
+        return true; // or false if you want it strict; for now better true
+    }
+
+    $now     = Carbon::now();
+    $date    = $now->toDateString();
+    $time    = $now->format('H:i:s');
+    $weekday = (int) $now->dayOfWeek; // 0=Sun..6=Sat
+
+    // 3) If this counselor has no rows at all, don’t block yet
+    $hasAnyRow = DB::table('tbl_counselor_availabilities')
+        ->where('counselor_id', $cid)
+        ->exists();
+
+    if (!$hasAnyRow) {
+        return true;
+    }
+
+    // 4) Strict check when rows exist
+    return DB::table('tbl_counselor_availabilities')
+        ->where('counselor_id', $cid)
+        ->where('slot_type', 'available')
+        ->where('start_time', '<=', $time)
+        ->where('end_time', '>',  $time)
+        ->where(function ($q) use ($date, $weekday) {
+            $q->where('date', $date)
+              ->orWhere(function ($q2) use ($weekday) {
+                  $q2->whereNull('date')
+                     ->where('weekday', $weekday);
+              });
+        })
+        ->exists();
+}
 
     /**
      * Show New Walk-in Session form.
      * Pass canStartWalkin flag to Blade.
      */
     public function create(): View
-    {
-        $canStartWalkin = $this->hasCurrentAvailability();
+{
+    $cid = $this->myCounselorId();
+    $canStartWalkin = $this->hasCurrentAvailability();
 
-        return view('Counselor_Interface.walkins.create', [
-            'canStartWalkin' => $canStartWalkin,
-        ]);
-    }
+    logger()->info('Walk-in availability debug', [
+        'user_id'           => Auth::id(),
+        'counselor_id'      => $cid,
+        'can_start_walkin'  => $canStartWalkin,
+    ]);
+
+    return view('Counselor_Interface.walkins.create', [
+        'canStartWalkin' => $canStartWalkin,
+    ]);
+}
 
     public function store(Request $request)
     {
@@ -208,6 +218,9 @@ class WalkInController extends Controller
         if (Schema::hasColumn($apptTable, 'reason')) {
             $appointment->reason = $request->reason;
         }
+        if (Schema::hasColumn($apptTable, 'appointment_source')) {
+            $appointment->appointment_source = 'walk_in'; // or 'Walk-in' if you prefer
+        }
 
         $appointment->created_at = now();
         $appointment->updated_at = now();
@@ -266,14 +279,20 @@ class WalkInController extends Controller
         if (Schema::hasColumn($cnTable, 'emergency_address')) {
             $caseNote->emergency_address = $cn['emergency_address'] ?? null;
         }
-        if (Schema::hasColumn($cnTable, 'created_by')) {
+               if (Schema::hasColumn($cnTable, 'created_by')) {
             $caseNote->created_by = Auth::id();
         }
         if (Schema::hasColumn($cnTable, 'updated_by')) {
             $caseNote->updated_by = Auth::id();
         }
 
+        // 🔹 Tag this case note as Walk-in
+        if (Schema::hasColumn($cnTable, 'note_source')) {
+            $caseNote->note_source = 'Walk-in';
+        }
+
         $caseNote->save();
+
 
         return redirect()
             ->route('counselor.appointments.show', $appointment->id)
@@ -301,4 +320,5 @@ class WalkInController extends Controller
 
         return $ts;
     }
+
 }

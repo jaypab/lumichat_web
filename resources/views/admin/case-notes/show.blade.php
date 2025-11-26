@@ -10,6 +10,9 @@
   $code = 'CN-'.$year.'-'.str_pad($note->id, 4, '0', STR_PAD_LEFT);
   $date = $note->note_date ? \Carbon\Carbon::parse($note->note_date)->format('F d, Y') : '—';
   $toBr = fn($v) => nl2br(e($v ?? '—'));
+
+  // be defensive: some old notes might not have this column
+  $noteSource = $note->note_source ?? null;
 @endphp
 
 <div class="max-w-5xl mx-auto p-6 space-y-6">
@@ -18,8 +21,15 @@
   <div class="rounded-2xl bg-white border border-slate-200 shadow-sm">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-5">
       <div>
-        <h2 class="text-xl sm:text-2xl font-bold text-slate-900">
-          Case Note — <span class="font-semibold">{{ $code }}</span>
+        <h2 class="text-xl sm:text-2xl font-bold text-slate-900 flex flex-wrap items-center gap-2">
+          <span>Case Note — <span class="font-semibold">{{ $code }}</span></span>
+
+          {{-- Walk-in tag beside title --}}
+          @if($noteSource === 'Walk-in')
+            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+              Walk-in
+            </span>
+          @endif
         </h2>
         <div class="text-sm text-slate-600">
           Saved {{ \Carbon\Carbon::parse($note->updated_at)->format('M d, Y g:i A') }}
@@ -50,14 +60,17 @@
         <div class="text-slate-500">Student</div>
         <div class="font-medium text-slate-900">{{ $note->student_display_name ?? $note->student_name ?? '—' }}</div>
       </div>
+
       <div class="rounded-xl ring-1 ring-slate-200 p-3.5 bg-slate-50/60">
         <div class="text-slate-500">Date</div>
         <div class="font-medium text-slate-900">{{ $date }}</div>
       </div>
+
       <div class="rounded-xl ring-1 ring-slate-200 p-3.5 bg-slate-50/60">
         <div class="text-slate-500">Counselor</div>
         <div class="font-medium text-slate-900">{{ $note->counselor_name ?? '—' }}</div>
       </div>
+
       <div class="rounded-xl ring-1 ring-slate-200 p-3.5 bg-slate-50/60">
         <div class="text-slate-500">Appointment</div>
         <div class="font-medium text-slate-900">

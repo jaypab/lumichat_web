@@ -10,9 +10,22 @@
   $now      = Carbon::now();
   $bookedAt = $appointment->created_at ? Carbon::parse($appointment->created_at) : null;
 
+  // 🔹 Walk-in detection based on appointment_source
+  $sourceRaw = strtolower((string)($appointment->appointment_source ?? ''));
+  $isWalkIn  = in_array($sourceRaw, ['walk_in', 'walk-in', 'walk in'], true);
+
   $hasStarted = $now->gte($dt);
   $rawStatus  = strtolower((string)$appointment->status);
   $status     = !empty($isHistory) ? 'reassigned' : $rawStatus;
+
+  // 🔹 If walk-in + completed but still within slot, treat as ongoing
+  if (empty($isHistory) && $isWalkIn && $rawStatus === 'completed') {
+      $endAt = $dt->copy()->addMinutes(60); // 1-hour default slot
+      if ($now->between($dt, $endAt)) {
+          $status = 'ongoing';
+      }
+  }
+
   $isOngoing  = ($status === 'ongoing');
 
   // human countdown / since
@@ -50,8 +63,8 @@
     'completed'  => 'bg-emerald-500',
     'no_show'    => 'bg-rose-500',
     'ongoing'    => 'bg-indigo-600',
-    'reassigned' => 'bg-slate-500',  
-  ];         
+    'reassigned' => 'bg-slate-500',
+  ];
   $cls = $badgeMap[$status] ?? 'bg-slate-200 text-slate-700';
   $dot = $dotMap[$status] ?? 'bg-slate-500';
 
@@ -83,6 +96,15 @@
               <span class="inline-block w-1.5 h-1.5 rounded-full {{ $dot }} mr-1.5"></span>
               {{ $status === 'no_show' ? 'No Show' : ucfirst($status) }}
             </span>
+
+            {{-- 🔹 Walk-in label (same feel as admin show) --}}
+            @if($isWalkIn)
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium
+                           bg-amber-50 text-slate-800 ring-1 ring-amber-200">
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5"></span>
+                Walk-in
+              </span>
+            @endif
 
             @php
               // When ongoing, use updated_at (set at 'start'); otherwise use scheduled_at
@@ -197,7 +219,7 @@
 
     {{-- Two columns --}}
     <div class="px-6 py-5 grid grid-cols-1 lg:grid-cols-2 gap-6">
-           {{-- Student --}}
+      {{-- Student --}}
       <section class="rounded-2xl ring-1 ring-slate-200 bg-white">
         <header class="px-4 py-2.5 bg-slate-50/60 rounded-t-2xl">
           <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-600">Student</h3>
@@ -223,9 +245,19 @@
               {{ $appointment->student_email ?: '—' }}
             </div>
           </div>
+
+          {{-- 🔹 Walk-in tag under student info --}}
+          @if($isWalkIn)
+            <div class="pt-1">
+              <span class="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-medium
+                          bg-amber-50 text-slate-800 ring-1 ring-amber-200">
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5"></span>
+                Walk-in
+              </span>
+            </div>
+          @endif
         </div>
       </section>
-
 
       {{-- Timing --}}
       <section class="rounded-2xl ring-1 ring-slate-200 bg-white">
@@ -322,14 +354,13 @@
                   <p class="mt-1 text-xs text-rose-600 hidden client-error" data-client-error-for="case_note.date"></p>
                 </div>
 
-               <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">Program &amp; Year</label>
-              <input type="text" name="case_note[program_year]"
-                    value="{{ old('case_note.program_year', $caseNote->program_year ?? $appointment->student_program_year) }}"
-                    class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3"
-                    placeholder="e.g., BSIT - 3rd Year">
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">Program &amp; Year</label>
+                  <input type="text" name="case_note[program_year]"
+                        value="{{ old('case_note.program_year', $caseNote->program_year ?? $appointment->student_program_year) }}"
+                        class="w-full rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 p-3"
+                        placeholder="e.g., BSIT - 3rd Year">
                 </div>
-
 
                 <div>
                   <label class="block text-xs font-medium text-slate-600 mb-1">Address</label>

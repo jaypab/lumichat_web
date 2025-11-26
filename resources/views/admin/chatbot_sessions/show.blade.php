@@ -56,8 +56,19 @@
   $__doneThis   = (bool) ($hasCompletedForThisSession ?? false);
   $__expedited  = (bool) ($wasExpedited ?? ($session->expedited_at ?? false));
 
-  $canBook        = $isHighRisk && !$__hasActive && !$__doneThis;
+  // High-risk & not yet handled → we *can* book
+  $canBook        = $isHighRisk && !$__doneThis;
+
+  // There is an active appt & not expedited → we *can* move earlier
   $canMoveEarlier = $isHighRisk && $__hasActive && !$__doneThis && !$__expedited;
+
+  // UI rules:
+  // - If there is an active appt → show ONLY “Reschedule” (no urgent book button)
+  // - If there is NO active appt → show “Book urgent appointment”
+  $showResched = $canMoveEarlier;                 // already has an appt
+  $showUrgent  = $canBook && !$canMoveEarlier;    // no appt yet
+
+
 
   $studentName = trim($session->user->name ?? '') ?: 'Unknown Student';
 
@@ -429,7 +440,9 @@
                     <div id="hrActionsWrap" class="mt-3 {{ $hrCount>0 ? '' : 'hidden' }}">
                       <div class="no-print flex flex-wrap items-center gap-2">
                         @if($isHighRisk)
-                          @if($canBook)
+
+                          {{-- CASE 1: no active appointment yet → show urgent booking --}}
+                          @if($showUrgent)
                             <button id="btnBookHR" type="button"
                                     class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:from-indigo-700 hover:to-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-indigo-500">
                               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -440,22 +453,23 @@
                             </button>
                           @endif
 
-                          @if($canMoveEarlier)
+                          {{-- CASE 2: already has active appointment → ONLY show Reschedule (same big button style) --}}
+                          @if($showResched)
                             <button id="btnReschedHR" type="button"
-                                    class="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-3 py-2 text-sm font-semibold text-white shadow-sm
-                                          hover:bg-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400">
-                              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <circle cx="12" cy="12" r="9" />
-                                <polyline points="12 7 12 12 15 14" />
+                                    class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:from-indigo-700 hover:to-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-indigo-500">
+                              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" stroke-width="1.8"></rect>
+                                <path d="M8 2v4M16 2v4M3 10h18" stroke-width="1.8" stroke-linecap="round"></path>
                               </svg>
-                              Move to earlier slot
+                              <span>Reschedule to earlier slot</span>
                             </button>
                           @endif
+
                         @endif
                         <div id="hrActionMsg" class="text-sm text-slate-600"></div>
                       </div>
                     </div>
+
                   </div>
                 </div>
               </div>
@@ -693,7 +707,7 @@
         {{-- NEW: urgent “book for now” button (no time selection) --}}
         <button type="button" id="hrActionBookNow"
                 class="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-white text-sm font-semibold hover:bg-orange-600">
-          Book now
+          Book urgent
         </button>
 
         <button type="submit" id="hrActionSubmit"
@@ -970,6 +984,7 @@
 
  let __justBookedOrRescheduled = false;
 let isBookNow = false; // true when using “Book for now”
+let lastOpenMode = 'book';
 
 
     const pad = n => String(n).padStart(2,'0');
@@ -1076,24 +1091,29 @@ let isBookNow = false; // true when using “Book for now”
     }
 
 
+    function setBusy(b) {
+      if (!submit || !spin || !label) return;
 
-function setBusy(b){
-  submit.disabled = b;
-  spin.classList.toggle('hidden', !b);
+      submit.disabled = b;
 
-  if (b) {
-    if (mode === 'book' && isBookNow) {
-      label.textContent = 'Booking (now)…';
-    } else if (mode === 'book') {
-      label.textContent = 'Booking…';
-    } else {
-      label.textContent = 'Rescheduling…';
+      if (b) {
+        spin.classList.remove('hidden');
+
+        if (mode === 'book' && isBookNow) {
+          label.textContent = 'Urgent booking (now)…';
+        } else if (mode === 'book') {
+          label.textContent = 'Urgent booking…';
+        } else {
+          label.textContent = 'Rescheduling…';
+        }
+      } else {
+        spin.classList.add('hidden');
+        // Reset label text based on current mode
+        label.textContent = (mode === 'book') ? 'Book' : 'Reschedule';
+      }
     }
-  } else {
-    label.textContent = (mode === 'book') ? 'Book' : 'Reschedule';
-  }
-}
-    function rewireHRActionButtons(scope = document){
+
+    function rewireHRActionButtons(scope){
       const root = scope || document;
       const btnBook   = root.querySelector('#btnBookHR');
       const btnResched = root.querySelector('#btnReschedHR');
@@ -1105,6 +1125,7 @@ function setBusy(b){
         btnResched.onclick = () => open('resched');
       }
     }
+
 
 
     // Expose so the unlock block can call it after replacing innerHTML
@@ -1342,267 +1363,286 @@ fillTimes(activeCid, slots, { occupied: occNorm, current, ref, date });
       }
     }
 
-    form?.addEventListener('submit', async (e) => {
-      e.preventDefault();
+form?.addEventListener('submit', async (e) => {
+  e.preventDefault();
 
-      // 🔹 Real submit logic
-      const doSubmit = async () => {
-        setBusy(true);
+  // 🔹 Real submit logic
+  const doSubmit = async () => {
+    setBusy(true);
+    try {
+      // ensure we have a date (auto-pick next weekday if empty)
+      if (!iDate.value) {
+        const d = new Date();
+        d.setDate(d.getDate() + 1);
+        if (d.getDay() === 6) d.setDate(d.getDate() + 2); // Sat → Mon
+        if (d.getDay() === 0) d.setDate(d.getDate() + 1); // Sun → Mon
+        picked = d;
+        iDate.value = ymd(d);
+      }
 
-        try {
-          // ensure we have a date (auto-pick next weekday if empty)
-          if (!iDate.value) {
-            const d = new Date();
-            d.setDate(d.getDate() + 1);
-            if (d.getDay() === 6) d.setDate(d.getDate() + 2); // Sat → Mon
-            if (d.getDay() === 0) d.setDate(d.getDate() + 1); // Sun → Mon
-            picked = d;
-            iDate.value = ymd(d);
-          }
+      // ensure we have a time (ONLY if not "Book for now")
+      if (!isBookNow && !iTime.value) {
+        timePills
+          .querySelector('.time-pill:not([aria-disabled="true"])')
+          ?.click();
+      }
 
-// ensure we have a time (ONLY if not "Book for now")
-if (!isBookNow && !iTime.value) {
-  timePills.querySelector('.time-pill:not([aria-disabled="true"])')?.click();
-}
+      const fd = new FormData(form);
+      fd.append('_token', csrf);
+      if (!fd.get('date')) fd.set('date', iDate.value || '');
+      fd.set('now', (isBookNow && mode === 'book') ? '1' : '0');
 
+      const ep  = (mode === 'book') ? epBook : epRebook;
+      const res = await fetch(ep, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: fd,
+      });
 
-const fd = new FormData(form);
-fd.append('_token', csrf);
-if (!fd.get('date')) fd.set('date', iDate.value || '');
-fd.set('now', (isBookNow && mode === 'book') ? '1' : '0');
+      let j = {};
+      try { j = await res.json(); } catch {}
 
+      const msg   = String(j?.message || 'Request failed.');
+      const lower = msg.toLowerCase();
 
-          const ep  = (mode === 'book') ? epBook : epRebook;
-          const res = await fetch(ep, {
-            method: 'POST',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            body: fd,
-          });
-
-          let j = {};
-          try { j = await res.json(); } catch {}
-
-          const msg   = String(j?.message || 'Request failed.');
-          const lower = msg.toLowerCase();
-
-          if (!res.ok || !j?.ok) {
-            // 409 / “slot just filled” handling
-            if (res.status === 409 || lower.includes('just filled')) {
-              if (window.Swal) {
-                Swal.fire({
-                  icon: 'info',
-                  title: 'Slot just filled',
-                  text: msg,
-                });
-              }
-
-              const curVal = iTime.value;
-
-              if (curVal && iDate.value && iCoun.value) {
-                JUST_FILLED.add(`${iDate.value}|${iCoun.value}|${curVal}`);
-              }
-
-              iTime.value = '';
-
-              if (curVal && timePills) {
-                const pill = timePills.querySelector(`.time-pill[data-value="${curVal}"]`);
-                if (pill) {
-                  pill.classList.remove('time-pill--active');
-                  pill.classList.add('time-pill--busy');
-                  pill.setAttribute('aria-disabled', 'true');
-                  pill.innerHTML = `
-                    ${fmt12(curVal)}
-                    <span class="time-pill-badge time-pill-badge--danger">NO SLOTS</span>
-                  `;
-                }
-              }
-
-              __justBookedOrRescheduled = false;
-              return;
-            }
-
-            throw new Error(msg);
-          }
-
-          // success UI
-          result.innerHTML = j.html || '<div class="text-slate-700">Done.</div>';
-          form.classList.add('hidden');
-          result.classList.remove('hidden');
-
-          __justBookedOrRescheduled = true;
-
-          if (j.appt) {
-            const hdr = document.getElementById('hdrUpcomingPill');
-            if (hdr) {
-              hdr.textContent = `Upcoming appt: ${j.appt.date_label} • ${j.appt.time_label}`;
-              hdr.classList.remove('hidden');
-            }
-
-            const chip = document.getElementById('js-hasActiveMsg');
-            chip?.classList.remove('hidden');
-
-            const wrap = document.getElementById('js-nextAppt');
-            if (wrap) {
-              wrap.classList.remove('hidden');
-              wrap.innerHTML = `
-                <div class="mt-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 p-3 text-sm">
-                  <div class="font-medium">Upcoming appointment ${j.appt.rel_label}</div>
-                  <div class="text-xs opacity-80">
-                    ${j.appt.date_label} • ${j.appt.time_label}${j.appt.counselor_name ? ' • ' + j.appt.counselor_name : ''}
-                  </div>
-                </div>
-              `;
-            }
-
-            document.getElementById('btnBookHR')?.classList.add('hidden');
-            document.getElementById('hrActionsWrap')?.classList.add('hidden');
-            document.getElementById('hrMarkDone')?.classList.remove('hidden');
-          }
-        } catch (err) {
-          console.error(err);
+      if (!res.ok || !j?.ok) {
+        if (res.status === 409 || lower.includes('just filled')) {
           if (window.Swal) {
             Swal.fire({
-              icon: 'error',
-              title: 'Error',
-              text: String(err.message || err),
+              icon: 'info',
+              title: 'Slot just filled',
+              text: msg,
             });
           }
-        } finally {
-          setBusy(false);
-        }
-      };
 
-       // 🔹 Build preview for the confirmation dialog
-      const dateRaw = iDate.value;
-      let prettyDate = 'Not yet selected';
-      if (dateRaw) {
-        try {
-          prettyDate = new Date(dateRaw + 'T00:00:00').toLocaleDateString(undefined, {
-            year: 'numeric',
-            month: 'short',
-            day: '2-digit',
-          });
-        } catch (_) {}
+          const curVal = iTime.value;
+
+          if (curVal && iDate.value && iCoun.value) {
+            JUST_FILLED.add(`${iDate.value}|${iCoun.value}|${curVal}`);
+          }
+
+          iTime.value = '';
+
+          if (curVal && timePills) {
+            const pill = timePills.querySelector(`.time-pill[data-value="${curVal}"]`);
+            if (pill) {
+              pill.classList.remove('time-pill--active');
+              pill.classList.add('time-pill--busy');
+              pill.setAttribute('aria-disabled', 'true');
+              pill.innerHTML = `
+                ${fmt12(curVal)}
+                <span class="time-pill-badge time-pill-badge--danger">NO SLOTS</span>
+              `;
+            }
+          }
+
+          __justBookedOrRescheduled = false;
+          return;
+        }
+
+        throw new Error(msg);
       }
 
-const timeRaw = iTime.value;
-let prettyTime;
-if (mode === 'book' && isBookNow) {
-  prettyTime = 'Now (current time on this day)';
-} else {
-  prettyTime = timeRaw ? fmt12(timeRaw) : 'Auto-select nearest available slot';
-}
+      // success UI
+      result.innerHTML = j.html || '<div class="text-slate-700">Done.</div>';
+      form.classList.add('hidden');
+      result.classList.remove('hidden');
 
+      __justBookedOrRescheduled = true;
 
-      const counselorLabel =
-        iCoun.options && iCoun.selectedIndex >= 0
-          ? iCoun.options[iCoun.selectedIndex].text
-          : 'Any available counselor';
-
-      // current / last schedule (from NEXT_APPT passed from PHP)
-      const hasPrevAppt  = !!NEXT_APPT;
-      const prevDateText = hasPrevAppt ? NEXT_APPT.date_label : '—';
-      const prevTimeText = hasPrevAppt ? NEXT_APPT.time_label : '—';
-      const prevCounText = hasPrevAppt
-        ? (NEXT_APPT.counselor_name || counselorLabel)
-        : counselorLabel;
-
-      const title = (mode === 'book')
-        ? 'Confirm urgent booking'
-        : 'Move appointment to an earlier slot?';
-
-      const confirmText = (mode === 'book')
-        ? 'Yes, book appointment'
-        : 'Yes, move appointment';
-
-         // 🔹 SweetAlert confirm (fallback to window.confirm)
-      if (window.Swal) {
-        // build details: show current schedule when rescheduling
-        let detailsHtml = `
-          <p><strong>Student:</strong> ${studentLabel}</p>
-          <p><strong>Counselor:</strong> ${counselorLabel}</p>
-        `;
-
-        if (mode === 'resched' && hasPrevAppt) {
-          detailsHtml += `
-            <p class="mt-1"><strong>Current schedule:</strong> ${prevDateText} • ${prevTimeText}${prevCounText ? ' (' + prevCounText + ')' : ''}</p>
-            <hr class="my-2 border-slate-200">
-            <p><strong>New date:</strong> ${prettyDate}</p>
-            <p><strong>New time:</strong> ${prettyTime}</p>
-          `;
-        } else {
-          detailsHtml += `
-            <p><strong>Date:</strong> ${prettyDate}</p>
-            <p><strong>Time:</strong> ${prettyTime}</p>
-          `;
+      if (j.appt) {
+        const hdr = document.getElementById('hdrUpcomingPill');
+        if (hdr) {
+          hdr.textContent = `Upcoming appt: ${j.appt.date_label} • ${j.appt.time_label}`;
+          hdr.classList.remove('hidden');
         }
 
-        const { isConfirmed } = await Swal.fire({
-          icon: 'warning',
-          title,
-          html: `
-            <div class="text-left text-sm text-slate-700">
-              ${detailsHtml}
+        const chip = document.getElementById('js-hasActiveMsg');
+        chip?.classList.remove('hidden');
+
+        const wrap = document.getElementById('js-nextAppt');
+        if (wrap) {
+          wrap.classList.remove('hidden');
+          wrap.innerHTML = `
+            <div class="mt-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 p-3 text-sm">
+              <div class="font-medium">Upcoming appointment ${j.appt.rel_label}</div>
+              <div class="text-xs opacity-80">
+                ${j.appt.date_label} • ${j.appt.time_label}${j.appt.counselor_name ? ' • ' + j.appt.counselor_name : ''}
+              </div>
             </div>
-          `,
-          showCancelButton: true,
-          confirmButtonText: confirmText,
-          cancelButtonText: 'Cancel',
-          reverseButtons: true,
-          focusCancel: true,
-        });
-
-        if (!isConfirmed) return;
-
-        await doSubmit();
-       } else {
-        const baseMsg =
-          (mode === 'book'
-            ? 'Book urgent appointment'
-            : 'Move appointment earlier') + ` for ${studentLabel}?`;
-
-        let extra = `\nNew: ${prettyDate} • ${prettyTime}`;
-        if (mode === 'resched' && hasPrevAppt) {
-          extra =
-            `\nCurrent: ${prevDateText} • ${prevTimeText}` +
-            `\nNew: ${prettyDate} • ${prettyTime}`;
+          `;
         }
 
-        const ok = window.confirm(baseMsg + extra);
-        if (!ok) return;
-        await doSubmit();
+        document.getElementById('btnBookHR')?.classList.add('hidden');
+        document.getElementById('hrActionsWrap')?.classList.add('hidden');
+        document.getElementById('hrMarkDone')?.classList.remove('hidden');
       }
+    } catch (err) {
+      console.error(err);
+      if (window.Swal) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: String(err.message || err),
+        });
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 🔹 Build preview for the confirmation dialog
+  const dateRaw = iDate.value;
+  let prettyDate = 'Not yet selected';
+  if (dateRaw) {
+    try {
+      prettyDate = new Date(dateRaw + 'T00:00:00').toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+      });
+    } catch (_) {}
+  }
+
+  const timeRaw = iTime.value;
+  let prettyTime;
+  if (mode === 'book' && isBookNow) {
+    prettyTime = 'Now (current time on this day)';
+  } else {
+    prettyTime = timeRaw ? fmt12(timeRaw) : 'Auto-select nearest available slot';
+  }
+
+  const counselorLabel =
+    iCoun.options && iCoun.selectedIndex >= 0
+      ? iCoun.options[iCoun.selectedIndex].text
+      : 'Any available counselor';
+
+  const hasPrevAppt  = !!NEXT_APPT;
+  const prevDateText = hasPrevAppt ? NEXT_APPT.date_label : '—';
+  const prevTimeText = hasPrevAppt ? NEXT_APPT.time_label : '—';
+  const prevCounText = hasPrevAppt
+    ? (NEXT_APPT.counselor_name || counselorLabel)
+    : counselorLabel;
+
+  const title = (mode === 'book')
+    ? 'Confirm urgent booking'
+    : 'Move appointment to an earlier slot?';
+
+  const confirmText = (mode === 'book')
+    ? 'Yes, urgent booking'
+    : 'Yes, reschedule';
+
+  if (window.Swal) {
+    let detailsHtml = `
+      <p><strong>Student:</strong> ${studentLabel}</p>
+      <p><strong>Counselor:</strong> ${counselorLabel}</p>
+    `;
+
+    if (mode === 'resched' && hasPrevAppt) {
+      detailsHtml += `
+        <p class="mt-1">
+          <strong>Current schedule:</strong>
+          ${prevDateText} • ${prevTimeText}${prevCounText ? ' (' + prevCounText + ')' : ''}
+        </p>
+        <hr class="my-2 border-slate-200">
+        <p><strong>New date:</strong> ${prettyDate}</p>
+        <p><strong>New time:</strong> ${prettyTime}</p>
+      `;
+    } else {
+      detailsHtml += `
+        <p><strong>Date:</strong> ${prettyDate}</p>
+        <p><strong>Time:</strong> ${prettyTime}</p>
+      `;
+    }
+
+    const { isConfirmed } = await Swal.fire({
+      icon: 'warning',
+      title,
+      html: `
+        <div class="text-left text-sm text-slate-700">
+          ${detailsHtml}
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: confirmText,
+      cancelButtonText: 'Cancel',
+      reverseButtons: true,
+      focusCancel: true,
     });
+
+    // 🔹 This is the part you wanted: reset when cancelling Book Now
+    if (!isConfirmed) {
+      if (isBookNow) {
+        isBookNow = false;
+        if (iNow) iNow.value = '0';
+
+        // Restore mode to how the modal was originally opened
+        mode = lastOpenMode || 'resched';
+
+        if (mode === 'book') {
+          titleEl.textContent = 'Urgent booking';
+          label.textContent   = 'Book';
+        } else {
+          titleEl.textContent = 'Move appointment earlier';
+          label.textContent   = 'Reschedule';
+        }
+      }
+      return;
+    }
+  }
+
+  await doSubmit();
+});
 
 function open(m){
   mode = m;
+  lastOpenMode = m;   // remember original mode (book or resched)
   isBookNow = false;
   if (iNow) iNow.value = '0';
 
-  titleEl.textContent = (mode==='book') ? 'Book urgent appointment' : 'Move appointment earlier';
-  label.textContent   = (mode==='book') ? 'Book' : 'Reschedule';
-  if (btnBookNow) {
-  btnBookNow.classList.toggle('hidden', mode !== 'book');
+  if (mode === 'book') {
+    titleEl.textContent = 'Urgent booking';
+    label.textContent   = 'Book';
+  } else {
+    titleEl.textContent = 'Move appointment earlier';
+    label.textContent   = 'Reschedule';
+  }
+
+  // Book urgent button visible in both modes
+  if (btnBookNow) btnBookNow.classList.remove('hidden');
+
+  result.classList.add('hidden');
+  form.classList.remove('hidden');
+  modal.classList.remove('hidden');
+  __justBookedOrRescheduled = false;
+
+  // Default date = next weekday
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  if (d.getDay() === 6) d.setDate(d.getDate() + 2); // Sat → Mon
+  if (d.getDay() === 0) d.setDate(d.getDate() + 1); // Sun → Mon
+
+  picked      = d;
+  iDate.value = ymd(d);
+  view        = new Date(d.getFullYear(), d.getMonth(), 1);
+
+  renderCalendar();
+  loadSlots(preferredCounselorId || null);
 }
 
-      result.classList.add('hidden');
-      form.classList.remove('hidden');
-      modal.classList.remove('hidden');
-      __justBookedOrRescheduled = false;
+function close(){
+  modal.classList.add('hidden');
+}
 
-      const d = new Date();
-      d.setDate(d.getDate()+1);
-      if (d.getDay()==6) d.setDate(d.getDate()+2);
-      if (d.getDay()==0) d.setDate(d.getDate()+1);
-      picked=d;
-      iDate.value = ymd(d);
-      view = new Date(d.getFullYear(), d.getMonth(), 1);
+closeBtn?.addEventListener('click', () => {
+  const successVisible = __justBookedOrRescheduled && !result.classList.contains('hidden');
+  close();
+  if (successVisible) setTimeout(() => window.location.reload(), 120);
+});
 
-      renderCalendar();
+cancelBtn?.addEventListener('click', close);
+modal?.firstElementChild?.addEventListener('click', close);
 
-      // 🔹 When opening, immediately load slots for the preferred counselor (if any)
-      loadSlots(preferredCounselorId || null);
-    }
 
     function close(){ modal.classList.add('hidden'); }
 
@@ -1616,31 +1656,35 @@ function open(m){
     modal?.firstElementChild?.addEventListener('click', close);
   
     // “Book for now” button handler – must be inside this IIFE
-    if (btnBookNow) {
-      btnBookNow.addEventListener('click', () => {
-        // Only meaningful in book mode
-        if (mode !== 'book') return;
+if (btnBookNow) {
+  btnBookNow.addEventListener('click', () => {
+    // 🔹 Always treat this as an URGENT BOOKING, even if modal was opened as "resched"
+    mode = 'book';
+    isBookNow = true;
+    if (iNow) iNow.value = '1';
 
-        isBookNow = true;
-        if (iNow) iNow.value = '1';
+    // Update title + primary button label so it’s clear
+    if (titleEl) titleEl.textContent = 'Urgent booking';
+    if (label)   label.textContent   = 'Book';
 
-        // Force date to TODAY
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        picked = today;
-        if (iDate) iDate.value = ymd(today);
+    // Force date to TODAY
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    picked = today;
+    if (iDate) iDate.value = ymd(today);
 
-        // Clear any selected time; backend will use current time
-        if (iTime) iTime.value = '';
-        if (timePills) {
-          [...timePills.querySelectorAll('.time-pill')]
-            .forEach(p => p.classList.remove('time-pill--active'));
-        }
-
-        // Submit the form (goes through the same SweetAlert confirm)
-        form.requestSubmit();
-      });
+    // Clear any selected time; backend will use current time
+    if (iTime) iTime.value = '';
+    if (timePills) {
+      [...timePills.querySelectorAll('.time-pill')]
+        .forEach(p => p.classList.remove('time-pill--active'));
     }
+
+    // Submit the form (goes through the same SweetAlert confirm)
+    form.requestSubmit();
+  });
+}
+
 
   })(); // end of booking IIFE
 
@@ -1971,7 +2015,7 @@ function open(m){
 
                 <div id="hrActionsWrap" class="mt-3 ${ (listItems.length && isHighRisk && (canBook || canMoveEarlier)) ? '' : 'hidden' }">
                   <div class="no-print flex flex-wrap items-center gap-2">
-                    ${ canBook ? `
+                    ${ (canBook && !canMoveEarlier) ? `
                       <button id="btnBookHR" type="button"
                               class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:from-indigo-700 hover:to-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-indigo-500">
                         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -1983,18 +2027,17 @@ function open(m){
 
                     ${ canMoveEarlier ? `
                       <button id="btnReschedHR" type="button"
-                              class="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-3 py-2 text-sm font-semibold text-white shadow-sm
-                                    hover:bg-amber-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400">
-                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                          <circle cx="12" cy="12" r="9" />
-                          <polyline points="12 7 12 12 15 14" />
+                              class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:from-indigo-700 hover:to-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-indigo-500">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" stroke-width="1.8"></rect>
+                          <path d="M8 2v4M16 2v4M3 10h18" stroke-width="1.8" stroke-linecap="round"></path>
                         </svg>
-                        <span>Move to earlier slot</span>
+                        <span>Reschedule to earlier slot</span>
                       </button>` : '' }
                     <div id="hrActionMsg" class="text-sm text-slate-600"></div>
                   </div>
                 </div>
+
               </div>
             </div>
           `;

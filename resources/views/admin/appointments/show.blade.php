@@ -41,6 +41,9 @@
   $dotCls  = $dotMap[$status]   ?? $dotMap[''];
 
   $hasCounselor = !empty($appointment->counselor_id);
+
+  // 🔹 NEW: detect walk-in origin on the appointment itself
+  $isWalkIn = ($appointment->appointment_source ?? null) === 'walk_in';
 @endphp
 
 @section('content')
@@ -52,14 +55,26 @@
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         {{-- Left: Title + chips --}}
         <div class="min-w-0">
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-3 flex-wrap">
             <h2 class="text-xl sm:text-2xl font-bold tracking-tight truncate">
               Appointment #{{ $appointment->id }}
             </h2>
+
+            {{-- Status chip --}}
             <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold {{ $chipCls }}">
               <span class="inline-block w-1.5 h-1.5 rounded-full {{ $dotCls }} mr-1.5"></span>
               {{ $statusLabel }}
             </span>
+
+            {{-- 🔹 NEW: Walk-in origin chip --}}
+            @if($isWalkIn)
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium 
+             bg-amber-50 text-slate-800 ring-1 ring-amber-200">
+    <span class="inline-block size-1.5 rounded-full bg-amber-400 mr-1.5"></span>
+    Walk-in
+</span>
+
+            @endif
           </div>
 
           <p class="text-white/85 text-sm mt-0.5 flex items-center gap-2">

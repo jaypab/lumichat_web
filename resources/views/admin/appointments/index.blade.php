@@ -214,6 +214,7 @@
                             : null;
 
                 $prevCounselorName = trim((string) ($row->prev_counselor_name ?? ''));
+                $isWalkIn = ($row->appointment_source ?? null) === 'walk_in';
               @endphp
 
               <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition">
@@ -221,8 +222,21 @@
 
                 {{-- Student --}}
                 <td class="px-6 py-4 whitespace-nowrap text-slate-700">
-                  {{ optional($row->student)->name ?? '—' }}
+                  <div class="flex flex-col">
+                    <span>{{ optional($row->student)->name ?? '—' }}</span>
+
+                    {{-- Walk-in chip --}}
+                    @if($isWalkIn)
+                  <span class="inline-flex w-max items-center px-2 py-0.5 rounded-full text-[10px] font-medium
+                              bg-amber-50 text-slate-800 ring-1 ring-amber-200">
+                      <span class="inline-block size-1.5 rounded-full bg-amber-400 mr-1"></span>
+                      Walk-in
+                  </span>
+
+                    @endif
+                  </div>
                 </td>
+
 
                 {{-- Counselor --}}
                 <td class="px-6 py-4 whitespace-nowrap">

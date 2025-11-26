@@ -96,17 +96,19 @@ class AppointmentController extends Controller
                 'status'     => 'no_show',
                 'updated_at' => $now,
             ]);
-        // ===== END AUTO NO-SHOW SWEEP =====
-
         // ===== ACTIVE APPOINTMENTS (current counselor_id = $cid) =====
         $select = [
             'a.id',
             'a.scheduled_at',
             'a.created_at as booked_at',
             'a.status',
-            DB::raw("COALESCE(s.name,'—')  as student_name"),
-            DB::raw("COALESCE(s.email,'') as student_email"),
+            'a.appointment_source', // 👈 use this, not type
         ];
+
+        $select[] = DB::raw("COALESCE(s.name,'—')  as student_name");
+        $select[] = DB::raw("COALESCE(s.email,'') as student_email");
+
+        // counselor reassignment columns
         $select[] = $hasCrStatus
             ? 'a.cr_status'
             : DB::raw('NULL as cr_status');
@@ -118,6 +120,7 @@ class AppointmentController extends Controller
             ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
             ->select($select)
             ->where('a.counselor_id', $cid);
+
 
         // Filter: status
         if ($status !== 'all') {
@@ -159,6 +162,7 @@ class AppointmentController extends Controller
                     'a.id as appointment_id',
                     'a.created_at as booked_at',
                     'a.scheduled_at as current_scheduled_at',
+                    'a.appointment_source', 
 
                     DB::raw("COALESCE(s.name,'—')  as student_name"),
                     DB::raw("COALESCE(s.email,'') as student_email"),
@@ -231,11 +235,9 @@ class AppointmentController extends Controller
         // ===== REASSIGNED HISTORY (read-only; still visible to past counselor) =====
         $reassignedAppointments = collect();
 
-        if (Schema::hasTable('tbl_appointment_counselor_history')) {
-            $hr = DB::table('tbl_appointment_counselor_history as h')
-                ->join('tbl_appointments as a', 'a.id', '=', 'h.appointment_id')
-                ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-                ->select([
+            if (Schema::hasTable('tbl_appointment_counselor_history')) {
+
+                $historySelect = [
                     'a.id',
                     'a.scheduled_at',
                     'a.created_at as booked_at',
@@ -243,39 +245,32 @@ class AppointmentController extends Controller
                     DB::raw("COALESCE(s.email,'') as student_email"),
                     'h.status as history_status',
                     'h.changed_at',
-                ])
-                ->where('h.counselor_id', $cid)
-                ->where('h.status', 'reassigned');
+                ];
 
-            // optional: reuse period filter for these as well (based on scheduled_at)
-            switch ($period) {
-                case 'today':
-                    $hr->whereDate('a.scheduled_at', $now->toDateString());
-                    break;
-                case 'upcoming':
-                    $hr->where('a.scheduled_at', '>=', $now);
-                    break;
-                case 'this_week':
-                    $hr->whereBetween('a.scheduled_at', [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()]);
-                    break;
-                case 'this_month':
-                    $hr->whereBetween('a.scheduled_at', [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()]);
-                    break;
-                case 'past':
-                    $hr->where('a.scheduled_at', '<', $now);
-                    break;
-                default:
-                    // all
-                    break;
-            }
+                // include type/end_at kung meron
+                if (Schema::hasColumn('tbl_appointments', 'type')) {
+                    $historySelect[] = 'a.type';
+                }
+                if (Schema::hasColumn('tbl_appointments', 'end_at')) {
+                    $historySelect[] = 'a.end_at';
+                }
 
-            // optional: reuse search filter
-            if ($q !== '') {
-                $hr->where(function ($w) use ($q) {
-                    $w->where('s.name', 'like', "%{$q}%")
-                    ->orWhere('s.email', 'like', "%{$q}%");
-                });
-            }
+                $hr = DB::table('tbl_appointment_counselor_history as h')
+                    ->join('tbl_appointments as a', 'a.id', '=', 'h.appointment_id')
+                    ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
+                    ->select([
+                        'a.id',
+                        'a.scheduled_at',
+                        'a.created_at as booked_at',
+                        'a.appointment_source', // 👈 add this
+                        DB::raw("COALESCE(s.name,'—')  as student_name"),
+                        DB::raw("COALESCE(s.email,'') as student_email"),
+                        'h.status as history_status',
+                        'h.changed_at',
+                    ])
+                    ->where('h.counselor_id', $cid)
+                    ->where('h.status', 'reassigned');
+
 
             $reassignedAppointments = $hr
                 ->orderByDesc('h.changed_at')

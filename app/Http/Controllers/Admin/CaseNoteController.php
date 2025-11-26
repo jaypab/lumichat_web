@@ -51,6 +51,14 @@ class CaseNoteController extends Controller
             'dateKey' => $dateKey,
             'q'       => $q,
         ]);
+        $source = $request->input('source'); // 'walk-in' or null
+
+        $notes = CaseNote::query()
+        // your existing date & search filters here…
+        ->when($source === 'walk-in', fn ($q) => $q->where('note_source', 'Walk-in'))
+        ->latest('note_date')
+        ->paginate(10);
+
     }
 
     /**
@@ -181,6 +189,7 @@ class CaseNoteController extends Controller
                 DB::raw("COALESCE(s.name, n.student_name) as student_name_display"),
                 'n.note_date',
                 'n.presenting_problem',
+                 'n.note_source', 
                 'n.observations',
                 'n.interventions',
                 'n.response',

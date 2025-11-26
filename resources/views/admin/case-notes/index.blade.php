@@ -11,6 +11,7 @@
   $q       = trim((string) request('q',''));
   $from    = request('from');
   $to      = request('to');
+  $source  = request('source');       // e.g. 'walk-in' later if you add filter
 
   $total = ($notes instanceof \Illuminate\Pagination\LengthAwarePaginator)
           ? $notes->total()
@@ -48,14 +49,19 @@
         </div>
         <div class="flex items-center gap-2">
           <span class="inline-flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm ring-1 ring-white/20">
-            <svg class="h-4 w-4 opacity-90" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1a7 7 0 0 0-7 7v3.126a4 4 0 0 1-.832 2.4L2.6 16.6A1 1 0 0 0 3.4 18h17.2a1 1 0 0 0 .8-1.6l-1.568-3.074A4 4 0 0 1 19 11.126V8a7 7 0 0 0-7-7Zm0 22a3 3 0 0 0 3-3H9a3 3 0 0 0 3 3Z"/></svg>
-            <strong class="font-semibold">{{ $total }}</strong><span class="opacity-90">records</span>
+            <svg class="h-4 w-4 opacity-90" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 1a7 7 0 0 0-7 7v3.126a4 4 0 0 1-.832 2.4L2.6 16.6A1 1 0 0 0 3.4 18h17.2a1 1 0 0 0 .8-1.6l-1.568-3.074A4 4 0 0 1 19 11.126V8a7 7 0 0 0-7-7Zm0 22a3 3 0 0 0 3-3H9a3 3 0 0 0 3 3Z"/>
+            </svg>
+            <strong class="font-semibold">{{ $total }}</strong>
+            <span class="opacity-90">records</span>
           </span>
-          <a href="{{ route('admin.case-notes.export.pdf', request()->only('date','q','from','to')) }}"
+
+          <a href="{{ route('admin.case-notes.export.pdf', request()->only('date','q','from','to','source')) }}"
              target="_blank" rel="noopener"
              class="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
             </svg>
             Download PDF
           </a>
@@ -84,6 +90,7 @@
         <input type="hidden" name="q" value="{{ $q }}">
         @if($from)<input type="hidden" name="from" value="{{ $from }}">@endif
         @if($to)<input type="hidden" name="to" value="{{ $to }}">@endif
+        @if($source)<input type="hidden" name="source" value="{{ $source }}">@endif
       </div>
 
       {{-- Custom range & search row --}}
@@ -108,10 +115,11 @@
                    class="w-full h-10 bg-white border border-slate-200 rounded-xl pl-10 pr-9 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"/>
             <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
                  viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <circle cx="11" cy="11" r="7" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke-width="2" stroke-linecap="round"/>
+              <circle cx="11" cy="11" r="7" stroke-width="2"/>
+              <path d="M21 21l-4.3-4.3" stroke-width="2" stroke-linecap="round"/>
             </svg>
             @if($q!=='')
-              <a href="{{ route('admin.case-notes.index', array_filter(['date'=>$dateKey,'from'=>$from,'to'=>$to])) }}"
+              <a href="{{ route('admin.case-notes.index', array_filter(['date'=>$dateKey,'from'=>$from,'to'=>$to,'source'=>$source])) }}"
                  class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" title="Clear">
                 ✕
               </a>
@@ -137,9 +145,10 @@
         <table class="min-w-full text-sm leading-6 table-auto">
           <colgroup>
             <col style="width:16%">
-            <col style="width:24%">
             <col style="width:22%">
-            <col style="width:24%">
+            <col style="width:18%">
+            <col style="width:22%">
+            <col style="width:12%">  {{-- Source --}}
             <col style="width:10%">
             <col class="col-action" style="width:4%">
           </colgroup>
@@ -147,9 +156,11 @@
           <thead class="bg-slate-100 border-b border-slate-200 text-slate-700 sticky top-0 z-10">
             <tr class="align-middle">
               <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">ID</th>
+               <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Source</th>
               <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Student Name</th>
               <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Counselor Name</th>
               <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Presenting Problem (snippet)</th>
+
               <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Date</th>
               <th class="px-6 py-3 text-right font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap col-action">Action</th>
             </tr>
@@ -168,9 +179,32 @@
               @endphp
               <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition">
                 <td class="px-6 py-4 font-semibold text-slate-900 whitespace-nowrap">{{ $code }}</td>
+                </td>
+
+                  {{-- Source chip --}}
+                  @php
+                    // Safely read note_source even if it's missing
+                    $rawSource = isset($n->note_source) ? $n->note_source : null;
+                  @endphp
+
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    @if($rawSource === 'Walk-in')
+                      <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+                        Walk-in
+                      </span>
+                    @else
+                      <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200">
+                        Scheduled
+                      </span>
+                    @endif
+                  </td>
+
+
                 <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $studentName }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $counselor }}</td>
-                <td class="px-6 py-4 whitespace-nowrap" title="{{ $n->presenting_problem ?? '' }}">{!! $chip($n->presenting_problem ?? '') !!}</td>
+                <td class="px-6 py-4 whitespace-nowrap" title="{{ $n->presenting_problem ?? '' }}">
+                  {!! $chip($n->presenting_problem ?? '') !!}
+                
                 <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $date }}</td>
                 <td class="px-6 py-4 text-right">
                   <a href="{{ route('admin.case-notes.show', $n->id) }}"
@@ -181,7 +215,7 @@
               </tr>
             @empty
               <tr>
-                <td colspan="6" class="px-6 py-14">
+                <td colspan="7" class="px-6 py-14">
                   <div class="text-center">
                     <div class="mx-auto mb-2 h-9 w-9 rounded-full bg-slate-100 ring-1 ring-slate-200 flex items-center justify-center text-slate-400">☰</div>
                     <p class="text-slate-700 font-medium">No case notes found</p>
@@ -215,13 +249,17 @@
     position: fixed !important; inset: 0 !important; margin: 12mm !important;
     background:#fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
-  #case-print-root .rounded-2xl, #case-print-root .shadow-sm, #case-print-root .border { border:0 !important; box-shadow:none !important; }
+  #case-print-root .rounded-2xl, #case-print-root .shadow-sm, #case-print-root .border {
+    border:0 !important; box-shadow:none !important;
+  }
   #case-print-root .overflow-x-auto { overflow: visible !important; }
   #case-print-root th.col-action,
   #case-print-root td.col-action,
   #case-print-root col.col-action,
   #case-print-root thead th:last-child,
-  #case-print-root tbody td:last-child { display:none !important; visibility:hidden !important; }
+  #case-print-root tbody td:last-child {
+    display:none !important; visibility:hidden !important;
+  }
 </style>
 @endsection
 

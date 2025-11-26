@@ -1244,6 +1244,38 @@ private function assessRisk(string $raw): array
             ];
         }
     }
+    // -----------------------------------------------------------------
+// 2.5) Standalone "die" / "mamatay" etc. in emotional/personal context
+// -----------------------------------------------------------------
+$criticalActs = ['die', 'mamatay', 'magpakamatay'];
+
+if (!$negationShield && $this->hasAnyWordExact($t, $criticalActs)) {
+    // Any first-person / self reference
+    $hasSelf = (bool) preg_match(
+        '/\b(i|im|i\'m|ive|i\'ve|me|my|mine|myself|ako|ko|akin)\b/u',
+        $t
+    );
+
+    // Emotional / context words that make "die" clearly about the self
+    $hasEmotionContext = $this->hasAnyWord($t, [
+        'sad','down','tired','hopeless','lonely','empty','numb',
+        'pointless','meaningless','worthless','useless','burden',
+        'hurt','hurting','pain','scared','afraid',
+        // also allow "positive" framing like "smile" → still a death wish
+        'smile','happy','peaceful','okay','ok',
+    ]);
+
+    // Very short lines like "die with a smile", "just die", etc.
+    $isShort = mb_strlen($t) <= 30;
+
+    if ($hasSelf || $hasEmotionContext || $isShort) {
+        return [
+            'level' => $negationShield ? 'moderate' : 'high',
+            'hits'  => ['die_direct'],
+        ];
+    }
+}
+
 
     // -----------------------------------------------------------------
     // 3) Intent + act within proximity (~8 tokens), both orders

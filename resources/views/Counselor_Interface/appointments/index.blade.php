@@ -38,7 +38,7 @@
     'no_show'   => ['bg'=>'bg-rose-50','text'=>'text-rose-700','ring'=>'ring-rose-200','dot'=>'bg-rose-500','label'=>'No Show'],
   ];
 
-  // 🔹 current time reused for “ongoing walk-in” detection
+  // current time reused for “ongoing walk-in” detection
   $now = Carbon::now();
 @endphp
 
@@ -121,47 +121,36 @@
         <tbody class="divide-y divide-slate-100">
           @forelse($appointments as $row)
             @php
-              $dt       = Carbon::parse($row->scheduled_at);
-              $bookedAt = $row->booked_at ? Carbon::parse($row->booked_at) : null;
+                $dt       = Carbon::parse($row->scheduled_at);
+                $bookedAt = $row->booked_at ? Carbon::parse($row->booked_at) : null;
 
-              // --- detect if this is an active walk-in session ---
-              $effectiveStatus = $row->status;
+                // WALK-IN based on appointment_source
+                $sourceRaw = strtolower((string)($row->appointment_source ?? ''));
+                $isWalkIn  = in_array($sourceRaw, ['walk_in', 'walk-in', 'walk in'], true);
 
-              // some queries may not select "type" or "end_at", so guard them
-              $hasType  = property_exists($row, 'type');
-              $hasEndAt = property_exists($row, 'end_at');
+                // we still keep your effectiveStatus logic if needed later
+                $effectiveStatus = $row->status;
 
-              $isWalkIn = $hasType && $row->type === 'walk-in';
+                // no end_at column, assume 1-hour slot
+                $endAt = $dt->copy()->addMinutes(60);
+                if ($isWalkIn && $row->status === 'completed' && $now->between($dt, $endAt)) {
+                    $effectiveStatus = 'ongoing';
+                }
 
-              // if end_at is missing or null, assume 1-hour window from scheduled_at
-              if ($hasEndAt && !empty($row->end_at)) {
-                  $endAt = Carbon::parse($row->end_at);
-              } else {
-                  $endAt = $dt->copy()->addMinutes(60);
-              }
+                // status chip
+                $s      = $statusMap[$effectiveStatus] ?? [
+                    'bg'=>'bg-slate-50','text'=>'text-slate-700',
+                    'ring'=>'ring-slate-200','dot'=>'bg-slate-400',
+                    'label'=>ucfirst($effectiveStatus),
+                ];
+                $chipCl = "{$s['bg']} {$s['text']} ring-1 {$s['ring']}";
+                $dotCl  = $s['dot'];
+                $label  = $s['label'];
 
-              if (
-                  $isWalkIn &&
-                  $row->status === 'completed' &&   // DB marked completed
-                  $now->between($dt, $endAt)        // but time window is still ongoing
-              ) {
-                  $effectiveStatus = 'ongoing';
-              }
-
-              // use effective status for the chip
-              $s      = $statusMap[$effectiveStatus] ?? [
-                  'bg'=>'bg-slate-50','text'=>'text-slate-700',
-                  'ring'=>'ring-slate-200','dot'=>'bg-slate-400',
-                  'label'=>ucfirst($effectiveStatus),
-              ];
-              $chipCl = "{$s['bg']} {$s['text']} ring-1 {$s['ring']}";
-              $dotCl  = $s['dot'];
-              $label  = $s['label'];
-
-              $crPending = isset($row->cr_status) && $row->cr_status === 'requested';
-              $crTime    = !empty($row->cr_created_at)
-                          ? Carbon::parse($row->cr_created_at)->diffForHumans()
-                          : null;
+                $crPending = isset($row->cr_status) && $row->cr_status === 'requested';
+                $crTime    = !empty($row->cr_created_at)
+                            ? Carbon::parse($row->cr_created_at)->diffForHumans()
+                            : null;
             @endphp
 
             <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition">
@@ -169,10 +158,21 @@
 
               <td class="px-6 py-4">
                 <div class="font-medium text-slate-900">{{ $row->student_name }}</div>
-                @if(!empty($row->student_email))
-                  <div class="text-slate-500 text-xs">{{ $row->student_email }}</div>
+              
+
+                {{-- Walk-in chip (same look as admin) --}}
+                @if($isWalkIn)
+                  <div class="mt-1">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-medium 
+                                bg-amber-50 text-slate-800 ring-1 ring-amber-200">
+                      <span class="inline-block size-1.5 rounded-full bg-amber-400 mr-1.5"></span>
+                      Walk-in
+                    </span>
+                  </div>
                 @endif
               </td>
+            
+
 
               <td class="px-6 py-4">
                 <div class="leading-tight">
@@ -211,7 +211,6 @@
               </td>
 
               <td class="px-6 py-4 text-right">
-              {{-- View in read-only mode via show() (isHistory=true) --}}
                 <a href="{{ route('counselor.appointments.show', $row->id) }}"
                   class="inline-flex items-center justify-center h-10 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700">
                   View
@@ -237,7 +236,6 @@
 
 {{-- =========================
      Re-Assigned Appointments
-     (history from tbl_appointment_counselor_history)
    ========================= --}}
 @if(isset($reassignedAppointments) && $reassignedAppointments->count() > 0)
   <div class="max-w-7xl mx-auto space-y-4 mt-6">
@@ -274,10 +272,13 @@
               @php
                 $dt       = Carbon::parse($row->scheduled_at);
                 $bookedAt = $row->booked_at ? Carbon::parse($row->booked_at) : null;
-
                 $changedLabel = $row->changed_at
                     ? Carbon::parse($row->changed_at)->diffForHumans()
                     : null;
+
+                // Walk-in detection for history rows (if "type" is selected in controller)
+                $hasType  = property_exists($row, 'type');
+                $isWalkIn = $hasType && $row->type === 'walk-in';
               @endphp
 
               <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition">
@@ -287,6 +288,16 @@
                   <div class="font-medium text-slate-900">{{ $row->student_name }}</div>
                   @if(!empty($row->student_email))
                     <div class="text-slate-500 text-xs">{{ $row->student_email }}</div>
+                  @endif
+
+                  @if($isWalkIn)
+                    <div class="mt-1">
+                      <span class="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-medium 
+                                  bg-amber-50 text-slate-800 ring-1 ring-amber-200">
+                        <span class="inline-block size-1.5 rounded-full bg-amber-400 mr-1.5"></span>
+                        Walk-in
+                      </span>
+                    </div>
                   @endif
                 </td>
 
@@ -321,7 +332,6 @@
                 </td>
 
                 <td class="px-6 py-4 text-right">
-                  {{-- View in read-only mode via show() (isHistory=true) --}}
                   <a href="{{ route('counselor.appointments.show', $row->id) }}"
                     class="inline-flex items-center justify-center h-10 rounded-lg bg-slate-800 px-4 text-sm font-medium text-white hover:bg-slate-900">
                     View
@@ -338,7 +348,6 @@
 
 {{-- =========================
      Rescheduled Appointments
-     (date and/or counselor changes)
    ========================= --}}
 @if(isset($rescheduledAppointments) && $rescheduledAppointments->count() > 0)
   <div class="max-w-7xl mx-auto space-y-4 mt-6">
@@ -464,15 +473,4 @@
   </div>
 @endif
 
-
-{{-- Micro-UX: auto-submit search after a short pause --}}
-<script>
-  const q = document.getElementById('q');
-  const form = q?.closest('form');
-  let t = null;
-  q?.addEventListener('input', () => {
-    clearTimeout(t);
-    t = setTimeout(() => form?.submit(), 400);
-  });
-</script>
 @endsection
