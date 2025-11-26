@@ -153,59 +153,96 @@
         <tbody class="divide-y divide-slate-100">
           @forelse ($sessions as $s)
             @php
-              // Normalize risk fields
-              $riskRaw = strtolower((string) ($s->risk_level ?? $s->risk ?? ''));
-              $score   = (int) ($s->risk_score ?? 0);
-              $isHigh  = in_array($riskRaw, ['high','high-risk','high_risk'], true) || $score >= 80;
+  // Normalize risk fields
+  $riskRaw = strtolower((string) ($s->risk_level ?? $s->risk ?? ''));
+  $score   = (int) ($s->risk_score ?? 0);
 
-              // Maps provided by controller (session_id => bool)
-              $handled = (bool) ($handledAfter[$s->id] ?? false);
-              $cleared = (bool) ($clearedAfter[$s->id] ?? false);
+  // Base "high" rule (existing behavior)
+  $isHigh  = in_array($riskRaw, ['high','high-risk','high_risk'], true) || $score >= 80;
 
-              // High-risk & not handled/cleared after this session
-              $showRed      = $isHigh && !$handled && !$cleared;
-              $canQuickBook = $showRed;
+  // Normalized risk level for UI (high / moderate / low / unknown)
+  $riskLevelNorm = 'unknown';
+  if ($isHigh) {
+      $riskLevelNorm = 'high';
+  } elseif (in_array($riskRaw, ['moderate','medium'], true) || ($score >= 40 && $score < 80)) {
+      $riskLevelNorm = 'moderate';
+  } elseif (in_array($riskRaw, ['low'], true) || ($score > 0 && $score < 40)) {
+      $riskLevelNorm = 'low';
+  }
 
-              // Code for display
-              $year = $s->created_at?->format('Y') ?? now()->format('Y');
-              $code = 'LMC-' . $year . '-' . str_pad($s->id, 4, '0', STR_PAD_LEFT);
+  // Map to CSS classes + label
+  $riskPillClass = '';
+  $riskLabel     = '';
 
-              // Emotion badges (top 3 with %)
-              $counts = is_array($s->emotions) ? $s->emotions : (json_decode($s->emotions ?? '[]', true) ?: []);
-              $norm = [];
-              foreach ($counts as $k=>$v) { if (is_string($k)) $norm[strtolower($k)] = max(0,(int)$v); }
-              arsort($norm);
-              $etotal = array_sum($norm);
-              $top    = array_slice($norm, 0, 3, true);
-            @endphp
+  if ($riskLevelNorm === 'high') {
+      $riskPillClass = 'bg-rose-50 text-rose-700 ring-rose-200';
+      $riskLabel     = 'High risk';
+  } elseif ($riskLevelNorm === 'moderate') {
+      $riskPillClass = 'bg-amber-50 text-amber-700 ring-amber-200';
+      $riskLabel     = 'Moderate risk';
+  } elseif ($riskLevelNorm === 'low') {
+      $riskPillClass = 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+      $riskLabel     = 'Low risk';
+  }
+
+  // Maps provided by controller (session_id => bool)
+  $handled = (bool) ($handledAfter[$s->id] ?? false);
+  $cleared = (bool) ($clearedAfter[$s->id] ?? false);
+
+  // High-risk & not handled/cleared after this session → RED alert tag/dot
+  $showRed      = $isHigh && !$handled && !$cleared;
+  $canQuickBook = $showRed;
+
+  // Code for display
+  $year = $s->created_at?->format('Y') ?? now()->format('Y');
+  $code = 'LMC-' . $year . '-' . str_pad($s->id, 4, '0', STR_PAD_LEFT);
+
+  // Emotion badges (top 3 with %)
+  $counts = is_array($s->emotions) ? $s->emotions : (json_decode($s->emotions ?? '[]', true) ?: []);
+  $norm = [];
+  foreach ($counts as $k=>$v) { if (is_string($k)) $norm[strtolower($k)] = max(0,(int)$v); }
+  arsort($norm);
+  $etotal = array_sum($norm);
+  $top    = array_slice($norm, 0, 3, true);
+@endphp
+
 
             <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition {{ $showRed ? 'bg-rose-50/40' : '' }}">
-              {{-- SESSION ID --}}
-              <td class="px-6 py-4 font-semibold">
-                <div class="flex items-center gap-2">
-                  @if($showRed)
-                    <span class="inline-block size-2.5 rounded-full bg-rose-600 ring-4 ring-rose-100/70"
-                          title="High risk since last booking" aria-label="High risk"></span>
-                  @endif
+{{-- SESSION ID --}}
+<td class="px-6 py-4 font-semibold">
+  <div class="flex items-center gap-2">
+    @if($showRed)
+      {{-- Red dot only when HIGH & unresolved since last booking --}}
+      <span class="inline-block size-2.5 rounded-full bg-rose-600 ring-4 ring-rose-100/70"
+            title="High risk since last booking" aria-label="High risk"></span>
+    @endif
 
-                  @if($canQuickBook)
-                    <a href="#"
-                       class="js-fast-book hover:underline focus:underline
-                              text-slate-900 visited:text-slate-900
-                              {{ $showRed ? 'text-rose-700 hover:text-rose-800 focus:text-rose-800' : '' }}"
-                       data-slots="{{ route('admin.chatbot-sessions.slots', $s->id) }}"
-                       data-book="{{ route('admin.chatbot-sessions.book',  $s->id) }}"
-                       data-session="{{ $s->id }}">
-                      {{ $code }}
-                    </a>
-                  @else
-                    <a href="{{ route('admin.chatbot-sessions.show', $s) }}"
-                       class="hover:underline focus:underline text-slate-900 visited:text-slate-900">
-                      {{ $code }}
-                    </a>
-                  @endif
-                </div>
-              </td>
+    @if($canQuickBook)
+      <a href="#"
+         class="js-fast-book hover:underline focus:underline
+                text-slate-900 visited:text-slate-900
+                {{ $showRed ? 'text-rose-700 hover:text-rose-800 focus:text-rose-800' : '' }}"
+         data-slots="{{ route('admin.chatbot-sessions.slots', $s->id) }}"
+         data-book="{{ route('admin.chatbot-sessions.book',  $s->id) }}"
+         data-session="{{ $s->id }}">
+        {{ $code }}
+      </a>
+    @else
+      <a href="{{ route('admin.chatbot-sessions.show', $s) }}"
+         class="hover:underline focus:underline text-slate-900 visited:text-slate-900">
+        {{ $code }}
+      </a>
+    @endif
+
+    @if($riskLabel && $riskPillClass)
+      {{-- Risk level tag: red = high, yellow = moderate, green = low --}}
+      <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 {{ $riskPillClass }}">
+        {{ $riskLabel }}
+      </span>
+    @endif
+  </div>
+</td>
+
 
               {{-- STUDENT --}}
               <td class="px-6 py-4 whitespace-nowrap text-slate-700">

@@ -247,7 +247,6 @@ public function index(Request $r): View
         $sStudent = (int) $sess->user_id;
         $sAt      = $sess->created_at;
 
-        // --- A) Legacy condition: any active/complete AFTER this session (per student) ---
         $legacyHandled = (bool) optional($activeByStudent->get($sStudent))->first(function ($ap) use ($sAt) {
             return $ap->created_at >= $sAt;
         });
@@ -260,9 +259,15 @@ public function index(Request $r): View
         $hasLinkedActive    = (bool) optional($activeBySession->get($sid))->first();
         $hasLinkedCompleted = (bool) optional($completedBySession->get($sid))->first();
 
+        // --- C) NEW: ANY active appointment for this student (regardless of created_at) ---
+        // If the student currently has a pending/confirmed appointment,
+        // we treat ALL their sessions as "handled" while that appointment is active.
+        $anyActiveNow = (bool) optional($activeByStudent->get($sStudent))->count();
+
         // Final flags
-        $handledAfter[$sid] = $legacyHandled || $hasLinkedActive;
+        $handledAfter[$sid] = $legacyHandled || $hasLinkedActive || $anyActiveNow;
         $clearedAfter[$sid] = $legacyCleared || $hasLinkedCompleted;
+
     }
 
     return view('admin.chatbot_sessions.index', [
@@ -645,256 +650,297 @@ public function slots(int $id, Request $request): JsonResponse
     ]);
 }
 
-       /** Admin books appointment for the session’s student with counselor+time */
-    public function book(int $id, Request $request): JsonResponse
-    {
-        $session = $this->sessions->findWithOrderedChats($id);
-        if (!$session || empty($session->user_id)) {
-            return response()->json(['message'=>'Session not found.'], 404);
-        }
-        $studentId = (int) $session->user_id;
+/** Admin urgent booking: select counselor + time OR book for "now" (same route) */
+public function book(int $id, Request $request): JsonResponse
+{
+    $session = $this->sessions->findWithOrderedChats($id);
+    if (!$session || empty($session->user_id)) {
+        return response()->json(['message'=>'Session not found.'], 404);
+    }
+    $studentId = (int) $session->user_id;
 
-        // block if the student already has ANY active appointment (pending/confirmed)
-        $hasActiveForStudent = DB::table('tbl_appointments')
-            ->where('student_id', $studentId)
-            ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
-            ->exists();
-        if ($hasActiveForStudent) {
-            return response()->json(['message' => 'Student already has an active appointment.'], 409);
-        }
+    // 🔹 Mode flag: normal (date+time) vs "book now"
+    $bookNow = $request->boolean('now');  // coming from the new button
 
-        $validated = $request->validate([
-            'date'         => ['required','date_format:Y-m-d'],
-            'time'         => ['required','regex:/^\d{2}:\d{2}$/'],
-            'counselor_id' => ['required','integer','exists:tbl_counselors,id'],
-        ]);
+    // still block if student already has active appt (pending/confirmed)
+    $hasActiveForStudent = DB::table('tbl_appointments')
+        ->where('student_id', $studentId)
+        ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
+        ->exists();
+    if ($hasActiveForStudent) {
+        return response()->json(['message' => 'Student already has an active appointment.'], 409);
+    }
 
-        $raw  = Carbon::parse($validated['date'].' '.$validated['time'].':00')->second(0);
-        $slot = (function(Carbon $dt){ $m=(int)floor($dt->minute/30)*30; return $dt->copy()->setTime($dt->hour,$m,0);} )($raw);
-        if ($raw->ne($slot)) {
-            return response()->json(['message'=>'Please choose a 30-minute step time (e.g., 09:00, 09:30).'], 422);
-        }
+    // 🔹 Validation: time is required ONLY in normal mode
+    $rules = [
+        'date'         => ['required','date_format:Y-m-d'],
+        'counselor_id' => ['required','integer','exists:tbl_counselors,id'],
+    ];
 
-        $dowIso = $slot->isoWeekday();
-        if ($dowIso < 1 || $dowIso > 5) {
-            return response()->json(['message'=>'Appointments are available Monday to Friday only.'], 422);
-        }
-        if ($slot->lte(now())) {
-            return response()->json(['message'=>'Please choose a future time.'], 422);
-        }
+    $rules['time'] = $bookNow
+        ? ['nullable','regex:/^\d{2}:\d{2}$/']   // not required when now=1
+        : ['required','regex:/^\d{2}:\d{2}$/'];
 
-        $counselorId   = (int) $validated['counselor_id'];
-        $counselorName = DB::table('tbl_counselors')->where('id',$counselorId)->value('name') ?? null;
-        $note          = $this->composeBookingNote($session, $slot, $counselorName);
+    $validated = $request->validate($rules);
 
-        $createdId = null;
-
-        try {
-            DB::transaction(function () use ($studentId, $counselorId, $slot, $session, $note, &$createdId) {
-                // re-check for race
-                $activeNowForStudent = DB::table('tbl_appointments')
-                    ->where('student_id', $studentId)
-                    ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
-                    ->lockForUpdate()
-                    ->exists();
-                if ($activeNowForStudent) throw new \RuntimeException('STUDENT_ACTIVE');
-
-                $taken = DB::table('tbl_appointments')
-                    ->where('counselor_id', $counselorId)
-                    ->where('scheduled_at', $slot)
-                    ->whereIn('status', self::BLOCKING_STATUSES)
-                    ->lockForUpdate()
-                    ->exists();
-                if ($taken) throw new \RuntimeException('TAKEN');
-
-                $createdId = DB::table('tbl_appointments')->insertGetId([
-                    'student_id'               => $studentId,
-                    'counselor_id'             => $counselorId,
-                    'scheduled_at'             => $slot,
-                    // 🔽 keep your logic: pending + requires student confirmation
-                    'status'                   => 'pending',
-                    'student_confirm_required' => true,
-                    'student_confirmed_at'     => null,
-                    'note'                     => $note,
-                    'chatbot_session_id'       => $session->id,
-                    'created_at'               => now(),
-                    'updated_at'               => now(),
-                ]);
-
-                // optional legacy in-app row; now includes deep-link in data
-                if (Schema::hasTable('tbl_notifications')) {
-                    DB::table('tbl_notifications')->insert([
-                        'user_id'    => $studentId,
-                        'title'      => 'Appointment Scheduled',
-                        'body'       => $note,
-                        'type'       => 'appointment',
-                        'data'       => json_encode([
-                            'title' => 'Appointment Scheduled',
-                            'body'  => $note,
-                            'url'   => route('appointment.view', $createdId), // 🔗 deep link (student)
-                        ]),
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                }
-            });
-        } catch (\RuntimeException $e) {
-            if ($e->getMessage() === 'TAKEN')
-                return response()->json(['message'=>'That counselor/time just filled. Pick another slot.'], 409);
-            if ($e->getMessage() === 'STUDENT_ACTIVE')
-                return response()->json(['message'=>'This student already has an active appointment (pending/confirmed).'], 409);
-            throw $e;
-        }
-
-        // 🔔 Role-aware notifications (deep links)
-        try {
-            $whenNice     = $slot->format('M d, Y g:i A');
-            $studentUrl   = route('appointment.view', $createdId);
-            $counselorUrl = \Illuminate\Support\Facades\Route::has('counselor.appointments.show')
-                ? route('counselor.appointments.show', $createdId)
-                : null;
-
-            // Student — needs to confirm
-            Notify::student(
-                (int) $studentId,
-                'Appointment requires your confirmation',
-                'We scheduled an appointment for '.$whenNice.'. Please open to confirm.',
-                $studentUrl
-            );
-
-            // Counselor — sees a pending slot assigned (awaiting student confirm)
-            Notify::counselor(
-                (int) $counselorId,
-                'Pending appointment created',
-                'A student appointment was created for '.$whenNice.' (awaiting student confirmation).',
-                $counselorUrl
-            );
-        } catch (\Throwable $e) {
-            \Log::notice('Notify (book) student/counselor failed/skipped', ['id'=>$createdId,'e'=>$e->getMessage()]);
-        }
-
-        // 🔔 Existing Admin broadcast (kept)
-        try {
-            $studentName   = (string) ($session->user->name ?? ('#'.$studentId));
-            $whenNice      = $slot->format('M d, Y g:i A');
-            $counselorNice = $counselorName ?: '—';
-
-            Notify::admins(
-                'Appointment booked by admin',
-                "Student: {$studentName}\nCounselor: {$counselorNice}\nWhen: {$whenNice}",
-                route('admin.appointments.show', $createdId)
-            );
-        } catch (\Throwable $e) {
-            \Log::warning('Notify::admins (booked by admin) failed', [
-                'appt_id' => $createdId,
-                'e'       => $e->getMessage(),
-            ]);
-        }
-
-        /* 🔹 NEW: EMAILS FOR URGENT BOOKING (student + counselor) */
-        try {
-            $row = DB::table('tbl_appointments as a')
-                ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
-                ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
-                ->where('a.id', $createdId)
-                ->select([
-                    'a.id',
-                    'a.scheduled_at',
-                    's.name  as student_name',
-                    's.email as student_email',
-                    'c.name  as counselor_name',
-                    'c.email as counselor_email',
-                ])
-                ->first();
-
-            if ($row) {
-                $whenNice = Carbon::parse($row->scheduled_at ?? $slot)->format('M d, Y g:i A');
-
-                // Student email – urgent booking
-                $this->sendPlainEmail(
-                    $row->student_email ?? null,
-                    'LumiCHAT — Urgent Appointment Scheduled',
-                    "Hi {$row->student_name},\n\n"
-                    ."We scheduled an urgent counseling appointment for you based on your recent LumiCHAT session.\n\n"
-                    ."Counselor: {$row->counselor_name}\n"
-                    ."When: {$whenNice}\n\n"
-                    ."Please log in to LumiCHAT to confirm or manage this appointment.\n"
-                );
-
-                // Counselor email – urgent assignment
-                $this->sendPlainEmail(
-                    $row->counselor_email ?? null,
-                    'LumiCHAT — New Urgent Appointment',
-                    "Hi {$row->counselor_name},\n\n"
-                    ."A high-priority counseling appointment has been scheduled for a student.\n\n"
-                    ."Student: {$row->student_name}\n"
-                    ."When: {$whenNice}\n\n"
-                    ."Please check your LumiCHAT counselor dashboard for full details.\n"
-                );
-            }
-        } catch (\Throwable $e) {
-            \Log::warning('Urgent booking emails failed', [
-                'appointment_id' => $createdId,
-                'error'          => $e->getMessage(),
-            ]);
-        }
-
-        $start = $slot->copy()->second(0);
-        $rel   = $start->isFuture()
-            ? 'in '.$start->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW])
-            : 'Started '.$start->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW]);
-
+// ----------------- Resolve slot -----------------
+if ($bookNow) {
+    // "Book now" is only allowed for TODAY
+    $today = now()->format('Y-m-d');
+    if ($validated['date'] !== $today) {
         return response()->json([
-            'ok' => true,
-            'appointment' => [
-                'id'                => $createdId,
-                'scheduled_at_iso'  => $start->toIso8601String(),
-                'date_label'        => $start->format('M d, Y'),
-                'time_label'        => $start->format('g:i A'),
-                'rel_label'         => $rel,                  // e.g., "in 11h 2m"
-                'counselor_name'    => $counselorName,        // may be null
-            ],
-            'html' => sprintf(
-                '
-                <div class="kv-grid">
-                <div class="kv"><span class="label">Student:</span>   <span class="value">%s</span></div>
-                <div class="kv"><span class="label">Counselor:</span> <span class="value">%s</span></div>
-                <div class="kv"><span class="label">Date:</span>      <span class="value">%s</span></div>
-                <div class="kv"><span class="label">Time:</span>      <span class="value">%s</span></div>
-                </div>
-                <div style="margin:6px 0 2px"><b>Note sent to student:</b></div>
-                <div style="white-space:pre-wrap">%s</div>
-                ',
-                e($session->user->name ?? ('#'.$studentId)),
-                e($counselorName ?? '—'),
-                e($start->format('M d, Y')),
-                e($start->format('g:i A')),
-                e($note)
-            ),
+            'message' => '“Book now” can only be used for today. For future dates, please select a time.',
+        ], 422);
+    }
+
+    // Use the exact current time (hour + minute), no 30-min snapping
+    $slot = now()->copy()->second(0);
+} else {
+    // Normal flow: use selected date + time (must be a 30-min step AND in the future)
+    $raw  = Carbon::parse($validated['date'].' '.$validated['time'].':00')->second(0);
+    $slot = (function (Carbon $dt) {
+        $m = (int) floor($dt->minute / 30) * 30;
+        return $dt->copy()->setTime($dt->hour, $m, 0);
+    })($raw);
+
+    if ($raw->ne($slot)) {
+        return response()->json([
+            'message' => 'Please choose a 30-minute step time (e.g., 09:00, 09:30).',
+        ], 422);
+    }
+}
+
+
+$dowIso = $slot->isoWeekday();
+if ($dowIso < 1 || $dowIso > 5) {
+    return response()->json(['message'=>'Appointments are available Monday to Friday only.'], 422);
+}
+
+// For normal booking, time must be in the future.
+// For "book now", we ALLOW <= now so the session can start immediately.
+if (!$bookNow && $slot->lte(now())) {
+    return response()->json(['message'=>'Please choose a future time.'], 422);
+}
+
+
+    $counselorId   = (int) $validated['counselor_id'];
+    $counselorRow  = DB::table('tbl_counselors')->where('id',$counselorId)->first(['id','name','email']);
+    $counselorName = $counselorRow->name ?? null;
+
+    // 🔹 NOTE: urgent/summon tone
+    $note = $this->composeBookingNote($session, $slot, $counselorName);
+
+    $createdId = null;
+
+    try {
+        DB::transaction(function () use ($studentId, $counselorId, $slot, $session, $note, &$createdId) {
+            // re-check for race
+            $activeNowForStudent = DB::table('tbl_appointments')
+                ->where('student_id', $studentId)
+                ->whereIn('status', self::SESSION_ACTIVE_STATUSES)
+                ->lockForUpdate()
+                ->exists();
+            if ($activeNowForStudent) throw new \RuntimeException('STUDENT_ACTIVE');
+
+            $taken = DB::table('tbl_appointments')
+                ->where('counselor_id', $counselorId)
+                ->where('scheduled_at', $slot)
+                ->whereIn('status', self::BLOCKING_STATUSES)
+                ->lockForUpdate()
+                ->exists();
+            if ($taken) throw new \RuntimeException('TAKEN');
+
+            // 🔹 URGENT SUMMON: confirmed immediately
+            $insert = [
+                'student_id'               => $studentId,
+                'counselor_id'             => $counselorId,
+                'scheduled_at'             => $slot,
+                'status'                   => 'confirmed',
+                'student_confirm_required' => false,
+                'student_confirmed_at'     => now(),
+                'note'                     => $note,
+                'chatbot_session_id'       => $session->id,
+                'created_at'               => now(),
+                'updated_at'               => now(),
+            ];
+
+            if (Schema::hasColumn('tbl_appointments', 'is_urgent')) {
+                $insert['is_urgent'] = 1;
+            }
+
+            $createdId = DB::table('tbl_appointments')->insertGetId($insert);
+
+            if (Schema::hasTable('tbl_notifications')) {
+                DB::table('tbl_notifications')->insert([
+                    'user_id'    => $studentId,
+                    'title'      => 'Urgent Counseling Appointment',
+                    'body'       => $note,
+                    'type'       => 'appointment',
+                    'data'       => json_encode([
+                        'title' => 'Urgent Counseling Appointment',
+                        'body'  => $note,
+                        'url'   => route('appointment.view', $createdId),
+                    ]),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        });
+    } catch (\RuntimeException $e) {
+        if ($e->getMessage() === 'TAKEN')
+            return response()->json(['message'=>'That counselor/time just filled. Pick another slot.'], 409);
+        if ($e->getMessage() === 'STUDENT_ACTIVE')
+            return response()->json(['message'=>'This student already has an active appointment (pending/confirmed).'], 409);
+        throw $e;
+    }
+
+    // 🔔 Notifications (same as before – urgent wording)
+    try {
+        $whenNice     = $slot->format('M d, Y g:i A');
+        $studentUrl   = route('appointment.view', $createdId);
+        $counselorUrl = \Illuminate\Support\Facades\Route::has('counselor.appointments.show')
+            ? route('counselor.appointments.show', $createdId)
+            : null;
+
+        Notify::student(
+            (int) $studentId,
+            'Urgent counseling session scheduled',
+            'The Guidance Office has scheduled an urgent counseling session for you on '.$whenNice.'. Please report on time.',
+            $studentUrl
+        );
+
+        Notify::counselor(
+            (int) $counselorId,
+            'Urgent appointment assigned',
+            'An urgent counseling appointment has been assigned to you for '.$whenNice.'.',
+            $counselorUrl
+        );
+    } catch (\Throwable $e) {
+        \Log::notice('Notify (book urgent) student/counselor failed/skipped', [
+            'id' => $createdId,
+            'e'  => $e->getMessage(),
         ]);
     }
 
-    private function composeBookingNote(object $session, Carbon $slot, ?string $counselorName = null): string
-    {
-        $studentName = (string) ($session->user->name ?? '');
-        $firstName   = Str::of($studentName)->trim()->before(' ')->value() ?: 'there';
+    try {
+        $studentName   = (string) ($session->user->name ?? ('#'.$studentId));
+        $whenNice      = $slot->format('M d, Y g:i A');
+        $counselorNice = $counselorName ?: '—';
 
-        $niceDate = $slot->format('l, M d, Y');
-        $niceTime = $slot->format('g:i A');
-        $who      = $counselorName ? "with {$counselorName}" : "with our guidance counselor";
-        $location = 'Guidance Office, Tagoloan Community College';
-
-        return "Hi {$firstName},\n\n"
-            . "LumiCHAT noticed you might be going through a lot, and we want to support you. "
-            . "We’ve scheduled a confidential guidance appointment for you:\n\n"
-            . "📅 {$niceDate} • ⏰ {$niceTime}\n"
-            . "👤 {$who}\n"
-            . "📍 {$location}\n\n"
-            . "This session is confidential and judgment-free. Please arrive about 10 minutes early and bring your school ID if possible.\n\n"
-            . "If this schedule does not work for you, you can cancel this appointment in your LumiCHAT appointment page "
-            . "and book a new time using the appointment booking page when you are ready.\n\n"
-            . "We’re here for you. One step at a time—you are not alone.";
+        Notify::admins(
+            'Urgent appointment booked by admin',
+            "Student: {$studentName}\nCounselor: {$counselorNice}\nWhen: {$whenNice}",
+            route('admin.appointments.show', $createdId)
+        );
+    } catch (\Throwable $e) {
+        \Log::warning('Notify::admins (urgent booked by admin) failed', [
+            'appt_id' => $createdId,
+            'e'       => $e->getMessage(),
+        ]);
     }
+
+    // 📧 Emails (keep as you already have – trimmed for brevity)
+    try {
+        $row = DB::table('tbl_appointments as a')
+            ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
+            ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
+            ->where('a.id', $createdId)
+            ->select([
+                'a.id',
+                'a.scheduled_at',
+                's.name  as student_name',
+                's.email as student_email',
+                'c.name  as counselor_name',
+                'c.email as counselor_email',
+            ])
+            ->first();
+
+        if ($row) {
+            $whenNice = Carbon::parse($row->scheduled_at ?? $slot)->format('M d, Y g:i A');
+
+            $this->sendPlainEmail(
+                $row->student_email ?? null,
+                'LumiCHAT — Urgent Counseling Appointment',
+                "Hi {$row->student_name},\n\n"
+                ."The Guidance Office has scheduled an urgent counseling appointment for you based on your recent LumiCHAT conversation.\n\n"
+                ."Counselor: {$row->counselor_name}\n"
+                ."When: {$whenNice}\n\n"
+                ."Please treat this as a priority and report to the Guidance Office on time.\n"
+            );
+
+            $this->sendPlainEmail(
+                $row->counselor_email ?? null,
+                'LumiCHAT — New Urgent Counseling Case',
+                "Hi {$row->counselor_name},\n\n"
+                ."An urgent counseling case has been scheduled for a student.\n\n"
+                ."Student: {$row->student_name}\n"
+                ."When: {$whenNice}\n\n"
+                ."Please check your LumiCHAT counselor dashboard for full details.\n"
+            );
+        }
+    } catch (\Throwable $e) {
+        \Log::warning('Urgent booking emails failed', [
+            'appointment_id' => $createdId,
+            'error'          => $e->getMessage(),
+        ]);
+    }
+
+    $start = $slot->copy()->second(0);
+    $rel   = $start->isFuture()
+        ? 'in '.$start->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW])
+        : 'Started '.$start->diffForHumans(now(), ['parts'=>2,'short'=>true,'syntax'=>Carbon::DIFF_RELATIVE_TO_NOW]);
+
+    return response()->json([
+        'ok' => true,
+        'appointment' => [
+            'id'                => $createdId,
+            'scheduled_at_iso'  => $start->toIso8601String(),
+            'date_label'        => $start->format('M d, Y'),
+            'time_label'        => $start->format('g:i A'),
+            'rel_label'         => $rel,
+            'counselor_name'    => $counselorName,
+        ],
+        'html' => sprintf(
+            '
+            <div class="kv-grid">
+            <div class="kv"><span class="label">Student:</span>   <span class="value">%s</span></div>
+            <div class="kv"><span class="label">Counselor:</span> <span class="value">%s</span></div>
+            <div class="kv"><span class="label">Date:</span>      <span class="value">%s</span></div>
+            <div class="kv"><span class="label">Time:</span>      <span class="value">%s</span></div>
+            </div>
+            <div style="margin:6px 0 2px"><b>Urgent summon message sent to student:</b></div>
+            <div style="white-space:pre-wrap">%s</div>
+            ',
+            e($session->user->name ?? ('#'.$studentId)),
+            e($counselorName ?? '—'),
+            e($start->format('M d, Y')),
+            e($start->format('g:i A')),
+            e($note)
+        ),
+    ]);
+}
+
+
+
+   private function composeBookingNote(object $session, Carbon $slot, ?string $counselorName = null): string
+{
+    $studentName = (string) ($session->user->name ?? '');
+    $firstName   = Str::of($studentName)->trim()->before(' ')->value() ?: 'there';
+
+    $niceDate = $slot->format('l, M d, Y');
+    $niceTime = $slot->format('g:i A');
+    $who      = $counselorName ? "with {$counselorName}" : "with our guidance counselor";
+    $location = 'Guidance Office, Tagoloan Community College';
+
+    return "Hi {$firstName},\n\n"
+        . "Based on your recent LumiCHAT conversation, the Guidance Office would like to see you for an urgent, confidential counseling session:\n\n"
+        . "📅 {$niceDate} • ⏰ {$niceTime}\n"
+        . "👤 {$who}\n"
+        . "📍 {$location}\n\n"
+        . "Please treat this as a priority and report to the Guidance Office on time. "
+        . "If you really cannot attend this schedule, kindly coordinate with the Guidance Office or manage your appointment in LumiCHAT as soon as possible.\n\n"
+        . "This session is confidential and judgment-free. We just want to make sure you are safe and supported.";
+}
 
     /** EXPORT: list */
     public function exportPdf(Request $request)

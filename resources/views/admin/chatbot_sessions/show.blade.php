@@ -476,7 +476,8 @@
         @else
           {{-- LOCKED view --}}
           <div class="relative overflow-hidden">
-            <div class="h-28 md:h-32 rounded-xl bg-slate-100 ring-1 ring-slate-200 flex.items-center justify-center">
+  <div class="h-28 md:h-32 rounded-xl bg-slate-100 ring-1 ring-slate-200 flex items-center justify-center">
+
               <div class="text-center">
                 <div class="text-sm font-semibold text-slate-600">High-risk trigger (student message)</div>
                 <div class="mt-1 text-xs text-slate-500">Extra verification required</div>
@@ -625,7 +626,11 @@
           @csrf
 
           <!-- Hidden date field set by calendar -->
+          <!-- Hidden date field set by calendar -->
           <input id="hrDate" name="date" type="hidden" required>
+          <!-- Hidden flag: 0 = normal booking, 1 = book for "now" -->
+          <input id="hrNow" name="now" type="hidden" value="0">
+
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {{-- LEFT: Calendar picker (weekdays only) --}}
@@ -684,6 +689,13 @@
       <div class="flex items-center justify-end gap-2">
         <button type="button" id="hrActionCancel"
                 class="rounded-xl px-3 py-2 ring-1 ring-slate-200 hover:bg-slate-50">Cancel</button>
+
+        {{-- NEW: urgent “book for now” button (no time selection) --}}
+        <button type="button" id="hrActionBookNow"
+                class="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-white text-sm font-semibold hover:bg-orange-600">
+          Book now
+        </button>
+
         <button type="submit" id="hrActionSubmit"
                 class="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">
           <svg id="hrActionSpin" class="hidden h-4 w-4 animate-spin" viewBox="0 0 24 24">
@@ -693,6 +705,8 @@
           <span id="hrActionLabel">Book</span>
         </button>
       </div>
+
+      
     </form>
 
     <div id="hrActionResult" class="mt-4 hidden rounded-xl ring-1 ring-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"></div>
@@ -702,8 +716,9 @@
 {{-- ===== Sensitive unlock modal (second 2FA) ===== --}}
 <div id="hrModal" class="fixed inset-0 z-[75] hidden flex items-center justify-center" aria-hidden="true" role="dialog" aria-labelledby="hrTitle">
   <div class="absolute inset-0 bg-slate-900/45 backdrop-blur-[2px] opacity-0 transition-opacity.duration-200"></div>
-  <div class="relative z-[76] w-full max-w-md origin-center scale-95 opacity-0.translate-y-2
+<div class="relative z-[76] w-full max-w-md origin-center scale-95 opacity-0 translate-y-2
               rounded-2xl bg-white shadow-xl ring-1 ring-slate-200 p-5 md:p-6 transition-all duration-200">
+
     <div class="flex items-center justify-between">
       <h3 id="hrTitle" class="text-base font-semibold text-slate-900">Confirm again to view sensitive content</h3>
       <button type="button" id="hrClose" class="rounded-lg p-1 text-slate-500 hover:bg-slate-100">✕</button>
@@ -829,7 +844,10 @@
                 }">${item.sender}</span>` : ''}
             </div>
             <div class="mt-1 text-slate-900">#${item.id}</div>
-            <blockquote class="mt-1 text-sm text-slate-800 leading-relaxed">${String(item.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</blockquote>
+                                <blockquote class="mt-1 text-sm text-slate-800 leading-relaxed">
+                      ${(item.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+                    </blockquote>
+
           </div>
         `).join('');
         actions?.classList.remove('hidden');
@@ -849,7 +867,13 @@
       el.style.transition='height 240ms cubic-bezier(.2,.65,.3,1), opacity 200ms ease, transform 200ms ease';
       el.style.height=h+'px'; el.style.opacity='1'; el.style.transform='translateY(0)';
       const kids = Array.from(el.children);
-      kids.forEach((k,i)=>{ k.style.transition='opacity 220ms ease, transform 220ms.ease'; k.style.transitionDelay=(80+i*25)+'ms'; k.style.opacity='1'; k.style.transform='translateY(0)'; });
+      kids.forEach((k,i)=>{ 
+  k.style.transition = 'opacity 220ms ease, transform 220ms ease';
+  k.style.transitionDelay = (80+i*25) + 'ms';
+  k.style.opacity = '1';
+  k.style.transform = 'translateY(0)';
+});
+
       el.addEventListener('transitionend', function tidy(e){ if(e.propertyName==='height'){ el.style.height=''; el.style.transition=''; el.style.opacity=''; el.style.transform=''; kids.forEach(k=>{k.style.transition=''; k.style.transitionDelay='';}); el.removeEventListener('transitionend', tidy);} });
     }
 
@@ -935,13 +959,18 @@
     const iTime    = document.getElementById('hrTime');
     const timePills   = document.getElementById('hrTimePills');
     const noSlotsHint = document.getElementById('hrNoSlotsHint');
+    const iNow        = document.getElementById('hrNow');
+    const btnBookNow  = document.getElementById('hrActionBookNow');
+
 
     const calGrid  = document.getElementById('bkCalGrid');
     const calMonth = document.getElementById('bkCalMonth');
     const calPrev  = document.getElementById('bkCalPrev');
     const calNext  = document.getElementById('bkCalNext');
 
-    let __justBookedOrRescheduled = false;
+ let __justBookedOrRescheduled = false;
+let isBookNow = false; // true when using “Book for now”
+
 
     const pad = n => String(n).padStart(2,'0');
     const ymd = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -1046,27 +1075,37 @@
         });
     }
 
-    function setBusy(b){
-      submit.disabled=b;
-      spin.classList.toggle('hidden', !b);
-      label.textContent = b ? (mode==='book'?'Booking…':'Rescheduling…') : (mode==='book'?'Book':'Reschedule');
+
+
+function setBusy(b){
+  submit.disabled = b;
+  spin.classList.toggle('hidden', !b);
+
+  if (b) {
+    if (mode === 'book' && isBookNow) {
+      label.textContent = 'Booking (now)…';
+    } else if (mode === 'book') {
+      label.textContent = 'Booking…';
+    } else {
+      label.textContent = 'Rescheduling…';
+    }
+  } else {
+    label.textContent = (mode === 'book') ? 'Book' : 'Reschedule';
+  }
+}
+    function rewireHRActionButtons(scope = document){
+      const root = scope || document;
+      const btnBook   = root.querySelector('#btnBookHR');
+      const btnResched = root.querySelector('#btnReschedHR');
+
+      if (btnBook){
+        btnBook.onclick = () => open('book');
+      }
+      if (btnResched){
+        btnResched.onclick = () => open('resched');
+      }
     }
 
-    // 🔹 Rewire "Book urgent appointment" + "Move to earlier slot" buttons
-    function rewireHRActionButtons(scope = document) {
-      const b1 = scope.querySelector('#btnBookHR');
-      const b2 = scope.querySelector('#btnReschedHR');
-
-      if (b1 && !b1.dataset.wired) {
-        b1.dataset.wired = '1';
-        b1.addEventListener('click', () => open('book'));
-      }
-
-      if (b2 && !b2.dataset.wired) {
-        b2.dataset.wired = '1';
-        b2.addEventListener('click', () => open('resched'));
-      }
-    }
 
     // Expose so the unlock block can call it after replacing innerHTML
     window.lumiWireHRButtons = rewireHRActionButtons;
@@ -1321,14 +1360,17 @@ fillTimes(activeCid, slots, { occupied: occNorm, current, ref, date });
             iDate.value = ymd(d);
           }
 
-          // ensure we have a time (auto-select first available pill)
-          if (!iTime.value) {
-            timePills.querySelector('.time-pill:not([aria-disabled="true"])')?.click();
-          }
+// ensure we have a time (ONLY if not "Book for now")
+if (!isBookNow && !iTime.value) {
+  timePills.querySelector('.time-pill:not([aria-disabled="true"])')?.click();
+}
 
-          const fd = new FormData(form);
-          fd.append('_token', csrf);
-          if (!fd.get('date')) fd.set('date', iDate.value || '');
+
+const fd = new FormData(form);
+fd.append('_token', csrf);
+if (!fd.get('date')) fd.set('date', iDate.value || '');
+fd.set('now', (isBookNow && mode === 'book') ? '1' : '0');
+
 
           const ep  = (mode === 'book') ? epBook : epRebook;
           const res = await fetch(ep, {
@@ -1443,8 +1485,14 @@ fillTimes(activeCid, slots, { occupied: occNorm, current, ref, date });
         } catch (_) {}
       }
 
-      const timeRaw    = iTime.value;
-      const prettyTime = timeRaw ? fmt12(timeRaw) : 'Auto-select nearest available slot';
+const timeRaw = iTime.value;
+let prettyTime;
+if (mode === 'book' && isBookNow) {
+  prettyTime = 'Now (current time on this day)';
+} else {
+  prettyTime = timeRaw ? fmt12(timeRaw) : 'Auto-select nearest available slot';
+}
+
 
       const counselorLabel =
         iCoun.options && iCoun.selectedIndex >= 0
@@ -1526,10 +1574,17 @@ fillTimes(activeCid, slots, { occupied: occNorm, current, ref, date });
       }
     });
 
-    function open(m){
-      mode = m;
-      titleEl.textContent = (mode==='book') ? 'Book urgent appointment' : 'Move appointment earlier';
-      label.textContent   = (mode==='book') ? 'Book' : 'Reschedule';
+function open(m){
+  mode = m;
+  isBookNow = false;
+  if (iNow) iNow.value = '0';
+
+  titleEl.textContent = (mode==='book') ? 'Book urgent appointment' : 'Move appointment earlier';
+  label.textContent   = (mode==='book') ? 'Book' : 'Reschedule';
+  if (btnBookNow) {
+  btnBookNow.classList.toggle('hidden', mode !== 'book');
+}
+
       result.classList.add('hidden');
       form.classList.remove('hidden');
       modal.classList.remove('hidden');
@@ -1559,7 +1614,36 @@ fillTimes(activeCid, slots, { occupied: occNorm, current, ref, date });
 
     cancelBtn?.addEventListener('click', close);
     modal?.firstElementChild?.addEventListener('click', close);
-  })();
+  
+    // “Book for now” button handler – must be inside this IIFE
+    if (btnBookNow) {
+      btnBookNow.addEventListener('click', () => {
+        // Only meaningful in book mode
+        if (mode !== 'book') return;
+
+        isBookNow = true;
+        if (iNow) iNow.value = '1';
+
+        // Force date to TODAY
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        picked = today;
+        if (iDate) iDate.value = ymd(today);
+
+        // Clear any selected time; backend will use current time
+        if (iTime) iTime.value = '';
+        if (timePills) {
+          [...timePills.querySelectorAll('.time-pill')]
+            .forEach(p => p.classList.remove('time-pill--active'));
+        }
+
+        // Submit the form (goes through the same SweetAlert confirm)
+        form.requestSubmit();
+      });
+    }
+
+  })(); // end of booking IIFE
+
 
   /* ===== Weekly calendar (session counts) ===== */
   (() => {
@@ -1878,9 +1962,10 @@ fillTimes(activeCid, slots, { occupied: occNorm, current, ref, date });
                         }">${item.sender}</span>` : ''}
                     </div>
                     <div class="mt-1 text-slate-900">#${item.id}</div>
-                    <blockquote class="mt-1 text-sm text-slate-800.leading-relaxed">
+                    <blockquote class="mt-1 text-sm text-slate-800 leading-relaxed">
                       ${(item.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
                     </blockquote>
+
                   </div>
                 `).join('')}
 
@@ -1945,11 +2030,12 @@ fillTimes(activeCid, slots, { occupied: occNorm, current, ref, date });
                 ${
                   HAS_ACTIVE
                     ? `
-                      <div id="js-hasActiveMsg" class="mt-2">
-                        <div class="inline-flex.items-center rounded-lg bg-slate-100 text-slate-700 text-xs px-3 py-1.5">
-                          You’ve booked an appointment already
+                        <div id="js-hasActiveMsg" class="mt-2">
+                          <div class="inline-flex items-center rounded-lg bg-slate-100 text-slate-700 text-xs px-3 py-1.5">
+                            You’ve booked an appointment already
+                          </div>
                         </div>
-                      </div>
+
                     `
                     : `<div id="js-hasActiveMsg" class="mt-2 hidden"></div>`
                 }
@@ -2280,9 +2366,11 @@ fillTimes(activeCid, slots, { occupied: occNorm, current, ref, date });
 }
 .risk-card .risk-hint .kbd{
   padding:0.125rem 0.25rem;
-  border:1px solid.rgb(203 213 225);
+  border:1px solid rgb(203 213 225);
   border-radius:0.25rem;
 }
+
+
 
 .risk-card .risk-last{
   border:1px solid rgb(226 232 240);
