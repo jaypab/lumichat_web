@@ -109,29 +109,37 @@ class AppServiceProvider extends ServiceProvider
             $count = 0;
 
             try {
-                // Resolve the actual table used by the ChatSession model
                 if (class_exists(ChatSession::class)) {
-                    $table = app(ChatSession::class)->getTable(); // e.g. chat_sessions or tbl_chat_sessions
+                    $table = app(ChatSession::class)->getTable(); // e.g. chat_sessions
 
-                    if (Schema::hasTable($table)) {
-                        $q = DB::table($table);
+                    if (Schema::hasTable($table) && Schema::hasTable('tbl_appointments')) {
+                        $q = DB::table($table.' as s');
 
+                        // risk column
                         if (Schema::hasColumn($table, 'risk_level')) {
-                            $q->whereIn('risk_level', ['high', 'high-risk', 'high_risk']);
+                            $q->whereIn('s.risk_level', ['high', 'high-risk', 'high_risk']);
                         } elseif (Schema::hasColumn($table, 'risk')) {
-                            $q->whereIn('risk', ['high', 'high-risk', 'high_risk']);
+                            $q->whereIn('s.risk', ['high', 'high-risk', 'high_risk']);
                         } else {
-                            // no risk column, nothing to count
                             $q = null;
                         }
 
-                        if ($q) {
+                        // require user_id / created_at to exist
+                        if ($q && Schema::hasColumn($table, 'user_id') && Schema::hasColumn($table, 'created_at')) {
+                            // EXCLUDE sessions na may completed appointment na AFTER that session
+                            $q->whereNotExists(function ($sub) {
+                                $sub->from('tbl_appointments as a')
+                                    ->whereColumn('a.student_id', 's.user_id')
+                                    ->where('a.status', 'completed')
+                                    ->whereColumn('a.updated_at', '>=', 's.created_at');
+                            });
+
                             $count = (int) $q->count();
                         }
                     }
                 }
             } catch (\Throwable $e) {
-                $count = 0; // safe default on any error
+                $count = 0;
             }
 
             $view->with('adminHighRiskCount', $count);
