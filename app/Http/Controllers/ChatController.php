@@ -61,13 +61,6 @@ class ChatController extends Controller
         return 'there';
     }
 
-  private function evaluateRiskLevel(string $text): string
-{
-    // Reuse the richer assessRisk() logic so we only maintain one source of truth.
-    $risk = $this->assessRisk($text);
-    return $risk['level'] ?? 'low';
-}
-
 
     private function buildRasaMetadata(int $sessionId, string $lang, string $risk): array
     {
@@ -79,34 +72,6 @@ class ChatController extends Controller
                 'app'        => 'lumichat-web',
             ]
         ];
-    }
-
-    private function crisisMessageWithLink(): string
-    {
-        // Intentionally blank in this version
-    }
-
-    private function wantsAppointment(string $text): bool
-    {
-        $t = mb_strtolower($text);
-
-        // ===== Strong, explicit patterns (English only) =====
-        $strong = [
-            // ENG: action near counselor
-            '/\b(appoint(?:ment)?|schedule|book|booking|reserve|set\s*an?\s*appointment)\b[\s\S]{0,80}\b(counsel(?:or|ling)|therap(?:ist|y)|advisor)\b/iu',
-            '/\b(counsel(?:or|ling)|therap(?:ist|y)|advisor)\b[\s\S]{0,80}\b(appoint(?:ment)?|schedule|book|booking|reserve|set\s*an?\s*appointment)\b/iu',
-            '/\b(i\s+want|i\'?d\s+like|can\s+i|please)\b[\s\S]{0,40}\b(schedule|book|appointment)\b[\s\S]{0,40}\b(counsel(?:or|ling)|therap(?:ist|y)|advisor)\b/iu',
-            '/\bsee\s+(?:a\s+)?counselor\b/iu',
-        ];
-        foreach ($strong as $r) if (preg_match($r, $t)) return true;
-
-        // ===== Softer patterns: action + counselor somewhere in the text =====
-        $hasAction     = (bool) preg_match('/\b(appoint(?:ment)?|schedule|book(?:ing)?|reserve|set\s*(?:an?|up)?\s*appointment)\b/iu', $t);
-        $hasCounselor  = (bool) preg_match('/\b(counsel(?:or|ling)|therap(?:ist|y)|advisor)\b/iu', $t);
-
-        if ($hasAction && $hasCounselor) return true;
-
-        return false;
     }
 
     /**
@@ -368,23 +333,8 @@ public function store(Request $request)
         ]);
     }
 
-    // ===== 4) Decline-referral (SOFT RESET – no lock, keep chat open) =====
-    $declinedReferral = (function (string $s): bool {
-        $t = trim(mb_strtolower($s));
-        if (preg_match('~^/deny\s*(\{.*\})?~i', $t, $m)) {
-            if (!empty($m[1])) {
-                try {
-                    $j = json_decode($m[1], true, 512, JSON_THROW_ON_ERROR);
-                    if (isset($j['confirm_topic']) && strtolower($j['confirm_topic']) === 'referral') {
-                        return true;
-                    }
-                } catch (\Throwable $e) {}
-            }
-            return true;
-        }
-        return (bool) preg_match('/\b(not now|no thanks|maybe later|pass for now)\b/u', $t);
-    })($analysisText);
-
+// ===== 4) Decline-referral (SOFT RESET – no lock, keep chat open) =====
+$declinedReferral = $this->declinedReferral($analysisText);
     if ($declinedReferral) {
         $ventKey = 'vent_turns_for_session_' . $sessionId;
         session([$ventKey => 0]);
@@ -437,131 +387,14 @@ public function store(Request $request)
         ]);
     }
 
- // ===== 4.b) NON-MENTAL TOPICS → CONTEXTUAL BOUNDARY + GENTLE BRIDGE =====
+// ===== 4.b) NON-MENTAL TOPICS → CONTEXTUAL BOUNDARY + GENTLE BRIDGE =====
 if ($nonMental && !$unreadable) {
-    // What kind of non-mental topic is this? (games / tech / food / school / etc.)
-    $category   = $this->classifyNonMentalCategory($norm);
-    $isQuestion = $flags['is_question'] ?? false;
-
-    $replyText = '';
-
-    switch ($category) {
-        case 'games':
-            if ($isQuestion) {
-                $replyText =
-                    "Playing and talking about games is totally normal, {$first}. "
-                    ."I’m mainly focused on your mental health and well-being, so I might not be the best at game guides or meta strategies. "
-                    ."If gaming, ranks, or pressure from your teammates has been affecting your mood or stress, we can talk about that side of it.";
-            } else {
-                $replyText =
-                    "Playing video games can be a fun break, {$first}. "
-                    ."Lumi is focused on your mental health, so I might not give detailed game tips. "
-                    ."But if you’re using games to escape, relax, or if losing/rank pressure is stressing you out, you can tell me more about how it feels.";
-            }
-            break;
-
-        case 'entertainment':
-            $replyText =
-                "Movies, series, and shows can be a big part of how we unwind, {$first}. "
-                ."I’m not a full review or recommendation bot, but if something you watched is making you overthink, feel triggered, or reminding you of your own situation, we can explore those feelings together.";
-            break;
-
-        case 'food':
-            $replyText =
-                "Food, cravings, and what we eat are all normal to talk about, {$first}. "
-                ."I’m more focused on emotions than recipes, but if appetite, body image, or guilt around eating has been bothering you, I’m here to listen to that part.";
-            break;
-
-        case 'travel':
-            $replyText =
-                "Planning trips or thinking about travel can be exciting, {$first}. "
-                ."I can’t really help with booking or itineraries, but if you’re hoping this trip will help you rest from stress—or you’re anxious about going—I can support you with what you’re feeling about it.";
-            break;
-
-        case 'shopping':
-            $replyText =
-                "Shopping and online orders can be fun, and sometimes stressful too, {$first}. "
-                ."I can’t track parcels or manage payments, but if money, spending, or waiting for things is making you worried or pressured, we can talk about that.";
-            break;
-
-        case 'sports':
-            $replyText =
-                "Sports and exercise can really affect confidence, pressure, and energy, {$first}. "
-                ."I’m not a performance coach, but if games, training, or expectations from others are affecting how you feel, I’m here to support you with that side of it.";
-            break;
-
-        case 'tech':
-            if ($isQuestion) {
-                $replyText =
-                    "It sounds like you’re asking something technical (coding, apps, devices), {$first}. "
-                    ."Lumi is focused on your mental health, so I might not be able to walk through full tech fixes here. "
-                    ."If tech issues, deadlines, or school projects around this are stressing you out, we can talk about that pressure and how it’s been affecting you.";
-            } else {
-                $replyText =
-                    "Tech, coding, and devices can be really frustrating or tiring sometimes, {$first}. "
-                    ."I’m not a full technical support bot, but if errors, requirements, or expectations around this are stressing you or making you doubt yourself, you can share more about that and I’ll focus on how you’re feeling.";
-            }
-            break;
-
-        case 'creative':
-            $replyText =
-                "Creative work like drawing, editing, or design can be a big outlet—and also a source of pressure, {$first}. "
-                ."I might not be able to give full tutorials, but if you’re dealing with burnout, self-doubt, or pressure to be “good enough” with your work, we can talk about that.";
-            break;
-
-        case 'academics':
-            if ($isQuestion) {
-                $replyText =
-                    "It sounds like an academic or homework question, {$first}. "
-                    ."Lumi is here mainly to support your mental and emotional well-being, so I might not give a full solution or full lecture-style explanation. "
-                    ."If this subject, exam, or requirement is stressing you, making you feel overwhelmed, or hurting your confidence, we can talk about that part so you’re not carrying it alone.";
-            } else {
-                $replyText =
-                    "School topics and requirements can be heavy, {$first}. "
-                    ."I’m not a full homework or exam-solver, but if you’re feeling pressured, burned out, or discouraged about your studies, you can tell me more about that and we’ll focus on how it’s affecting you.";
-            }
-            break;
-
-        case 'social_media':
-            $replyText =
-                "Social media and online stuff can really influence how we feel about ourselves, {$first}. "
-                ."I might not be updated on every trend or drama, but if posts, comments, or comparisons online are affecting your mood, self-esteem, or stress, we can talk about that impact on you.";
-            break;
-
-        case 'money_career':
-            $replyText =
-                "Money, work, and future plans can be stressful topics, {$first}. "
-                ."I can’t give official financial or career decisions, but I can support you if you’re feeling pressured, worried about your future, or overwhelmed by expectations around these things.";
-            break;
-
-        case 'health_body':
-            $replyText =
-                "Physical health and body concerns are important, {$first}. "
-                ."I’m not a medical bot and can’t give medical advice—seeing a health professional is still important. "
-                ."But if what you’re going through physically is affecting your mood, energy, or self-esteem, I’m here to listen to that side and support you emotionally.";
-            break;
-
-        case 'admin_school':
-            $replyText =
-                "For official school processes (accounts, forms, requirements, enrollment, and similar things), it’s usually best to contact the registrar, IT, or your teacher/adviser, {$first}. "
-                ."What I can do is support you if these processes are stressing you out, confusing you, or making you feel pressured or stuck.";
-            break;
-
-        default:
-            // Generic non-mental content: keep it gentle and clear about Lumi’s role
-            if ($isQuestion) {
-                $replyText =
-                    "Thank you for your question, {$first}. "
-                    ."Lumi is focused on your mental and emotional well-being, so I might not always be able to answer detailed questions about this topic. "
-                    ."If this situation is affecting your mood, stress, or how you see yourself, you can tell me more about that part and we’ll stay there.";
-            } else {
-                $replyText =
-                    "Thank you for sharing that, {$first}. "
-                    ."Lumi is focused on your mental and emotional well-being, so I might not always go deep into this kind of topic. "
-                    ."But if it’s affecting your stress, mood, or confidence in any way, you can talk to me about how it feels for you.";
-            }
-            break;
-    }
+    $replyText = $this->nonMentalReply(
+        $sessionId,
+        $first,
+        $norm,
+        $flags
+    );
 
     $bot = Chat::create([
         'user_id'         => $userId,
@@ -642,21 +475,24 @@ if ($nonMental && !$unreadable) {
         $messageType = 'question';
     }
 
-    // Conversation stage for policies / smarter replies
-    $conversationStage = 'opening';
-    if ($sessionUserMsgCount <= 1) {
-        $conversationStage = 'opening';
-    } elseif ($msgRisk === 'high' || ($session->risk_level === 'high')) {
-        $conversationStage = 'crisis';
-    } elseif ($askedForAppt) {
-        $conversationStage = 'appointment_flow';
-    } elseif ($flags['wants_coping'] ?? false) {
-        $conversationStage = 'coping';
-    } elseif ($inVentWindow) {
-        $conversationStage = 'venting';
-    }
+        // Conversation trajectory + stage for smarter policies
+    $trajectory = $this->analyzeTrajectory(
+        $session,
+        $msgRisk,
+        $sessionEmotionCounts,
+        $sessionUserMsgCount
+    );
 
-    // Build metadata (rich for Rasa policies)
+    $conversationStage = $this->detectConversationStage(
+        $session,
+        $msgRisk,
+        $flags,
+        $sessionUserMsgCount,
+        $askedForAppt,
+        $inVentWindow
+    );
+
+    // Build metadata (richer for Rasa policies)
     $metadata = [
         'lumichat' => [
             'session_id' => $sessionId,
@@ -672,14 +508,15 @@ if ($nonMental && !$unreadable) {
                 'scores'      => $scores,
             ],
             'session'    => [
-                'stage'              => $conversationStage,
+                'stage'              => $conversationStage,      // opening / exploration / coping / crisis / closing / etc.
+                'trajectory'         => $trajectory,             // rising_risk / stable_low / persistent_high / etc.
                 'overall_risk'       => $session->risk_level ?: 'low',
                 'topic_summary'      => $session->topic_summary,
                 'emotion_counts'     => $sessionEmotionCounts,
                 'user_message_count' => $sessionUserMsgCount,
                 'vent_turns'         => $ventTurns,
                 'in_vent_window'     => $inVentWindow,
-                'non_mental_topic'   => false,   // only mental messages reach here
+                'non_mental_topic'   => false,                   // only mental messages reach here
                 'asked_for_appt'     => $askedForAppt,
             ],
             'analysis'   => [
@@ -695,6 +532,8 @@ if ($nonMental && !$unreadable) {
             'first' => $first,
         ],
     ];
+
+
 
     // ===== 6) Branching + deciding if we call Rasa =====
     $callRasa    = false;
@@ -781,17 +620,17 @@ if ($nonMental && !$unreadable) {
                     }
                 }
             }
-        } catch (\Throwable $e) {
-            $botReplies = [[
-                'text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more?"
-            ]];
-        }
+       } catch (\Throwable $e) {
+        $botReplies = [[
+            'text' => $this->fallbackSupportLine(),
+        ]];
+    }
 
-        if (empty($botReplies)) {
-            $botReplies = [[
-                'text' => "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. Would you like to share more?"
-            ]];
-        }
+    if (empty($botReplies)) {
+        $botReplies = [[
+            'text' => $this->fallbackSupportLine(),
+        ]];
+    }
     }
 
     // ===== 7) Risk elevation logging (only for mental messages) =====
@@ -836,6 +675,7 @@ if ($nonMental && !$unreadable) {
 
         if (str_contains($replyText, '{APPOINTMENT_LINK}')) {
             $replyText = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $replyText);
+                
         }
 
         $safeName  = e($name);
@@ -845,6 +685,9 @@ if ($nonMental && !$unreadable) {
             [$safeName,     $safeFirst,     $safeFirst, $safeName],
             $replyText
         );
+        // 💜 Add emotional tone based on the student’s current message
+            $replyText = $this->applyEmotionTone($replyText, $norm, $labels, $msgRisk);
+
 
         $normalizedBtns = [];
         foreach ($replyBtns as $b) {
@@ -1046,14 +889,15 @@ if ($nonMental && !$unreadable) {
         }
     }
 
-    /** English-only reflective prompt (no Rasa) for early vent window. */
-    private function empathicPrompt(string $first, array $labels, int $stage): string
+      private function empathicPrompt(string $first, array $labels, int $stage): string
     {
         $first = trim($first) !== '' ? $first : 'there';
 
         $top = array_values(array_unique(array_slice($labels, 0, 2)));
         $mirror = '';
-        if (!empty($top)) $mirror = ' — ' . implode(' & ', array_map(fn($x)=>strtolower($x), $top));
+        if (!empty($top)) {
+            $mirror = ' — ' . implode(' & ', array_map(fn($x)=>strtolower($x), $top));
+        }
 
         $primary = strtolower($top[0] ?? '');
         $validate = [
@@ -1073,44 +917,41 @@ if ($nonMental && !$unreadable) {
             'ashamed'      => "Shame is a heavy feeling to carry",
             'guilty'       => "Guilt can take up a lot of space",
             'overwhelmed'  => "Everything piling up can feel like too much",
+            'overthinking' => "It sounds like your mind hasn’t had a break",
         ];
         $v = $validate[$primary] ?? "Thank you for trusting me with this";
 
-       switch ($stage) {
-    case 1:
-        return "{$v}{$mirror}, {USER_FIRST}. I’m really glad you told me. You don’t have to hold anything back here. If you feel okay to share, what’s been weighing on you the most right now?";
+        // Stage 1: opening up
+        if ($stage <= 1) {
+            $options = [
+                "{$v}{$mirror}, {USER_FIRST}. I’m really glad you told me. If you feel okay to share, what’s been weighing on you the most right now?",
+                "{$v}{$mirror}, {USER_FIRST}. You don’t have to filter anything here. What part of this has been the hardest for you lately?",
+                "{$v}{$mirror}, {USER_FIRST}. When you think about everything that’s been happening, what’s the first thing that comes to your mind?",
+                "{$v}{$mirror}, {USER_FIRST}. I’m here with you. What’s one thing that you wish someone really understood about what you’re going through?",
+            ];
+        }
+        // Stage 2: exploring causes and patterns
+        elseif ($stage === 2) {
+            $options = [
+                "I’m here with you, {USER_FIRST}. When you look back a bit, was there a moment or situation that made these feelings stronger?",
+                "Thank you for opening up, {USER_FIRST}. If you think about the past days or weeks, what do you notice usually makes this feeling show up?",
+                "You’ve shared a lot already, {USER_FIRST}. Are there certain people, places, or situations that tend to trigger this for you?",
+                "You’re doing your best in a tough situation, {USER_FIRST}. When did you first start noticing that things were feeling this heavy?",
+            ];
+        }
+        // Stage 3+: meaning, needs, and next steps
+        else {
+            $options = [
+                "Thank you for sharing so much, {USER_FIRST}. If you put it into your own words, how would you describe what you’re carrying right now?",
+                "You’re explaining this really clearly, even if it feels messy inside, {USER_FIRST}. What do you feel you need most from people around you right now?",
+                "You don’t have to have all the answers, {USER_FIRST}. If there was one small thing that could make today a bit lighter, what do you think it would be?",
+                "You’ve been holding a lot, {USER_FIRST}. What worries you the most about this situation, and what do you wish could change?",
+            ];
+        }
 
-    case 2:
-        return "I’m here with you, no rush at all. When you’re ready, could you tell me what was happening before these feelings started? Even a little detail is okay.";
-
-    default:
-        return "Thank you for opening up, {USER_FIRST}. I want to understand this the way *you* feel it. If you had to put it into your own words, how would you describe what you’re feeling right now? It’s also okay if it feels mixed or hard to name—we can figure it out together.";
-}
-
+        return $options[array_rand($options)];
     }
 
-    /** Heuristic: should we bypass vent window and go straight to Rasa? */
-    private function shouldBypassVenting(string $text, bool $selfThreat, string $risk, bool $askedForAppt): bool
-    {
-        // Safety and explicit action always bypass
-        if ($risk === 'high' || $selfThreat) return true;
-        if ($askedForAppt) return true;
-
-        // Normalize
-        $t = trim(mb_strtolower($text));
-
-        // Real question if it ends with "?" OR clearly starts as a question
-        $hasQmark       = str_contains($t, '?');
-        $startsWithWh   = (bool) preg_match('/^\s*(how|what|why|can|should|where|when|who|which)\b/u', $t);
-
-        // False-positives we should NOT treat as questions (e.g., "i don't know why ...")
-        $dontKnowClause = (bool) preg_match('/\bi\s*(don\'?t|do\s+not)\s+know\s+(why|what|how)\b/u', $t);
-
-        // If it’s a real question AND not the “don’t know why/what/how” clause → bypass
-        $isRealQuestion = ($hasQmark || $startsWithWh) && !$dontKnowClause;
-
-        return $isRealQuestion;
-    }
 
     /** Did the user explicitly decline the referral? */
     private function declinedReferral(string $raw): bool
@@ -1153,38 +994,6 @@ if ($nonMental && !$unreadable) {
         $v = session('chat_locked_for_session_'.$sessionId, false);
         return is_string($v) ? $v : ($v ? 'declined_referral' : '');
     }
-
-    /** Detects when the student prefers not to share right now. */
-    private function refusedToShare(string $raw): bool
-    {
-        $t = mb_strtolower(trim($raw));
-
-        // Explicit quick-action / Rasa-style
-        if (preg_match('~^/(deny|refuse|skip)\s*(\{.*\})?~i', $t, $m)) {
-            if (!empty($m[2])) {
-                try {
-                    $j = json_decode($m[2], true, 512, JSON_THROW_ON_ERROR);
-                    $topic = strtolower((string) ($j['confirm_topic'] ?? $j['topic'] ?? ''));
-                    if (in_array($topic, ['vent', 'venting', 'share', 'sharing'], true)) return true;
-                } catch (\Throwable $e) { /* ignore */ }
-            }
-            // plain /deny also counts as a refusal to share right now
-            return true;
-        }
-
-        // Natural-language refusals (keep broad, but non-judgmental)
-        $rules = [
-            '/\b(i\s*(don\'?t|do\s*not)\s*(want|feel like)\s*(to\s*)?(talk|share|say|open up))\b/u',
-            '/\b(prefer\s*not\s*to\s*(say|share|talk))\b/u',
-            '/\b(not\s*now|maybe\s*later|not\s*ready)\b/u',
-            '/\b(nothing\s*(to\s*)?say|i\'?m\s*fine\s*for\s*now)\b/u',
-            '/\b(skip|pass)\b/u',
-        ];
-        foreach ($rules as $r) if (preg_match($r, $t)) return true;
-
-        return false;
-    }
-
     /** Core normalization + typo softening (English only). */
     private function nluNormalize(string $raw): string
     {
@@ -1477,31 +1286,29 @@ if (!$negationShield && $this->hasAnyWordExact($t, $criticalActs)) {
 }
 
     /** Broad emotion tagging (with misspellings, synonyms, and key phrases). */
-    private function labelEmotions(string $raw): array
-    {
-        $t      = $this->nluNormalize($raw);
-        $labels = [];
+        private function labelEmotions(string $raw): array
+        {
+            $t      = $this->nluNormalize($raw);
+            $labels = [];
 
-        $map = [
-            'sad' => [
-                'sad','down','blue','low','tearful','cry','crying','cried','grief','heartbroken',
-                'broken','brokenhearted','hurt inside',
-                'depressed','depressd','depresed','deprssd','deprsd',
-                'empty inside','numb inside','numb',
-               
-            ],
+            $map = [
+                'sad' => [
+                    'sad','down','blue','low','tearful','cry','crying','cried','grief',
+                    'heartbroken','brokenhearted','broken inside','hurt inside',
+                    'depressed','depressd','depresed','deprssd','deprsd',
+                    'empty inside','numb inside','numb',
+                ],
 
-            'disappointed' => [
-                'disappoint','disappointed','dissapointed','dissappointed','disapointed',
-                'let down','letdown','let me down',
-            ],
-
-            'anxious' => [
-                'anxious','anxiety','anxety','anxios',
-                'panicky','panic','panicking',
-                'afraid','scared','terrified','fearful','worried','worrying',
-                'nervous','on edge','uneasy',
-            ],
+                'disappointed' => [
+                    'disappoint','disappointed','dissapointed','dissappointed','disapointed',
+                    'let down','letdown','let me down',
+                ],
+                    'anxious' => [
+                        'anxious','anxiety','anxety','anxios',
+                        'panicky','panic','panicking',
+                        'afraid','scared','terrified','fearful','worried','worrying',
+                        'nervous','on edge','uneasy',
+                    ],
 
             'stressed' => [
                 'stress','stressed','stressing',
@@ -1782,13 +1589,6 @@ private function isNonMentalTopic(string $norm, array $labels, array $riskStruct
     if ($flags['asks_capabilities'] ?? false) {
         return false;
     }
-
-    $risk = $riskStruct['level'] ?? 'low';
-
-    // 0) YES/NO/DONE replies are always contextual → NEVER treat as non-mental.
-    if (($flags['yes'] ?? false) || ($flags['no'] ?? false) || ($flags['done'] ?? false)) {
-        return false;
-    }
     $risk = $riskStruct['level'] ?? 'low';
 
     // 0) YES/NO/DONE replies are always contextual → NEVER treat as non-mental.
@@ -1857,7 +1657,7 @@ private function isNonMentalTopic(string $norm, array $labels, array $riskStruct
         'fastfood','fast food','jollibee','mcdonalds','kfc','pizza','burger',
         'fries','ramen','sushi','buffet','menu','order','delivery','grab','foodpanda',
 
-        // ===== Tech / coding / computer support =====
+// ===== Tech / coding / computer support =====
         'programming','coding','code','source code','script','scripting',
         'algorithm','pseudocode','flowchart','debug','debugging','bug','bugs',
         'error','errors','exception','stack trace',
@@ -1869,7 +1669,14 @@ private function isNonMentalTopic(string $norm, array $labels, array $riskStruct
         'github','gitlab','bitbucket','git','branch','merge','commit','pull request','push','pull',
         'vscode','visual studio','eclipse','intellij','pycharm','ide',
         'server','hosting','hostinger','domain','dns','nginx','apache','iis',
+
+        // devices / network / OS  👇 ADDED HERE
         'wifi','router','modem','internet','signal','lag','ping','fps','ms',
+        'phone','phones','cellphone','cellphones','cell','cp',
+        'smartphone','smartphones',
+        'tablet','tablets','ipad','ipads',
+        'gadget','gadgets',
+        'screen','screens','lcd','touchscreen',
         'laptop','pc','desktop','computer','monitor','keyboard','mouse','headset',
         'android','iphone','ios','windows','macos','linux','ubuntu','update','upgrade',
         'install','installation','download','setup','config','configuration',
@@ -2343,21 +2150,41 @@ private function classifyNonMentalCategory(string $norm): string
     if ($this->hasAnyWord($norm, [
         'programming','coding','code','codes','script','scripts',
         'bug','bugs','debug','debugging','error','errors','exception',
+        'issue','issues','fix','fixed','fixing','problem','problems',
+        'crash','crashing','crashed','lag','freeze','frozen',
+
+        // frameworks / langs
         'javascript','typescript','node','nodejs','php','laravel',
         'python','java','csharp','c#','cpp','c++','html','css',
         'react','vue','angular','svelte','tailwind','bootstrap',
+
+        // db / backend
         'mysql','postgres','database','databases','sql','query','queries','migration','seeder',
         'api','rest api','endpoint','request','response','json','jwt',
+
+        // tooling / git
         'github','gitlab','bitbucket','git','branch','merge','commit','pull','push',
         'vscode','visual studio','ide','editor',
+
+        // infra / hosting / errors
         'server','hosting','hostinger','domain','dns','nginx','apache','iis',
-        'wifi','router','modem','internet','signal','lag','ping','fps','ms',
+        '500','404','server error','internal server error',
+
+        // devices / os  👇 ADDED HERE
+        'wifi','router','modem','internet','signal','ping','fps','ms',
+        'phone','phones','cellphone','cellphones','cell','cp',
+        'smartphone','smartphones',
+        'tablet','tablets','ipad','ipads',
+        'gadget','gadgets',
+        'screen','screens','lcd','touchscreen',
         'laptop','pc','desktop','computer','monitor','keyboard','mouse','headset',
         'android','iphone','ios','windows','macos','linux','ubuntu','update','upgrade',
         'install','installation','download','setup','config','configuration',
     ])) {
         return 'tech';
     }
+
+
 
     // Creative / editing / design
     if ($this->hasAnyWord($norm, [
@@ -2436,6 +2263,500 @@ private function classifyNonMentalCategory(string $norm): string
     return 'other';
 }
 
+/**
+ * Pick a variant from a list, rotating per session+key so it’s not always
+ * the same reply for the same pattern.
+ */
+private function pickVariantForSession(int $sessionId, string $key, array $variants): string
+{
+    if (empty($variants)) {
+        return '';
+    }
+
+    $sessionKey = 'variant_'.$sessionId.'_'.$key;
+    $idx        = (int) session($sessionKey, 0);
+
+    $reply = $variants[$idx % count($variants)];
+
+    session([$sessionKey => $idx + 1]); // rotate next time
+    return $reply;
+}
+
+private function nonMentalReply(int $sessionId, string $first, string $norm, array $flags): string
+{
+    $category   = $this->classifyNonMentalCategory($norm);
+    $isQuestion = $flags['is_question'] ?? false;
+
+    $first = trim($first) !== '' ? $first : 'there';
+
+    switch ($category) {
+        // ===================== GAMES =====================
+        case 'games': {
+            $key = 'nonmental_games_'.($isQuestion ? 'q' : 's');
+            $variants = $isQuestion
+                ? [
+                    "Gaming can really matter to us, {$first}. I’m mainly focused on your mental health, so I might not guide you on rank or mechanics — but if pressure from games, teammates, or losing is affecting how you feel, we can talk about that.",
+                    "It sounds like you care a lot about gaming, {$first}. Lumi is more about what’s going on inside you than builds or tactics. If rank, performance, or comments from others are stressing you out, tell me how it’s been for you.",
+                    "I hear you about the game, {$first}. I might not be the best coach for strategies, but if matches, tilt, or expectations are getting heavy on your mood, we can focus on that side together.",
+                ]
+                : [
+                    "Playing games can be a real escape, {$first}. I’m not here to break down strategies, but if you’re using games to cope or if things in-game are stressing you out, we can unpack how that feels.",
+                    "Games can be fun—and also frustrating, {$first}. Lumi’s role is to support your mental health. If losing streaks, rank, or people you play with are affecting your confidence or mood, I’m here for that part.",
+                    "It makes sense that games are part of your day, {$first}. I may not handle guides, but if gaming is tied to stress, pressure, or how you see yourself, you can share that with me.",
+                ];
+            return $this->pickVariantForSession($sessionId, $key, $variants);
+        }
+
+        // ===================== ENTERTAINMENT (movies, series, music, etc.) =====================
+        case 'entertainment': {
+            $key = 'nonmental_entertainment_'.($isQuestion ? 'q' : 's');
+            $variants = $isQuestion
+                ? [
+                    "That sounds like a question about shows or music, {$first}. I’m mainly here for your mental health, so I may not give full reviews or recommendations. But if these stories or songs are reflecting how you feel, we can talk about that.",
+                    "Movies, series, and music can hit close to home, {$first}. I might not be your best critic, but if a character, scene, or song reminds you of what you’re going through, I’d like to hear about that part.",
+                ]
+                : [
+                    "Stories, series, and music can really mirror what we feel inside, {$first}. If something you’re watching or listening to is resonating with your situation, you can tell me how it connects to you.",
+                    "It’s natural to get attached to shows or songs, {$first}. If a storyline, character, or lyric is hitting you hard emotionally, we can explore why it feels that way.",
+                    "Entertainment can be a big escape, {$first}. If you’re using it to cope, or if it’s making you think more about your own life, I’m here to talk about what it brings up for you.",
+                ];
+            return $this->pickVariantForSession($sessionId, $key, $variants);
+        }
+
+        // ===================== FOOD =====================
+        case 'food': {
+            $key = 'nonmental_food_'.($isQuestion ? 'q' : 's');
+            $variants = $isQuestion
+                ? [
+                    "That sounds like a question about food or places to eat, {$first}. Lumi focuses more on how you’re doing emotionally, so I might not be the best for detailed food suggestions. But if eating, appetite, or body image has been affecting your mood, we can talk about that.",
+                    "Food can be comforting or stressful too, {$first}. I may not give full restaurant or recipe advice, but if you’re noticing changes in your appetite or eating because of stress, I’m here to listen.",
+                ]
+                : [
+                    "Food can be a source of comfort, stress, or both, {$first}. If you’re stress-eating, losing appetite, or worrying about your body, you can tell me more about that side of it.",
+                    "Eating patterns can say a lot about how we’re really doing, {$first}. If you’ve noticed changes because of school pressure, mood, or personal issues, I’m here to talk about it.",
+                ];
+            return $this->pickVariantForSession($sessionId, $key, $variants);
+        }
+
+        // ===================== TRAVEL =====================
+        case 'travel': {
+            $key = 'nonmental_travel_'.($isQuestion ? 'q' : 's');
+            $variants = $isQuestion
+                ? [
+                    "That sounds like a travel or trip question, {$first}. I’m mainly focused on your mental well-being, so I might not be ideal for full itineraries. But if this trip, distance, or being away is affecting how you feel, we can talk about that.",
+                    "Travel can be exciting and stressful at the same time, {$first}. I may not plan every detail, but if leaving, going home, or being far from people is heavy on you, I’m here for that part.",
+                ]
+                : [
+                    "Trips and travel can bring up a lot of feelings, {$first} — from excitement to anxiety. If there’s something about this trip that worries you or makes you feel different, we can talk about it.",
+                    "Sometimes travel is an escape, sometimes it’s a pressure, {$first}. If being away from home, school, or certain people is affecting you emotionally, you can share that with me.",
+                ];
+            return $this->pickVariantForSession($sessionId, $key, $variants);
+        }
+
+        // ===================== SHOPPING / MONEY (neutral) =====================
+        case 'shopping': {
+            $key = 'nonmental_shopping_'.($isQuestion ? 'q' : 's');
+            $variants = $isQuestion
+                ? [
+                    "This sounds like a shopping or product question, {$first}. Lumi is more focused on how you’re feeling inside, so I might not be your full guide for choices. But if money, buying things, or pressure to keep up with others is stressing you, we can talk about that.",
+                    "Buying things and online shopping can affect how we feel too, {$first}. I may not handle all the details, but if spending, guilt, or comparison is weighing on you, I’d like to hear about it.",
+                ]
+                : [
+                    "Shopping can feel like a reward or a distraction, {$first}. If you notice you’re buying things to cope with stress or sadness, we can explore what’s behind that.",
+                    "Money and buying stuff can be tied to stress, guilt, or pressure to fit in, {$first}. If that’s part of what you’re going through, you can tell me more.",
+                ];
+            return $this->pickVariantForSession($sessionId, $key, $variants);
+        }
+
+        // ===================== SPORTS / EXERCISE =====================
+        case 'sports': {
+            $key = 'nonmental_sports_'.($isQuestion ? 'q' : 's');
+            $variants = $isQuestion
+                ? [
+                    "That sounds like a sports or training question, {$first}. I’m mainly here for your mental health, so I might not coach techniques. But if performance, expectations, or your team situation is affecting your confidence or mood, we can talk about that.",
+                    "Sports can come with a lot of pressure, {$first}. I may not break down plays, but if fear of failing, losing, or letting others down is stressing you out, I’m here for that.",
+                ]
+                : [
+                    "Sports can be both a stress reliever and a source of pressure, {$first}. If competition, try-outs, injuries, or expectations are weighing on you, you can tell me about it.",
+                    "How you feel in training, games, or around teammates can really impact your mental health, {$first}. If something in that area has been heavy, I’m here to listen.",
+                ];
+            return $this->pickVariantForSession($sessionId, $key, $variants);
+        }
+
+        // ===================== TECH / CODING =====================
+        case 'tech': {
+            $key = 'nonmental_tech_'.($isQuestion ? 'q' : 's');
+            $variants = $isQuestion
+                ? [
+                    "This sounds like a tech or coding issue, {$first}. Lumi is focused on your mental health, so I might not fix it step-by-step. But if bugs, deadlines, or grades around this are stressing you or making you doubt yourself, I’d like to hear about that.",
+                    "Tech problems can be draining, {$first}. I may not be your full debugger, but if this issue is making you anxious, frustrated, or burned out, we can talk about how it’s affecting you.",
+                ]
+                : [
+                    "Tech and school requirements can really wear you down, {$first}. Instead of only looking at the error, I’m here to support how it’s been affecting your mood, confidence, or energy.",
+                    "Those kinds of issues can pile up mentally, {$first}. If this has been stressing you, making you feel behind, or pressuring you, you can tell me more about that side.",
+                ];
+            return $this->pickVariantForSession($sessionId, $key, $variants);
+        }
+
+        // ===================== CREATIVE / EDITING / DESIGN =====================
+        case 'creative': {
+            $key = 'nonmental_creative_'.($isQuestion ? 'q' : 's');
+            $variants = $isQuestion
+                ? [
+                    "That sounds like a design or editing question, {$first}. I’m here mainly for how you’re doing emotionally, so I might not give full technical tutorials. But if creative blocks, pressure to be perfect, or feedback from others is affecting you, we can talk about that.",
+                    "Creating art or content can be really personal, {$first}. I may not fix every detail, but if criticism, comparisons, or burnout around your work is hurting your confidence, I’m here to listen.",
+                ]
+                : [
+                    "Creative work can be meaningful and exhausting at the same time, {$first}. If you’re feeling stuck, judged, or pressured to always produce something good, you can share that with me.",
+                    "Art and editing often connect deeply to identity and self-worth, {$first}. If that’s part of what you’re feeling, I’d like to understand it better with you.",
+                ];
+            return $this->pickVariantForSession($sessionId, $key, $variants);
+        }
+
+        // ===================== ACADEMICS / HOMEWORK =====================
+        case 'academics': {
+            $key = 'nonmental_academics_'.($isQuestion ? 'q' : 's');
+            $variants = $isQuestion
+                ? [
+                    "It sounds like an academic or homework question, {$first}. Lumi is focused more on your well-being than full solutions. If this subject, exam, or requirement is stressing you or hurting your confidence, I’d really like to hear about that part.",
+                    "I get that this is about schoolwork, {$first}. I might not give a complete step-by-step answer, but if this topic, quiz, or deadline is making you anxious or overwhelmed, we can talk through how it’s affecting you.",
+                ]
+                : [
+                    "School can get heavy fast, {$first}. I’m not a pure homework bot, but if modules, quizzes, or requirements are piling up and stressing you, tell me what’s been hardest lately.",
+                    "Academics can bring a lot of pressure, {$first}. Instead of solving items one by one, I can help you explore how the load, expectations, or fear of failing has been making you feel.",
+                ];
+            return $this->pickVariantForSession($sessionId, $key, $variants);
+        }
+
+        // ===================== SOCIAL MEDIA =====================
+        case 'social_media': {
+            $key = 'nonmental_social_'.($isQuestion ? 'q' : 's');
+            $variants = $isQuestion
+                ? [
+                    "That sounds related to social media, {$first}. Lumi focuses more on your mental health than on algorithms or reach. But if likes, comments, or what you see online is affecting your self-esteem or mood, we can talk about that.",
+                    "Social media can really influence how we feel about ourselves, {$first}. I might not optimize your account, but if comparison, online drama, or pressure to post is weighing on you, I’m here for that.",
+                ]
+                : [
+                    "Social media can be both a connection and a trigger, {$first}. If what you see online is making you feel insecure, left out, or pressured, you can tell me more about it.",
+                    "It’s common to compare ourselves on social media, {$first}. If that’s affecting how you see yourself or your life, we can explore those feelings together.",
+                ];
+            return $this->pickVariantForSession($sessionId, $key, $variants);
+        }
+
+        // ===================== MONEY / CAREER (neutral) =====================
+        case 'money_career': {
+            $key = 'nonmental_money_'.($isQuestion ? 'q' : 's');
+            $variants = $isQuestion
+                ? [
+                    "This sounds like a money or career topic, {$first}. I’m mainly focused on your mental health, so I may not give full financial or career planning advice. But if pressure about money, future plans, or expectations is stressing you, we can talk about that.",
+                    "Thinking about money and career can be really overwhelming, {$first}. I may not handle all the practical details, but if fear of the future or disappointing others is heavy on you, I’m here to listen.",
+                ]
+                : [
+                    "Worries about money or the future can weigh a lot on students, {$first}. If expectations, responsibilities, or uncertainty are stressing you, you can share what it’s been like.",
+                    "Career and finances can bring hidden anxiety and pressure, {$first}. If that’s something you’re carrying, I’d like to understand it more with you.",
+                ];
+            return $this->pickVariantForSession($sessionId, $key, $variants);
+        }
+
+        // ===================== PHYSICAL HEALTH / BODY (non-emotional) =====================
+        case 'health_body': {
+            $key = 'nonmental_healthbody_'.($isQuestion ? 'q' : 's');
+            $variants = $isQuestion
+                ? [
+                    "That sounds like a physical health question, {$first}. I’m not a medical professional, so I can’t give diagnoses or treatments. But if being sick, changes in your body, or health worries are affecting your mood or stress, we can talk about that.",
+                    "Health concerns can be scary and stressful, {$first}. I may not replace a doctor, but I can help you process the fear, worry, or frustration you’re feeling about it.",
+                ]
+                : [
+                    "Being unwell or worried about your body can really affect your mental health, {$first}. If this has been making you anxious, frustrated, or discouraged, you can tell me more.",
+                    "It’s normal to feel stressed when something isn’t right physically, {$first}. I may not treat the symptoms, but I’m here to support how it’s affecting you emotionally.",
+                ];
+            return $this->pickVariantForSession($sessionId, $key, $variants);
+        }
+
+        // ===================== SCHOOL ADMIN / ACCOUNTS / PROCESS =====================
+        case 'admin_school': {
+            $key = 'nonmental_admin_'.($isQuestion ? 'q' : 's');
+            $variants = $isQuestion
+                ? [
+                    "That sounds like a school process or account question, {$first}. I’m mainly focused on your mental and emotional well-being, so I might not fix the portal or forms directly. But if these requirements or system issues are stressing you or making you feel overwhelmed, we can talk about that.",
+                    "Enrollment, accounts, and school processes can be really frustrating, {$first}. I may not control the system, but I can help you process the stress, irritation, or pressure that comes with it.",
+                ]
+                : [
+                    "School processes and documents can add a lot of hidden stress, {$first}. If you feel pressured, confused, or stuck because of requirements, you can share what it’s been like.",
+                    "It’s understandable to feel annoyed or drained by school admin tasks, {$first}. I may not fix the system, but I’m here to support how it’s affecting you mentally.",
+                ];
+            return $this->pickVariantForSession($sessionId, $key, $variants);
+        }
+
+        // ===================== DEFAULT / OTHER NON-MENTAL =====================
+        default: {
+            $key = 'nonmental_generic_'.($isQuestion ? 'q' : 's');
+            $variants = $isQuestion
+                ? [
+                    "Thank you for your question, {$first}. Lumi mainly focuses on your emotional and mental well-being, so I might not go deep on this topic. If it’s affecting your stress, mood, or self-confidence somehow, you can tell me more about that.",
+                    "I appreciate you asking, {$first}. I may not have a full answer on this specific topic, but if it’s connected to pressure, worry, or overthinking, I’m here to talk about that part with you.",
+                ]
+                : [
+                    "Thanks for sharing that, {$first}. Lumi stays focused on your mental and emotional health, so I might not handle all of the details here. But if this situation is stressing you or affecting how you feel, you can tell me about it.",
+                    "I hear you, {$first}. I may not be the best for that exact topic, but if it’s been heavy on your mind, stressful, or affecting your mood, I’m here to listen to that side of things.",
+                ];
+            return $this->pickVariantForSession($sessionId, $key, $variants);
+        }
+    }
+}
+
+private function fallbackSupportLine(): string
+{
+    $options = [
+        "It’s okay to feel that way, {USER_FIRST}. I’m here to listen. If you’re comfortable, you can tell me a bit more about what’s going on.",
+        "Thank you for reaching out, {USER_FIRST}. Even if it’s hard to put into words, I’m here with you. What part feels heaviest right now?",
+        "I’m glad you messaged me, {USER_FIRST}. You don’t have to go through this alone. What would you like to start with?",
+        "You’re not bothering me at all, {USER_FIRST}. Your feelings matter here. What’s been staying in your mind the most these days?",
+        "I’m here for you, {USER_FIRST}. Sometimes just talking about it slowly can help. What’s one thing you wish someone asked you about today?",
+        "Even if everything feels confusing, {USER_FIRST}, you’ve already taken a brave step by reaching out. What’s been the hardest part to carry alone?",
+    ];
+
+    return $options[array_rand($options)];
+}
+
+/**
+ * Infer how the conversation is trending across messages.
+ * Examples:
+ *  - single_message
+ *  - stable_low
+ *  - rising_risk
+ *  - spike_to_high
+ *  - persistent_high
+ */
+private function analyzeTrajectory(
+    \App\Models\ChatSession $session,
+    string $msgRisk,
+    array $sessionEmotionCounts,
+    int $sessionUserMsgCount
+): string {
+    $prevRisk = $session->risk_level ?: 'low';
+
+    // Very early: nothing to analyse yet
+    if ($sessionUserMsgCount <= 1) {
+        return 'single_message';
+    }
+
+    // Spike into high risk from lower
+    if ($msgRisk === 'high' && $prevRisk !== 'high') {
+        return 'spike_to_high';
+    }
+
+    // Persistent high risk
+    if ($msgRisk === 'high' && $prevRisk === 'high') {
+        return 'persistent_high';
+    }
+
+    // Rising from low → moderate
+    if ($msgRisk === 'moderate' && $prevRisk === 'low') {
+        return 'rising_risk';
+    }
+
+    // Gradual build-up: many emotional messages but still low risk
+    $totalEmo = array_sum(array_map('intval', $sessionEmotionCounts));
+    if ($msgRisk === 'low' && $prevRisk === 'low') {
+        if ($totalEmo >= 8 && $sessionUserMsgCount >= 6) {
+            return 'persistent_low_emotional';
+        }
+        if ($totalEmo >= 4 && $sessionUserMsgCount >= 3) {
+            return 'building_emotional_load';
+        }
+    }
+
+    // Moderate but staying there for a while
+    if ($msgRisk === 'moderate' && $prevRisk === 'moderate') {
+        if ($sessionUserMsgCount >= 6) {
+            return 'persistent_moderate';
+        }
+        return 'stable_moderate';
+    }
+
+    // Default: nothing fancy
+    return 'stable_low';
+}
+
+/**
+ * Higher-level "where are we in the conversation?" classifier.
+ * Used to make Rasa policies + heuristics smarter.
+ */
+private function detectConversationStage(
+    \App\Models\ChatSession $session,
+    string $msgRisk,
+    array $flags,
+    int $sessionUserMsgCount,
+    bool $askedForAppt,
+    bool $inVentWindow
+): string {
+    // Explicit closing signals
+    if (($flags['done'] ?? false) || ($flags['goodbye'] ?? false)) {
+        return 'closing';
+    }
+
+    // Crisis has priority
+    if ($msgRisk === 'high' || ($session->risk_level === 'high')) {
+        return 'crisis';
+    }
+
+    // Appointment flow
+    if ($askedForAppt) {
+        return 'appointment_flow';
+    }
+
+    // Coping tools
+    if ($flags['wants_coping'] ?? false) {
+        return 'coping';
+    }
+
+    // Very early stage
+    if ($sessionUserMsgCount <= 1) {
+        return 'opening';
+    }
+
+    // Still in the "let me vent first" window
+    if ($inVentWindow) {
+        return 'venting';
+    }
+
+    // Mid-phase exploration (sharing details, back-and-forth)
+    if ($sessionUserMsgCount <= 4) {
+        return 'exploration';
+    }
+
+    // Longer ongoing support
+    if ($sessionUserMsgCount <= 10) {
+        return 'ongoing_support';
+    }
+
+    // Really long conversations
+    return 'long_running';
+}
+/**
+ * Lightly decorate Lumi's reply so it feels warmer / more human,
+ * based on detected emotions + risk.
+ *
+ * - For HIGH risk: no emojis, just extra concern if needed.
+ * - For LOW/MODERATE: may add comforting / validating phrases
+ *   and (for light messages) a small smile / laugh.
+ */
+/**
+ * Lightly decorate Lumi's reply so it feels warmer / more human,
+ * based on detected emotions + risk.
+ *
+ * - For HIGH risk: no joke emojis, just extra concern.
+ * - For LOW/MODERATE: may add comforting / validating phrases
+ *   and (for light messages) a small smile / laugh.
+ */
+private function applyEmotionTone(string $replyText, string $norm, array $labels, string $risk): string
+{
+    $base = trim($replyText);
+    if ($base === '') {
+        return $replyText;
+    }
+
+    // Normalize input for simple checks
+    $normLower = mb_strtolower($norm);
+
+    // Don’t touch explicit crisis scripts too much.
+    if ($risk === 'high') {
+        // Ensure we sound clearly caring if the line is very neutral.
+        $lower = mb_strtolower($base);
+        if (
+            !str_contains($lower, 'im really glad you told me') &&
+            !str_contains($lower, "i'm really glad you told me") &&
+            !str_contains($lower, 'you are not alone') &&
+            !str_contains($lower, 'you’re not alone') &&
+            !str_contains($lower, 'if you are in immediate danger')
+        ) {
+            $base .= " I’m really glad you told me this — you don’t have to go through it alone.";
+        }
+        return $base;
+    }
+
+    // Normalize labels for easy checks
+    $labels = array_map('strtolower', $labels);
+    $has    = function (string $label) use ($labels): bool {
+        return in_array($label, $labels, true);
+    };
+
+    // Strong painful emotions → validating / comforting tone
+    if ($has('sad') || $has('lonely') || $has('hopeless') || $has('not_ok')) {
+        if (
+            !str_contains($base, 'You’re not alone') &&
+            !str_contains($base, 'You are not alone')
+        ) {
+            $base .= " You’re not alone in feeling this way — I’m here with you. 💜";
+        }
+        return $base;
+    }
+
+    if ($has('anxious') || $has('stressed') || $has('overwhelmed') || $has('tired')) {
+        if (!str_contains(mb_strtolower($base), 'one small step')) {
+            $base .= " It really does sound like a lot — we can take it one small step at a time. 🤍";
+        }
+        return $base;
+    }
+
+    if ($has('angry')) {
+        if (!str_contains(mb_strtolower($base), 'frustrat')) {
+            $base .= " I can feel how frustrating this is for you, and that reaction makes sense. 😤";
+        }
+        return $base;
+    }
+
+    if ($has('guilty') || $has('ashamed')) {
+        $lower = mb_strtolower($base);
+        if (
+            !str_contains($lower, "doesn't make you a bad") &&
+            !str_contains($lower, 'does not make you a bad')
+        ) {
+            $base .= " Feeling this way doesn’t make you a bad person — it just shows how much you care. 💭";
+        }
+        return $base;
+    }
+
+    // ========== LIGHTER FEELINGS / POSITIVE MOMENTS ==========
+
+    // 1) Laughter / joke → small laugh emoji (only for low risk)
+    if ($risk === 'low') {
+        if (preg_match('/\b(lol|lmao|haha+|hehe+|joke|funny)\b/u', $normLower)) {
+            // Avoid double emojis
+            if (!preg_match('/[\x{1F600}-\x{1F64F}]/u', $base)) {
+                $base .= " 😄";
+            }
+            return $base;
+        }
+    }
+
+    // 2) Gratitude / relief → warm, supportive smile
+    if ($risk !== 'high') {
+        if (preg_match('/\b(thanks?|thank you|salamat|appreciate it)\b/u', $normLower)) {
+            if (!preg_match('/[\x{1F600}-\x{1F64F}]/u', $base)) {
+                $base .= " I’m really glad I could be here for you. 🙂";
+            } else {
+                // If there is already an emoji, just add the line without another face
+                $base .= " I’m really glad I could be here for you.";
+            }
+            return $base;
+        }
+
+        // Student says they feel a bit better / okay now
+        if (preg_match('/\b(better now|feel better|feeling better|okay now|ok na ako|medyo ok na)\b/u', $normLower)) {
+            if (!preg_match('/[\x{1F600}-\x{1F64F}]/u', $base)) {
+                $base .= " I’m happy to hear that, and I’m still here if things feel heavy again. 😊";
+            } else {
+                $base .= " I’m happy to hear that, and I’m still here if things feel heavy again.";
+            }
+            return $base;
+        }
+    }
+
+    // Default: leave text as-is
+    return $base;
+}
 
 
 }
