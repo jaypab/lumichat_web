@@ -245,6 +245,20 @@ public function store(Request $request)
     $msgRisk    = $riskStruct['level'] ?? 'low';
     $selfThreat = ($msgRisk === 'high');
 
+    // 🔁 Track how many MODERATE-risk messages happened in this session
+    $modKey        = 'moderate_hits_for_session_'.$sessionId;
+    $moderateHits  = (int) session($modKey, 0);
+    if ($msgRisk === 'moderate') {
+        $moderateHits++;
+        session([$modKey => $moderateHits]);
+    }
+
+    // Auto-coping trigger on every 5th moderate hit (5, 10, 15, …)
+    $autoCopingTrigger = ($msgRisk === 'moderate'
+        && $moderateHits > 0
+        && $moderateHits % 5 === 0);
+
+
     // Detect if the message is basically not understandable (gibberish, symbols, etc.)
     $unreadable = $this->isUnreadableInput($norm);
 
@@ -467,9 +481,10 @@ if ($nonMental && !$unreadable) {
         $messageType = 'crisis';
     } elseif ($askedForAppt) {
         $messageType = 'appointment_request';
-    } elseif ($flags['wants_coping'] ?? false) {
+    } elseif (($flags['wants_coping'] ?? false) || $autoCopingTrigger) {
         $messageType = 'coping_request';
     } elseif ($inVentWindow) {
+
         $messageType = 'emotional_vent';
     } elseif ($flags['is_question'] ?? false) {
         $messageType = 'question';
@@ -575,18 +590,20 @@ if ($nonMental && !$unreadable) {
         $replyText = $this->empathicPrompt($first, $labels, $stage);
         $botReplies[] = ['text' => $replyText, 'buttons' => []];
         session([$ventKey => $ventTurns + 1]);
-    } elseif (
-        (
-            ($flags['wants_coping'] ?? false)
-            || (($flags['yes'] ?? false) && $lastIntent === 'offer_coping')
-        )
-        && $canOfferCoping
-    ) {
-        session([$copingThrottleKey => $nowEpoch]);
-        $callRasa = true;
-    } else {
-        $callRasa = true;
-    }
+   } elseif (
+    (
+        ($flags['wants_coping'] ?? false)
+        || (($flags['yes'] ?? false) && $lastIntent === 'offer_coping')
+        || $autoCopingTrigger   // 👈 every 5th moderate hit
+    )
+    && $canOfferCoping
+) {
+    // we’re explicitly going into coping flow
+    session([$copingThrottleKey => $nowEpoch]);
+    $callRasa = true;
+} else {
+    $callRasa = true;
+}
 
     // ===== 6.a) If needed, call Rasa now and append replies =====
     if ($callRasa) {
@@ -1879,112 +1896,164 @@ private function isUnreadableInput(string $norm): bool
      *  - "Question about family expectations"
      *  - "Crisis thoughts about self-harm"
      */
-    private function buildSessionTitle(
-        string $norm,
-        string $analysisText,
-        array $labels,
-        array $flags,
-        array $riskStruct,
-        int $msgCount,
-        ?string $currentTitle = null
-    ): string {
-        $risk = $riskStruct['level'] ?? 'low';
+  /**
+ * Build a ChatGPT-style session title from the latest message.
+ *
+ * Examples it can generate:
+ *  - "Feeling overwhelmed about school"
+ *  - "Anxious about exams and deadlines"
+ *  - "Question about family expectations"
+ *  - "Crisis thoughts about self-harm"
+ *  - "Thinking about seeing a counselor"
+ */
+private function buildSessionTitle(
+    string $norm,
+    string $analysisText,
+    array $labels,
+    array $flags,
+    array $riskStruct,
+    int $msgCount,
+    ?string $currentTitle = null
+): string {
+    $risk = $riskStruct['level'] ?? 'low';
+    $hits = $riskStruct['hits'] ?? [];
 
-        // If we already have a decent title and the conversation is long,
-        // stop aggressively renaming it.
-        if (
-            $currentTitle
-            && $msgCount > 6
-            && !str_starts_with($currentTitle, 'Starting conversation')
-        ) {
+    // 0) If we already have a decent human title and convo is long, keep it.
+    if (
+        $currentTitle
+        && $msgCount > 6
+        && !str_starts_with($currentTitle, 'Starting conversation')
+    ) {
+        // But if risk just escalated to HIGH, we allow renaming to a crisis title.
+        if ($risk !== 'high' || str_starts_with($currentTitle, 'Crisis')) {
             return $currentTitle;
         }
-
-        // Primary emotion (if any)
-        $primary = strtolower($labels[0] ?? '');
-        $moodPhrases = [
-            'sad'          => 'Feeling sad',
-            'anxious'      => 'Feeling anxious',
-            'stressed'     => 'Feeling stressed',
-            'tired'        => 'Exhausted and tired',
-            'angry'        => 'Feeling angry',
-            'lonely'       => 'Feeling lonely',
-            'hopeless'     => 'Hopeless and overwhelmed',
-            'overwhelmed'  => 'Feeling overwhelmed',
-            'not_ok'       => 'Not feeling okay',
-            'guilty'       => 'Feeling guilty',
-            'ashamed'      => 'Struggling with shame',
-            'confused'     => 'Feeling confused',
-            'disappointed' => 'Disappointed',
-            'bored'        => 'Feeling stuck and bored',
-            'overthinking' => 'Overthinking a lot',
-        ];
-
-        $prefix = '';
-
-        // Crisis always wins
-        if ($risk === 'high') {
-            $prefix = 'Crisis thoughts';
-        } elseif ($primary && isset($moodPhrases[$primary])) {
-            $prefix = $moodPhrases[$primary];
-        } elseif ($flags['is_question'] ?? false) {
-            $prefix = 'Question';
-        } else {
-            $prefix = 'Conversation';
-        }
-
-        // High-level topic domain (school, family, relationships, self, future, etc.)
-        $topicSuffix = '';
-
-        if ($this->hasAnyWord($norm, [
-            'school','class','classes','subject','subjects','assignment','assignments',
-            'homework','module','modules','quiz','exam','exams','test','projects',
-            'grades','grade','teacher','professor','course','courses',
-        ])) {
-            $topicSuffix = 'about school';
-        } elseif ($this->hasAnyWord($norm, [
-            'friend','friends','bestfriend','best friend','bff','classmate','classmates',
-            'crush','partner','boyfriend','girlfriend','relationship','relationships',
-            'breakup','break up','ex','trust','betray','betrayed',
-        ])) {
-            $topicSuffix = 'about relationships';
-        } elseif ($this->hasAnyWord($norm, [
-            'family','parents','mother','father','mama','papa','mom','dad',
-            'lola','lolo','siblings','brother','sister',
-            'home','house',
-        ])) {
-            $topicSuffix = 'about family';
-        } elseif ($this->hasAnyWord($norm, [
-            'future','career','job','work','working','income','money',
-            'choice','decisions','decision','path','course shift','shift course',
-        ])) {
-            $topicSuffix = 'about the future';
-        } elseif ($this->hasAnyWord($norm, [
-            'myself','self','identity','who i am','purpose','meaning',
-            'worth','worthless','useless','burden',
-        ])) {
-            $topicSuffix = 'about yourself';
-        }
-
-        // Combine mood + topic
-        $title = $prefix;
-        if ($topicSuffix !== '') {
-            // e.g. "Feeling overwhelmed about school"
-            $title = trim($prefix . ' ' . $topicSuffix);
-        } elseif ($flags['is_question'] ?? false) {
-            // For questions with no clear topic, show a short snippet.
-            $snippet = \Illuminate\Support\Str::limit($analysisText, 40, '…');
-            $title   = 'Question: ' . $snippet;
-        }
-
-        // Fallback if somehow we got nothing useful
-        if ($title === '' || mb_strlen($title) < 4) {
-            $title = \Illuminate\Support\Str::limit($analysisText, 40, '…');
-        }
-
-        // Capitalize first letter just to be safe
-        return ucfirst($title);
     }
+
+    // 1) Primary emotion label → mood phrase
+    $primary = strtolower($labels[0] ?? '');
+    $moodPhrases = [
+        'sad'          => 'Feeling sad',
+        'anxious'      => 'Feeling anxious',
+        'stressed'     => 'Feeling stressed',
+        'tired'        => 'Exhausted and tired',
+        'angry'        => 'Feeling angry',
+        'lonely'       => 'Feeling lonely',
+        'hopeless'     => 'Hopeless and overwhelmed',
+        'overwhelmed'  => 'Feeling overwhelmed',
+        'not_ok'       => 'Not feeling okay',
+        'guilty'       => 'Feeling guilty',
+        'ashamed'      => 'Struggling with shame',
+        'confused'     => 'Feeling confused',
+        'disappointed' => 'Disappointed',
+        'bored'        => 'Feeling stuck and bored',
+        'overthinking' => 'Overthinking a lot',
+    ];
+
+    // 2) Special cases: crisis / appointment / capabilities
+    if ($risk === 'high') {
+        // Slightly more specific crisis phrasing
+        $crisisTitle = 'Crisis thoughts';
+        if (in_array('die_direct', $hits, true) || $this->hasAnyWord($norm, ['kill','suicide','unalive'])) {
+            $crisisTitle = 'Crisis thoughts about self-harm';
+        } elseif ($this->hasAnyWord($norm, ['disappear','exist','worthless','burden'])) {
+            $crisisTitle = 'Crisis thoughts about wanting to disappear';
+        }
+        $title = $crisisTitle;
+    } elseif ($flags['wants_appointment'] ?? false) {
+        $title = 'Thinking about seeing a counselor';
+    } elseif ($flags['asks_capabilities'] ?? false && $msgCount <= 2) {
+        $title = 'Getting to know LumiCHAT';
+    } elseif ($primary && isset($moodPhrases[$primary])) {
+        $title = $moodPhrases[$primary];
+    } elseif ($flags['is_question'] ?? false) {
+        $title = 'Question';
+    } else {
+        $title = 'Conversation';
+    }
+
+    // 3) Topic / domain detection (what is this *about*?)
+    $topicSuffix = '';
+
+    // Academics / school load
+    if ($this->hasAnyWord($norm, [
+        'school','class','classes','subject','subjects','assignment','assignments',
+        'homework','module','modules','quiz','exam','exams','test','projects',
+        'grades','grade','teacher','professor','course','courses','deadline','requirements',
+    ])) {
+        $topicSuffix = 'about school';
+    }
+    // Friends / romantic / social relationships
+    elseif ($this->hasAnyWord($norm, [
+        'friend','friends','bestfriend','best friend','bff','classmate','classmates',
+        'crush','partner','boyfriend','girlfriend','relationship','relationships',
+        'breakup','break up','ex','trust','betray','betrayed','blocked','seenzone',
+    ])) {
+        $topicSuffix = 'about relationships';
+    }
+    // Family
+    elseif ($this->hasAnyWord($norm, [
+        'family','parents','mother','father','mama','papa','mom','dad',
+        'lola','lolo','siblings','brother','sister','tita','tito',
+        'home','house',
+    ])) {
+        $topicSuffix = 'about family';
+    }
+    // Bullying / conflict
+    elseif ($this->hasAnyWord($norm, [
+        'bully','bullying','bullied',
+        'away from me','they hate me','they don\'t like me',
+        'conflict','fighting','argue','argument','toxic',
+    ])) {
+        $topicSuffix = 'about conflict or bullying';
+    }
+    // Self-worth / identity
+    elseif ($this->hasAnyWord($norm, [
+        'myself','self','identity','who i am','purpose','meaning',
+        'worth','worthless','useless','burden','failure','fail','failed',
+        'ugly','fat','insecure','self-esteem','confidence',
+    ])) {
+        $topicSuffix = 'about self-worth';
+    }
+    // Future / decisions / career
+    elseif ($this->hasAnyWord($norm, [
+        'future','career','job','work','working','income','money',
+        'choice','choices','decisions','decision','path','course shift','shift course',
+        'plan','plans','dream','dreams',
+    ])) {
+        $topicSuffix = 'about the future';
+    }
+    // Health / body / energy
+    elseif ($this->hasAnyWord($norm, [
+        'health','sick','ill','hospital','checkup',
+        'body','weight','gain','lost weight','diet',
+        'no energy','drained','fatigue','headache','insomnia','can\'t sleep','cant sleep',
+    ])) {
+        $topicSuffix = 'about health';
+    }
+
+    // 4) Combine mood + topic
+    if ($topicSuffix !== '') {
+        // e.g. "Feeling overwhelmed about school"
+        $title = trim($title.' '.$topicSuffix);
+    } elseif ($flags['is_question'] ?? false) {
+        // For questions with no clear topic, show a short snippet.
+        $snippet = \Illuminate\Support\Str::limit($analysisText, 40, '…');
+        $title   = 'Question: '.$snippet;
+    }
+
+    // 5) Fallback: if still too generic, just use a clean snippet.
+    if ($title === '' || mb_strlen($title) < 4 || $title === 'Conversation') {
+        $title = \Illuminate\Support\Str::limit($analysisText, 40, '…');
+    }
+
+    // 6) Make sure it’s not insanely long.
+    $title = \Illuminate\Support\Str::limit($title, 60, '…');
+
+    // Capitalize first char for safety.
+    return ucfirst($title);
+}
+
 /** Count how many distinct non-mental keywords appear in the text (with typo tolerance). */
 private function countKeywordHits(string $text, array $terms): int
 {
