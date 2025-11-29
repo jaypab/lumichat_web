@@ -38,12 +38,16 @@ Route::middleware(['auth','counselor'])
         Route::post('/appointments/{appointment}/follow-up',      [CounselorAppointmentController::class,'followUpStore'])->whereNumber('appointment')->name('appointments.follow.store');
         Route::get('/appointments/{appointment}/follow-up/slots', [CounselorAppointmentController::class,'followUpSlots'])->whereNumber('appointment')->name('appointments.follow.slots');
 
-        // Appointments
+        // Appointments / Walk-ins
         Route::get('/walk-ins/create', [WalkInController::class, 'create'])
             ->name('walkins.create');
 
         Route::post('/walk-ins', [WalkInController::class, 'store'])
             ->name('walkins.store');
+
+        // ✅ AJAX: check if student exists for walk-in
+        Route::post('/walk-ins/check-student', [CounselorAppointmentController::class, 'checkStudent'])
+            ->name('walkins.check_student');
 
         Route::get('/appointments',                 [CounselorAppointmentController::class,'index'])->name('appointments.index');
         Route::get('/appointments/{id}',            [CounselorAppointmentController::class,'show'])->whereNumber('id')->name('appointments.show');

@@ -18,14 +18,7 @@
   $rawStatus  = strtolower((string)$appointment->status);
   $status     = !empty($isHistory) ? 'reassigned' : $rawStatus;
 
-  // 🔹 If walk-in + completed but still within slot, treat as ongoing
-  if (empty($isHistory) && $isWalkIn && $rawStatus === 'completed') {
-      $endAt = $dt->copy()->addMinutes(60); // 1-hour default slot
-      if ($now->between($dt, $endAt)) {
-          $status = 'ongoing';
-      }
-  }
-
+  // ❌ remove virtual ongoing logic – always trust DB for status
   $isOngoing  = ($status === 'ongoing');
 
   // human countdown / since
@@ -155,45 +148,52 @@
       {{-- Actions --}}
       <div class="mt-4 flex flex-wrap items-center gap-2">
 
-        {{-- Start Session --}}
-        <form method="POST"
-              action="{{ route('counselor.appointments.status', $appointment->id) }}"
-              @if(!$canStart || $isOngoing) onsubmit="return false" @else onsubmit="return askAction(event, this, 'start')" @endif
-              class="{{ ($canStart && !$isOngoing) ? '' : 'pointer-events-none' }}">
-          @csrf
-          @method('PATCH')
-          <input type="hidden" name="action" value="start">
-          <button type="submit"
-                  title="{{ $canStart ? 'Set status to Ongoing' : 'You can start near/after the scheduled time' }}"
-                  class="px-4 py-2 rounded-lg text-white {{ ($canStart && !$isOngoing) ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-indigo-600 opacity-50 cursor-not-allowed' }}">
-            Start Session
-          </button>
-        </form>
-
-        {{-- End Session --}}
-        <form method="POST"
-              action="{{ route('counselor.appointments.status', $appointment->id) }}"
-              @if(!$canDone) onsubmit="return false" @else onsubmit="return askAction(event, this, 'done')" @endif
-              class="{{ $canDone ? '' : 'pointer-events-none' }}">
-          @csrf
-          @method('PATCH')
-          <input type="hidden" name="action" value="done">
-          <button type="submit"
-                  title="{{ $doneTitle }}"
-                  class="px-4 py-2 rounded-lg text-white {{ $canDone ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-emerald-600 opacity-50 cursor-not-allowed' }}">
-            {{ $isOngoing ? 'End Session' : 'Done' }}
-          </button>
-        </form>
-
-        {{-- No-Show --}}
-        @if(in_array($status, ['pending','confirmed']))
-          <form method="POST" action="{{ route('counselor.appointments.no_show', $appointment->id) }}"
-                onsubmit="return askAction(event, this, 'no_show')">
+        {{-- 🔒 For walk-ins: no Start/End/No-Show controls --}}
+        @if(!$isWalkIn)
+          {{-- Start Session --}}
+          <form method="POST"
+                action="{{ route('counselor.appointments.status', $appointment->id) }}"
+                @if(!$canStart || $isOngoing) onsubmit="return false" @else onsubmit="return askAction(event, this, 'start')" @endif
+                class="{{ ($canStart && !$isOngoing) ? '' : 'pointer-events-none' }}">
             @csrf
-            <button type="submit" class="px-4 py-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700">
-              Mark as No-Show
+            @method('PATCH')
+            <input type="hidden" name="action" value="start">
+            <button type="submit"
+                    title="{{ $canStart ? 'Set status to Ongoing' : 'You can start near/after the scheduled time' }}"
+                    class="px-4 py-2 rounded-lg text-white {{ ($canStart && !$isOngoing) ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-indigo-600 opacity-50 cursor-not-allowed' }}">
+              Start Session
             </button>
           </form>
+
+          {{-- End Session --}}
+          <form method="POST"
+                action="{{ route('counselor.appointments.status', $appointment->id) }}"
+                @if(!$canDone) onsubmit="return false" @else onsubmit="return askAction(event, this, 'done')" @endif
+                class="{{ $canDone ? '' : 'pointer-events-none' }}">
+            @csrf
+            @method('PATCH')
+            <input type="hidden" name="action" value="done">
+            <button type="submit"
+                    title="{{ $doneTitle }}"
+                    class="px-4 py-2 rounded-lg text-white {{ $canDone ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-emerald-600 opacity-50 cursor-not-allowed' }}">
+              {{ $isOngoing ? 'End Session' : 'Done' }}
+            </button>
+          </form>
+
+          {{-- No-Show --}}
+          @if(in_array($status, ['pending','confirmed']))
+            <form method="POST" action="{{ route('counselor.appointments.no_show', $appointment->id) }}"
+                  onsubmit="return askAction(event, this, 'no_show')">
+              @csrf
+              <button type="submit" class="px-4 py-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700">
+                Mark as No-Show
+              </button>
+            </form>
+          @endif
+        @else
+          <div class="text-xs text-slate-500">
+            Walk-in session — status is handled from the Walk-in Case Note page.
+          </div>
         @endif
 
         {{-- Follow-up --}}
@@ -639,6 +639,26 @@
 </style>
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+{{-- 🔹 SweetAlert for flash message (walk-in saved, etc.) --}}
+@if(session('swal'))
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const data = @json(session('swal'));
+
+    Swal.fire({
+        icon:  data.icon  || 'success',
+        title: data.title || 'Success',
+        text:  data.text  || '',
+        timer: data.timer || 2200,
+        showConfirmButton: data.showConfirmButton ?? false,
+    });
+});
+</script>
+@endif
+
+{{-- JS for elapsed timer and action confirms --}}
+
 <script>
 /* (all your existing JS below stays the same) */
 (function(){
@@ -664,6 +684,7 @@
   window.__lumiElapsedTimer && clearInterval(window.__lumiElapsedTimer);
   window.__lumiElapsedTimer = setInterval(tick, 1000);
 })();
+
 /* =========================================================
    2) ACTION CONFIRMS
 ========================================================= */

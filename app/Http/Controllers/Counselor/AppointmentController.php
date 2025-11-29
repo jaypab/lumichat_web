@@ -928,6 +928,15 @@ class AppointmentController extends Controller
             ->first();
         abort_unless($appt, 404);
 
+        // 🔒 Walk-in appointments are managed from the Walk-in page only.
+        $source = strtolower((string)($appt->appointment_source ?? ''));
+        if (in_array($source, ['walk_in', 'walk-in', 'walk in'], true)) {
+            return back()->withErrors(
+                'Walk-in sessions are already completed from the Walk-in Case Note page. '.
+                'You don’t need to use Start/End here.'
+            );
+        }
+
         $now      = now();
         $startAt  = Carbon::parse($appt->scheduled_at);
         $graceMin = 10;
@@ -1145,28 +1154,70 @@ class AppointmentController extends Controller
     /**
  * Simple plain-text email helper for counselor actions.
  */
-private function sendPlainEmail(string $to, string $subject, string $body): void
-{
-    // If mail is not configured, silently skip
-    if (!config('mail.default')) {
-        \Log::info('Mail disabled / not configured, skipping sendPlainEmail.', [
-            'to'      => $to,
-            'subject' => $subject,
-        ]);
-        return;
+    private function sendPlainEmail(string $to, string $subject, string $body): void
+    {
+        // If mail is not configured, silently skip
+        if (!config('mail.default')) {
+            \Log::info('Mail disabled / not configured, skipping sendPlainEmail.', [
+                'to'      => $to,
+                'subject' => $subject,
+            ]);
+            return;
+        }
+
+        try {
+            Mail::raw($body, function ($m) use ($to, $subject) {
+                $m->to($to)->subject($subject);
+            });
+        } catch (\Throwable $e) {
+            \Log::warning('sendPlainEmail failed in Counselor\\AppointmentController', [
+                'to'      => $to,
+                'subject' => $subject,
+                'error'   => $e->getMessage(),
+            ]);
+        }
     }
 
-    try {
-        Mail::raw($body, function ($m) use ($to, $subject) {
-            $m->to($to)->subject($subject);
-        });
-    } catch (\Throwable $e) {
-        \Log::warning('sendPlainEmail failed in Counselor\\AppointmentController', [
-            'to'      => $to,
-            'subject' => $subject,
-            'error'   => $e->getMessage(),
+    public function checkStudent(Request $request)
+    {
+        $name = trim((string) $request->input('student_name'));
+
+        if ($name === '') {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'Please enter the student name first.',
+            ], 422);
+        }
+
+        // ✅ Gamitin ang tamang table at column
+        //   – table: tbl_users
+        //   – column: name (hindi student_name)
+        $studentQuery = DB::table('tbl_users')
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
+
+        // OPTIONAL: kung may role column ka
+        if (Schema::hasColumn('tbl_users', 'role')) {
+            $studentQuery->where('role', 'student');
+        }
+
+        $student = $studentQuery->first();
+
+        if (!$student) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'This student is not yet registered. Please add them in Admin ▸ Students first, then record the walk-in.',
+            ]);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'student' => [
+                'id'         => $student->id,
+                'name'       => $student->name,
+                'course'     => $student->course     ?? null,
+                'year_level' => $student->year_level ?? null,
+            ],
         ]);
     }
-}
 
 }

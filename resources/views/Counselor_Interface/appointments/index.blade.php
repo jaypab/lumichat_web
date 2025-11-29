@@ -128,14 +128,9 @@
                 $sourceRaw = strtolower((string)($row->appointment_source ?? ''));
                 $isWalkIn  = in_array($sourceRaw, ['walk_in', 'walk-in', 'walk in'], true);
 
-                // we still keep your effectiveStatus logic if needed later
-                $effectiveStatus = $row->status;
-
-                // no end_at column, assume 1-hour slot
-                $endAt = $dt->copy()->addMinutes(60);
-                if ($isWalkIn && $row->status === 'completed' && $now->between($dt, $endAt)) {
-                    $effectiveStatus = 'ongoing';
-                }
+                // 👉 Always use the real DB status.
+                //    No more “virtual ongoing” for completed walk-ins.
+                $effectiveStatus = strtolower((string) $row->status);
 
                 // status chip
                 $s      = $statusMap[$effectiveStatus] ?? [

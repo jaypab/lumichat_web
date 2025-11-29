@@ -94,11 +94,15 @@
               Student Name <span class="text-rose-500">*</span>
             </label>
             <input type="text" name="student_name" value="{{ old('student_name') }}"
-                   class="block w-full rounded-xl border-slate-300 focus:border-indigo-500 focus:ring-indigo-500 text-sm"
-                   placeholder="e.g., Juan Dela Cruz" required>
+                  class="block w-full rounded-xl border-slate-300 focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                  placeholder="e.g., Juan Dela Cruz" required>
+
             @error('student_name')
               <p class="mt-1 text-xs text-rose-600">{{ $message }}</p>
             @enderror
+
+            {{-- live error for “not registered” check --}}
+            <p id="studentNameLiveError" class="mt-1 text-xs text-rose-600 hidden"></p>
           </div>
 
           <div>
@@ -538,9 +542,15 @@
     startBtn.classList.add('opacity-60', 'cursor-default');
   })();
 
-  // ===== START SESSION =====
-  startBtn.addEventListener('click', function (e){
+ /// ===== START SESSION (with student-exists check) =====
+  startBtn.addEventListener('click', async function (e){
     e.preventDefault();
+
+    const liveErrorEl = document.getElementById('studentNameLiveError');
+    if (liveErrorEl) {
+      liveErrorEl.textContent = '';
+      liveErrorEl.classList.add('hidden');
+    }
 
     // HARD BLOCK if no available time
     if (!canStartFlag) {
@@ -569,12 +579,59 @@
 
     if (sessionStart) return; // already running
 
+    // ==== CALL BACKEND TO CHECK IF STUDENT EXISTS ====
+    try {
+      const url   = '{{ route('counselor.walkins.check_student') }}';
+      const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': token,
+        },
+        body: JSON.stringify({
+          student_name: topNameInput.value
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!data.ok) {
+        const msg = data.message || 'This student is not yet registered. Please add them in Admin ▸ Students first, then record the walk-in.';
+
+        if (liveErrorEl) {
+          liveErrorEl.textContent = msg;
+          liveErrorEl.classList.remove('hidden');
+        }
+
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: msg,
+          confirmButtonColor: '#ef4444'
+        });
+
+        return; // STOP – do not start timer
+      }
+    } catch (err) {
+      console.error(err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Server error',
+        text: 'Could not verify the student right now. Please try again.',
+        confirmButtonColor: '#ef4444'
+      });
+      return;
+    }
+
+    // ==== IF WE REACH HERE, STUDENT EXISTS → START SESSION ====
     sessionStart        = new Date();
     startInput.value    = formatForTimeInput(sessionStart);
     startLabel.textContent =
       'Started at ' + sessionStart.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
 
-    // persist form + start time
     saveFormToStorage();
     localStorage.setItem(STORAGE_KEY, sessionStart.toISOString());
 
