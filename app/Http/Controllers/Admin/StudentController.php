@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Http\Controllers\Admin;
+use App\Models\Appointment;
 
 use App\Http\Controllers\Controller;
 use App\Models\User; 
@@ -153,43 +154,51 @@ class StudentController extends Controller
             ->with('success', 'Student has been successfully added.');
     }
 
-    /**
-     * Show a student's appointment stats and chart for a selected year.
-     * NOTE: We still type-hint App\Models\User for route-model binding.
-     */
     public function show(Request $request, User $student): View
-    {
-        $requestedYear = (int) ($request->query('year') ?: now()->year);
-        $studentId     = (int) $student->id;
+{
+    $requestedYear = (int) ($request->query('year') ?: now()->year);
+    $studentId     = (int) $student->id;
 
-        // Earliest year from appointments for this user
-        $firstYearFromData = $this->appointments->firstAppointmentYearForStudent($studentId);
+    // Earliest year from appointments for this user
+    $firstYearFromData = $this->appointments->firstAppointmentYearForStudent($studentId);
 
-        $minYear = (int) ($firstYearFromData ?: ($student->created_at?->year ?? now()->year));
-        $maxYear = (int) now()->year;
-        $floor   = min($minYear, $maxYear - 4);
-        $yearsAvailable = range($maxYear, $floor, -1); // DESC
-        $year = max(min($requestedYear, $maxYear), $floor);
+    $minYear = (int) ($firstYearFromData ?: ($student->created_at?->year ?? now()->year));
+    $maxYear = (int) now()->year;
+    $floor   = min($minYear, $maxYear - 4);
+    $yearsAvailable = range($maxYear, $floor, -1); // DESC
+    $year = max(min($requestedYear, $maxYear), $floor);
 
-        // Monthly counts for the selected year
-        $monthCounts = $this->appointments->monthlyCountsForStudent($studentId, $year);
+    // Monthly counts for the selected year (chart)
+    $monthCounts = $this->appointments->monthlyCountsForStudent($studentId, $year);
+    [$labels, $series] = $this->buildMonthlySeries($year, $monthCounts);
 
-        [$labels, $series] = $this->buildMonthlySeries($year, $monthCounts);
+    $total     = array_sum($series);
+    $max       = $total ? max($series) : 0;
+    $peakLabel = $max ? $labels[array_search($max, $series, true)] : null;
 
-        $total     = array_sum($series);
-        $max       = $total ? max($series) : 0;
-        $peakLabel = $max ? $labels[array_search($max, $series, true)] : null;
+    // 🔹 NEW: pull ALL appointments for this student (with counselor + case notes)
+    $appointments = Appointment::query()
+        ->with([
+            'counselor:id,name',   // adjust columns if your Counselor model uses other fields
+            'caseNotes' => function ($q) {
+                $q->orderBy('created_at', 'desc');
+            },
+        ])
+        ->where('student_id', $studentId)
+        ->orderByDesc('scheduled_at')
+        ->get();
 
-        return view(self::VIEW_SHOW, compact(
-            'student',
-            'year',
-            'yearsAvailable',
-            'labels',
-            'series',
-            'total',
-            'peakLabel'
-        ));
-    }
+    return view(self::VIEW_SHOW, [
+        'student'        => $student,
+        'year'           => $year,
+        'yearsAvailable' => $yearsAvailable,
+        'labels'         => $labels,
+        'series'         => $series,
+        'total'          => $total,
+        'peakLabel'      => $peakLabel,
+        'appointments'   => $appointments, // 🔹 pass to Blade
+    ]);
+}
 
     /**
      * Export the filtered Student list to PDF (all matching rows, no pagination).

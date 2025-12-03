@@ -39,5 +39,9 @@ class Appointment extends Model
         // Keep pointing to your Counselor model (not User)
         return $this->belongsTo(Counselor::class, 'counselor_id');
     }
+    public function caseNotes()
+{
+    return $this->hasMany(\App\Models\CaseNote::class, 'appointment_id');
+}
 }
 
