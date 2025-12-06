@@ -162,135 +162,247 @@
         </button>
       </div>
     </div>
-
-    {{-- 🔹 NEW: Appointment History + Case Notes --}}
-    <div class="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-      <div class="p-6">
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-          <div>
-            <h3 class="text-lg font-semibold text-gray-900">
-              Appointment History &amp; Case Notes
-            </h3>
-            <p class="text-sm text-gray-500">
-              All appointments recorded for this student, including any case notes written by counselors.
-            </p>
-          </div>
-        </div>
-
-        @if(($appointments ?? collect())->isEmpty())
-          <div class="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 text-center text-sm text-gray-500">
-            No appointment records found for this student yet.
-          </div>
-        @else
-          <div class="space-y-4">
-            @foreach($appointments as $appt)
-              @php
-                $dt = $appt->scheduled_at ? \Carbon\Carbon::parse($appt->scheduled_at) : null;
-                $status = strtolower((string) $appt->status);
-                $statusLabel = ucfirst($status ?: 'N/A');
-
-                $statusColor = match ($status) {
-                  'completed' => 'bg-emerald-50 text-emerald-700 ring-emerald-100',
-                  'ongoing'   => 'bg-indigo-50 text-indigo-700 ring-indigo-100',
-                  'canceled', 'cancelled', 'no-show' => 'bg-rose-50 text-rose-700 ring-rose-100',
-                  default     => 'bg-slate-50 text-slate-700 ring-slate-100',
-                };
-              @endphp
-
-              <div class="rounded-xl border border-gray-200 bg-white/70 px-4 py-4 sm:px-5 sm:py-5 shadow-sm">
-                <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                  <div class="space-y-1">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <p class="text-sm font-semibold text-slate-900">
-                        Appointment #{{ $appt->id }}
-                      </p>
-                      <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 {{ $statusColor }}">
-                        {{ $statusLabel }}
-                      </span>
-                      @if(!empty($appt->appointment_type))
-                        <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
-                          {{ $appt->appointment_type }}
-                        </span>
-                      @endif
-                    </div>
-
-                    <p class="text-xs text-gray-500">
-                      @if($dt)
-                        {{ $dt->format('F d, Y • h:i A') }}
-                      @else
-                        <span class="italic">No schedule timestamp</span>
-                      @endif
-                    </p>
-
-                    <p class="text-xs text-gray-500">
-                      Counselor:
-                      <span class="font-medium text-slate-800">
-                        {{ $appt->counselor?->name ?? $appt->counselor_name ?? '—' }}
-                      </span>
-                    </p>
-                  </div>
-
-                  <div class="flex flex-col items-start sm:items-end gap-1 text-xs text-gray-500">
-                    <p>
-                      Created: 
-                      {{ $appt->created_at ? \Carbon\Carbon::parse($appt->created_at)->format('M d, Y • h:i A') : '—' }}
-                    </p>
-                    <p>
-                      Updated: 
-                      {{ $appt->updated_at ? \Carbon\Carbon::parse($appt->updated_at)->format('M d, Y • h:i A') : '—' }}
-                    </p>
-                  </div>
-                </div>
-
-                {{-- Case notes for this appointment --}}
-                @php
-                  $caseNotes = $appt->caseNotes ?? collect();
-                @endphp
-
-                @if($caseNotes->isNotEmpty())
-                  <div class="mt-4 border-t pt-4 space-y-3">
-                    <p class="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                      Case Notes ({{ $caseNotes->count() }})
-                    </p>
-
-                    <div class="space-y-2 max-h-60 overflow-y-auto pr-1">
-                      @foreach($caseNotes as $note)
-                        <div class="rounded-lg bg-slate-50 px-3 py-2">
-                          <div class="flex items-start justify-between gap-2">
-                            <p class="text-xs font-medium text-slate-800">
-                              {{ $note->title ?? 'Case Note' }}
-                            </p>
-                            <p class="text-[11px] text-gray-500 whitespace-nowrap">
-                              {{ $note->created_at ? \Carbon\Carbon::parse($note->created_at)->format('M d, Y • h:i A') : '' }}
-                            </p>
-                          </div>
-                          <p class="mt-1 text-xs text-slate-700 leading-snug">
-                            {{ $note->summary ?? $note->note ?? '(No description provided)' }}
-                          </p>
-                          @if(!empty($note->risk_level))
-                            <p class="mt-1 text-[11px] text-gray-500">
-                              Risk Level:
-                              <span class="font-medium">
-                                {{ ucfirst($note->risk_level) }}
-                              </span>
-                            </p>
-                          @endif
-                        </div>
-                      @endforeach
-                    </div>
-                  </div>
-                @else
-                  <div class="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-gray-500">
-                    No case notes recorded for this appointment.
-                  </div>
-                @endif
-              </div>
-            @endforeach
-          </div>
-        @endif
+{{-- 🔹 RELATED RECORDS: Appointments / Case Notes / Chat Sessions --}}
+<div class="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+  <div class="p-6 space-y-8">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div>
+        <h3 class="text-lg font-semibold text-gray-900">
+          Related Records
+        </h3>
+        <p class="text-sm text-gray-500">
+          Quick access to this student’s appointments, case notes, and chatbot sessions.
+        </p>
       </div>
     </div>
-    {{-- 🔹 END: Appointment History + Case Notes --}}
+
+    {{-- 1) Appointment List --}}
+    <section class="space-y-3">
+      <div class="flex items-center justify-between gap-2">
+        <h4 class="text-sm font-semibold text-slate-900 uppercase tracking-wide">
+          Appointments
+        </h4>
+        <span class="text-xs text-gray-500">
+          Total: {{ ($appointments ?? collect())->count() }}
+        </span>
+      </div>
+
+      @if(($appointments ?? collect())->isEmpty())
+        <div class="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-center text-sm text-gray-500">
+          No appointment records found for this student.
+        </div>
+      @else
+        <div class="overflow-x-auto rounded-xl border border-slate-200">
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th class="px-4 py-2 text-left">Appointment #</th>
+                <th class="px-4 py-2 text-left">Schedule</th>
+                <th class="px-4 py-2 text-left">Counselor</th>
+                <th class="px-4 py-2 text-left">Type</th>
+                <th class="px-4 py-2 text-left">Status</th>
+                <th class="px-4 py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              @foreach($appointments as $appt)
+                @php
+                  $dt          = $appt->scheduled_at ? \Carbon\Carbon::parse($appt->scheduled_at) : null;
+                  $status      = strtolower((string) $appt->status);
+                  $statusLabel = ucfirst($status ?: 'N/A');
+                  $statusColor = match ($status) {
+                    'completed' => 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+                    'ongoing'   => 'bg-indigo-50 text-indigo-700 ring-indigo-100',
+                    'canceled', 'cancelled', 'no-show' => 'bg-rose-50 text-rose-700 ring-rose-100',
+                    default     => 'bg-slate-50 text-slate-700 ring-slate-100',
+                  };
+                @endphp
+                <tr class="hover:bg-slate-50">
+                  <td class="px-4 py-2 whitespace-nowrap text-slate-900 font-medium">
+                    #{{ $appt->id }}
+                  </td>
+                  <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
+                    @if($dt)
+                      {{ $dt->format('M d, Y • h:i A') }}
+                    @else
+                      <span class="italic text-slate-400">Not set</span>
+                    @endif
+                  </td>
+                  <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
+                    {{ $appt->counselor?->name ?? $appt->counselor_name ?? '—' }}
+                  </td>
+                  <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
+                    {{ $appt->appointment_type ?? '—' }}
+                  </td>
+                  <td class="px-4 py-2 whitespace-nowrap">
+                    <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ring-1 {{ $statusColor }}">
+                      {{ $statusLabel }}
+                    </span>
+                  </td>
+                  <td class="px-4 py-2 whitespace-nowrap text-right">
+                    {{-- TODO: adjust route name if different in your routes/web.php --}}
+                    <a href="{{ route('admin.appointments.show', $appt->id) }}"
+                       class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                      View
+                    </a>
+                  </td>
+                </tr>
+              @endforeach
+            </tbody>
+          </table>
+        </div>
+      @endif
+    </section>
+
+    {{-- 2) Case Notes List --}}
+    <section class="space-y-3">
+      <div class="flex items-center justify-between gap-2">
+        <h4 class="text-sm font-semibold text-slate-900 uppercase tracking-wide">
+          Case Notes
+        </h4>
+        <span class="text-xs text-gray-500">
+          Total: {{ ($caseNotes ?? collect())->count() }}
+        </span>
+      </div>
+
+      @if(($caseNotes ?? collect())->isEmpty())
+        <div class="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-center text-sm text-gray-500">
+          No case notes recorded for this student.
+        </div>
+      @else
+        <div class="overflow-x-auto rounded-xl border border-slate-200">
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th class="px-4 py-2 text-left">Case Note</th>
+                <th class="px-4 py-2 text-left">Created</th>
+                <th class="px-4 py-2 text-left">Counselor</th>
+                <th class="px-4 py-2 text-left">Appointment</th>
+                <th class="px-4 py-2 text-left">Risk Level</th>
+                <th class="px-4 py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              @foreach($caseNotes as $note)
+                @php
+                  $created = $note->created_at ? \Carbon\Carbon::parse($note->created_at) : null;
+                  $risk    = $note->risk_level ?? null;
+                @endphp
+                <tr class="hover:bg-slate-50">
+                  <td class="px-4 py-2 whitespace-nowrap text-slate-900 text-xs font-medium">
+                    {{ $note->title ?? 'Case Note #'.$note->id }}
+                  </td>
+                  <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
+                    @if($created)
+                      {{ $created->format('M d, Y • h:i A') }}
+                    @else
+                      —
+                    @endif
+                  </td>
+                  <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
+                    {{ $note->counselor?->name ?? '—' }}
+                  </td>
+                  <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
+                    @if($note->appointment)
+                      #{{ $note->appointment->id }}
+                      <span class="text-slate-400">
+                        ({{ \Carbon\Carbon::parse($note->appointment->scheduled_at)->format('M d, Y') }})
+                      </span>
+                    @else
+                      —
+                    @endif
+                  </td>
+                  <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
+                    {{ $risk ? ucfirst($risk) : '—' }}
+                  </td>
+                  <td class="px-4 py-2 whitespace-nowrap text-right">
+                    {{-- TODO: adjust route name if different in your routes/web.php --}}
+                    <a href="{{ route('admin.case-notes.show', $note->id) }}"
+                       class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                      View
+                    </a>
+                  </td>
+                </tr>
+              @endforeach
+            </tbody>
+          </table>
+        </div>
+      @endif
+    </section>
+
+    {{-- 3) Chat Sessions List --}}
+    <section class="space-y-3">
+      <div class="flex items-center justify-between gap-2">
+        <h4 class="text-sm font-semibold text-slate-900 uppercase tracking-wide">
+          Chatbot Sessions
+        </h4>
+        <span class="text-xs text-gray-500">
+          Total: {{ ($chatSessions ?? collect())->count() }}
+        </span>
+      </div>
+
+      @if(($chatSessions ?? collect())->isEmpty())
+        <div class="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-center text-sm text-gray-500">
+          No chatbot sessions found for this student.
+        </div>
+      @else
+        <div class="overflow-x-auto rounded-xl border border-slate-200">
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th class="px-4 py-2 text-left">Session #</th>
+                <th class="px-4 py-2 text-left">Title</th>
+                <th class="px-4 py-2 text-left">Started</th>
+                <th class="px-4 py-2 text-left">Last Updated</th>
+                <th class="px-4 py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              @foreach($chatSessions as $session)
+                @php
+                  $started = $session->created_at ? \Carbon\Carbon::parse($session->created_at) : null;
+                  $updated = $session->updated_at ? \Carbon\Carbon::parse($session->updated_at) : null;
+                @endphp
+                <tr class="hover:bg-slate-50">
+                  <td class="px-4 py-2 whitespace-nowrap text-slate-900 font-medium">
+                    #{{ $session->id }}
+                  </td>
+                  <td class="px-4 py-2 text-slate-700 text-xs">
+                    {{ $session->title ?? $session->chat_title ?? 'Chat Session' }}
+                  </td>
+                  <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
+                    @if($started)
+                      {{ $started->format('M d, Y • h:i A') }}
+                    @else
+                      —
+                    @endif
+                  </td>
+                  <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
+                    @if($updated)
+                      {{ $updated->format('M d, Y • h:i A') }}
+                    @else
+                      —
+                    @endif
+                  </td>
+                  <td class="px-4 py-2 whitespace-nowrap text-right">
+                    {{-- TODO: adjust route name if different in your routes/web.php --}}
+                    <a href="{{ route('admin.chatbot_sessions.show', $session->id) }}"
+                       class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                      View
+                    </a>
+                  </td>
+                </tr>
+              @endforeach
+            </tbody>
+          </table>
+        </div>
+      @endif
+    </section>
+
+  </div>
+</div>
+{{-- 🔹 END: RELATED RECORDS --}}
+
   </div>
   {{-- ===== PRINT SCOPE END ===== --}}
 </div>

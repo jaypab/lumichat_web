@@ -1,8 +1,10 @@
 <?php
 
 namespace App\Http\Controllers\Admin;
-use App\Models\Appointment;
 
+use App\Models\Appointment;
+use App\Models\CaseNote;
+use App\Models\ChatSession;
 use App\Http\Controllers\Controller;
 use App\Models\User; 
 use App\Repositories\Contracts\StudentRepositoryInterface;
@@ -153,8 +155,7 @@ class StudentController extends Controller
             ->route('admin.students.index')
             ->with('success', 'Student has been successfully added.');
     }
-
-    public function show(Request $request, User $student): View
+public function show(Request $request, User $student): View
 {
     $requestedYear = (int) ($request->query('year') ?: now()->year);
     $studentId     = (int) $student->id;
@@ -176,16 +177,31 @@ class StudentController extends Controller
     $max       = $total ? max($series) : 0;
     $peakLabel = $max ? $labels[array_search($max, $series, true)] : null;
 
-    // 🔹 NEW: pull ALL appointments for this student (with counselor + case notes)
+    // 🔹 List-style related records for this student
+
+    // 1) All appointments for this student
     $appointments = Appointment::query()
         ->with([
             'counselor:id,name',   // adjust columns if your Counselor model uses other fields
-            'caseNotes' => function ($q) {
-                $q->orderBy('created_at', 'desc');
-            },
         ])
         ->where('student_id', $studentId)
         ->orderByDesc('scheduled_at')
+        ->get();
+
+    // 2) All case notes for this student
+    $caseNotes = CaseNote::query()
+        ->with([
+            'appointment:id,scheduled_at',   // so we can show Appt # + date
+            'counselor:id,name',
+        ])
+        ->where('student_id', $studentId)
+        ->orderByDesc('created_at')
+        ->get();
+
+    // 3) All chatbot sessions for this student
+    $chatSessions = ChatSession::query()
+        ->where('user_id', $studentId)
+        ->orderByDesc('created_at')
         ->get();
 
     return view(self::VIEW_SHOW, [
@@ -196,7 +212,11 @@ class StudentController extends Controller
         'series'         => $series,
         'total'          => $total,
         'peakLabel'      => $peakLabel,
-        'appointments'   => $appointments, // 🔹 pass to Blade
+
+        // 🔹 lists for the UI
+        'appointments'   => $appointments,
+        'caseNotes'      => $caseNotes,
+        'chatSessions'   => $chatSessions,
     ]);
 }
 
