@@ -104,6 +104,22 @@
             {{-- live error for “not registered” check --}}
             <p id="studentNameLiveError" class="mt-1 text-xs text-rose-600 hidden"></p>
           </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">
+              Email Address <span class="text-rose-500">*</span>
+            </label>
+            <input type="email" name="email" value="{{ old('email') }}"
+                  class="block w-full rounded-xl border-slate-300 focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                  placeholder="e.g., juan.tcc@example.com" required>
+            @error('email')
+              <p class="mt-1 text-xs text-rose-600">{{ $message }}</p>
+            @enderror
+
+            {{-- live status about account existence / creation --}}
+            <p id="studentAccountInfo" class="mt-1 text-xs text-emerald-600 hidden"></p>
+          </div>
+
+
 
           <div>
         <label for="course" class="block text-sm font-medium text-slate-700 mb-1">
@@ -146,6 +162,20 @@
               <p class="mt-1 text-xs text-rose-600">{{ $message }}</p>
             @enderror
           </div>
+                <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">
+          Contact Number <span class="text-slate-400 text-xs">(optional)</span>
+        </label>
+        <input type="text"
+               name="contact_number"
+               value="{{ old('contact_number') }}"
+               class="block w-full rounded-xl border-slate-300 focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+               placeholder="+63 9xx xxx xxxx">
+        @error('contact_number')
+          <p class="mt-1 text-xs text-rose-600">{{ $message }}</p>
+        @enderror
+      </div>
+
         </div>
       </section>
 
@@ -352,10 +382,12 @@
 
         {{-- Actions --}}
       <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-slate-100">
-        <a href="{{ route('counselor.dashboard') }}"
-           class="inline-flex items-center justify-center px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">
-          Cancel
-        </a>
+      <a href="{{ route('counselor.dashboard') }}"
+        id="btnWalkinCancel"
+        class="inline-flex items-center justify-center px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">
+        Cancel
+      </a>
+
 
         <div class="flex items-center gap-2">
           <button type="button"
@@ -385,13 +417,14 @@
   .hidden { display: none; }
 </style>
 @endpush
-
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 (function () {
+  const studentAccountInfo = document.getElementById('studentAccountInfo');
   const startBtn        = document.getElementById('btnWalkinStart');
   const endBtn          = document.getElementById('btnWalkinEnd');
+  const cancelBtn       = document.getElementById('btnWalkinCancel');
   const timerEl         = document.getElementById('sessionTimer');
   const startLabel      = document.getElementById('sessionStartLabel');
   const statusChip      = document.getElementById('walkinStatusChip');
@@ -408,15 +441,22 @@
   let sessionStart    = null;
   let timerInterval   = null;
   let caseNoteVisible = false;
+  let studentChecked  = false; // track if we already called backend
+
+  // 🔹 NEW: track if a student account was just created
+  let justCreatedAccount = false;
+  let justCreatedEmail   = null;
 
   // flag from Blade
   const canStartFlag = startBtn.dataset.canStart === '1';
 
   // ===== TOP FIELDS =====
-  const topNameInput   = form.querySelector('input[name="student_name"]');
-  const topCourseInput = form.querySelector('[name="course"]');      // <select>
-  const topYearSelect  = form.querySelector('select[name="year_level"]');
-  const reasonTextarea = form.querySelector('textarea[name="reason"]');
+  const topNameInput     = form.querySelector('input[name="student_name"]');
+  const emailInput       = form.querySelector('input[name="email"]');
+  const topCourseInput   = form.querySelector('[name="course"]');
+  const topYearSelect    = form.querySelector('select[name="year_level"]');
+  const topContactInput  = form.querySelector('input[name="contact_number"]');
+  const reasonTextarea   = form.querySelector('textarea[name="reason"]');
 
   // ===== CASE NOTE HEADER FIELDS =====
   const cnNameInput   = form.querySelector('input[name="case_note[student_name]"]');
@@ -480,10 +520,12 @@
   // ===== PERSIST FORM VALUES =====
   function saveFormToStorage() {
     const data = {
-      student_name: topNameInput   ? topNameInput.value   : '',
-      course:       topCourseInput ? topCourseInput.value : '',
-      year_level:   topYearSelect  ? topYearSelect.value  : '',
-      reason:       reasonTextarea ? reasonTextarea.value : '',
+      student_name:   topNameInput    ? topNameInput.value   : '',
+      email:          emailInput      ? emailInput.value     : '',
+      course:         topCourseInput  ? topCourseInput.value : '',
+      year_level:     topYearSelect   ? topYearSelect.value  : '',
+      contact_number: topContactInput ? topContactInput.value: '',
+      reason:         reasonTextarea  ? reasonTextarea.value : '',
     };
     try {
       localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(data));
@@ -496,11 +538,13 @@
 
     try {
       const data = JSON.parse(raw);
-      if (topNameInput && data.student_name)   topNameInput.value   = data.student_name;
-      if (topCourseInput && data.course)       topCourseInput.value = data.course;
-      if (topYearSelect && data.year_level)    topYearSelect.value  = data.year_level;
-      if (reasonTextarea && data.reason)       reasonTextarea.value = data.reason;
-      // after restore, keep header in sync
+      if (topNameInput && data.student_name)        topNameInput.value   = data.student_name;
+      if (emailInput && data.email)                 emailInput.value     = data.email;
+      if (topCourseInput && data.course)            topCourseInput.value = data.course;
+      if (topYearSelect && data.year_level)         topYearSelect.value  = data.year_level;
+      if (topContactInput && data.contact_number)   topContactInput.value = data.contact_number;
+      if (reasonTextarea && data.reason)            reasonTextarea.value = data.reason;
+
       syncCaseNoteHeader();
     } catch (_) {
       localStorage.removeItem(FORM_STORAGE_KEY);
@@ -508,10 +552,12 @@
   }
 
   // hook change/input events to save
-  if (topNameInput)   topNameInput.addEventListener('input',  () => { syncCaseNoteHeader(); saveFormToStorage(); });
-  if (topCourseInput) topCourseInput.addEventListener('change', () => { syncCaseNoteHeader(); saveFormToStorage(); });
-  if (topYearSelect)  topYearSelect.addEventListener('change',  () => { syncCaseNoteHeader(); saveFormToStorage(); });
-  if (reasonTextarea) reasonTextarea.addEventListener('input', () => { saveFormToStorage(); });
+  if (topContactInput) topContactInput.addEventListener('input', () => { saveFormToStorage(); });
+  if (topNameInput)    topNameInput.addEventListener('input',   () => { syncCaseNoteHeader(); saveFormToStorage(); studentChecked = false; });
+  if (emailInput)      emailInput.addEventListener('input',     () => { saveFormToStorage(); studentChecked = false; });
+  if (topCourseInput)  topCourseInput.addEventListener('change',() => { syncCaseNoteHeader(); saveFormToStorage(); });
+  if (topYearSelect)   topYearSelect.addEventListener('change', () => { syncCaseNoteHeader(); saveFormToStorage(); });
+  if (reasonTextarea)  reasonTextarea.addEventListener('input', () => { saveFormToStorage(); });
 
   // disable agad kung walang availability
   if (!canStartFlag) {
@@ -542,44 +588,26 @@
     startBtn.classList.add('opacity-60', 'cursor-default');
   })();
 
- /// ===== START SESSION (with student-exists check) =====
-  startBtn.addEventListener('click', async function (e){
-    e.preventDefault();
-
+  // ===== COMMON HELPER: CHECK / CREATE STUDENT + AUTOFILL =====
+  // NOTE: This is now ONLY called from Start Session,
+  // after all top fields are filled. So new accounts get full info.
+  async function performStudentLookup() {
     const liveErrorEl = document.getElementById('studentNameLiveError');
     if (liveErrorEl) {
       liveErrorEl.textContent = '';
       liveErrorEl.classList.add('hidden');
     }
 
-    // HARD BLOCK if no available time
-    if (!canStartFlag) {
-      Swal.fire({
-        icon: 'info',
-        title: 'No available time',
-        text: 'You have no available walk-in time slot right now. Please update your availability before starting a session.',
-        confirmButtonColor: '#4f46e5'
-      });
-      return;
+    const nameVal   = topNameInput   ? topNameInput.value.trim()    : '';
+    const emailVal  = emailInput     ? emailInput.value.trim()      : '';
+    const courseVal = topCourseInput ? topCourseInput.value.trim()  : '';
+    const yearVal   = topYearSelect  ? (topYearSelect.value || '').trim() : '';
+
+    // Just a safety net (we already validated before calling this)
+    if (!nameVal || !emailVal || !courseVal || !yearVal) {
+      return false;
     }
 
-    const nameOk   = topNameInput && topNameInput.value.trim() !== '';
-    const courseOk = topCourseInput && topCourseInput.value.trim() !== '';
-    const yearOk   = topYearSelect && topYearSelect.value && topYearSelect.value.trim() !== '';
-
-    if (!nameOk || !courseOk || !yearOk) {
-      Swal.fire({
-        icon: 'warning',
-        title: 'Complete the details first',
-        text: 'Fill in Student Name, Course / Program, and Year Level before starting the session.',
-        confirmButtonColor: '#f59e0b'
-      });
-      return;
-    }
-
-    if (sessionStart) return; // already running
-
-    // ==== CALL BACKEND TO CHECK IF STUDENT EXISTS ====
     try {
       const url   = '{{ route('counselor.walkins.check_student') }}';
       const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
@@ -592,14 +620,18 @@
           'X-CSRF-TOKEN': token,
         },
         body: JSON.stringify({
-          student_name: topNameInput.value
+          student_name:   nameVal,
+          email:          emailVal,
+          course:         courseVal,
+          year_level:     yearVal,
+          contact_number: topContactInput ? topContactInput.value : null,
         }),
       });
 
       const data = await res.json();
 
       if (!data.ok) {
-        const msg = data.message || 'This student is not yet registered. Please add them in Admin ▸ Students first, then record the walk-in.';
+        const msg = data.message || 'Could not verify or create the student account.';
 
         if (liveErrorEl) {
           liveErrorEl.textContent = msg;
@@ -608,13 +640,64 @@
 
         Swal.fire({
           icon: 'error',
-          title: 'Error',
+          title: 'Student account issue',
           text: msg,
           confirmButtonColor: '#ef4444'
         });
 
-        return; // STOP – do not start timer
+        return false;
       }
+
+      // reset flags first
+      justCreatedAccount = false;
+      justCreatedEmail   = null;
+
+      // Autofill from backend (in case there was existing data)
+      if (data.student) {
+        if (topCourseInput && data.student.course) {
+          topCourseInput.value = data.student.course;
+        }
+
+        if (topYearSelect && data.student.year_level) {
+          topYearSelect.value = data.student.year_level;
+        }
+
+        if (emailInput && data.student.email) {
+          emailInput.value = data.student.email;
+        }
+
+        if (data.student.contact_number && topContactInput) {
+          topContactInput.value = data.student.contact_number;
+        }
+
+        if (studentAccountInfo) {
+          studentAccountInfo.textContent =
+            'Existing LumiCHAT student account detected for this email.';
+          studentAccountInfo.classList.remove('hidden');
+        }
+
+        syncCaseNoteHeader();
+        saveFormToStorage();
+      }
+
+      // If backend created a new account, at this point
+      // all fields (name, email, course, year, contact) were already filled.
+      if (data.created) {
+        const emailVal2 = emailInput ? emailInput.value : (data.student?.email || '');
+        justCreatedAccount = true;
+        justCreatedEmail   = emailVal2 || emailVal;
+
+        if (studentAccountInfo) {
+          studentAccountInfo.textContent =
+            'No account was found. A new student account has been created. ' +
+            'Please inform the student that they can log in using this email and the default password 12345678.';
+          studentAccountInfo.classList.remove('hidden');
+        }
+      }
+
+      studentChecked = true;
+      return true;
+
     } catch (err) {
       console.error(err);
       Swal.fire({
@@ -623,10 +706,49 @@
         text: 'Could not verify the student right now. Please try again.',
         confirmButtonColor: '#ef4444'
       });
+      return false;
+    }
+  }
+
+  // ===== START SESSION =====
+  startBtn.addEventListener('click', async function (e){
+    e.preventDefault();
+
+    if (!canStartFlag) {
+      Swal.fire({
+        icon: 'info',
+        title: 'No available time',
+        text: 'You have no available walk-in time slot right now. Please update your availability before starting a session.',
+        confirmButtonColor: '#4f46e5'
+      });
       return;
     }
 
-    // ==== IF WE REACH HERE, STUDENT EXISTS → START SESSION ====
+    const nameOk   = topNameInput   && topNameInput.value.trim()   !== '';
+    const emailOk  = emailInput     && emailInput.value.trim()     !== '';
+    const courseOk = topCourseInput && topCourseInput.value.trim() !== '';
+    const yearOk   = topYearSelect  && topYearSelect.value && topYearSelect.value.trim() !== '';
+
+    // REQUIRE ALL TOP FIELDS BEFORE WE EVEN TOUCH THE BACKEND
+    if (!nameOk || !emailOk || !courseOk || !yearOk) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Complete the details first',
+        text: 'Fill in Student Name, Email, Course / Program, and Year Level before starting the session.',
+        confirmButtonColor: '#f59e0b'
+      });
+      return;
+    }
+
+    if (sessionStart) return;
+
+    // If we haven't checked yet (or fields changed), do it now
+    if (!studentChecked) {
+      const ok = await performStudentLookup();
+      if (!ok) return;
+    }
+
+    // ==== Start session ====
     sessionStart        = new Date();
     startInput.value    = formatForTimeInput(sessionStart);
     startLabel.textContent =
@@ -643,14 +765,110 @@
     startBtn.disabled = true;
     startBtn.classList.add('opacity-60', 'cursor-default');
 
-    Swal.fire({
-      icon: 'success',
-      title: 'Session started',
-      text: 'The walk-in session timer is now running.',
-      timer: 1600,
-      showConfirmButton: false
-    });
+    // 🔹 Popup logic AFTER starting the session
+    if (justCreatedAccount) {
+      Swal.fire({
+        icon: 'success',
+        title: 'Session started & student account created',
+        html:
+          '<p>The walk-in session timer is now running.</p><br>' +
+          '<p>This student did not have an account. LumiCHAT has created one automatically.</p>' +
+          '<br>' +
+          '<p><b>Please inform the student:</b></p>' +
+          '<ul style="text-align:left;margin-top:4px;">' +
+          (justCreatedEmail ? '<li>• Username: <b>' + justCreatedEmail + '</b></li>' : '') +
+          '<li>• Default password: <b>12345678</b></li>' +
+          '<li>• They should change their password after first login.</li>' +
+          '</ul>',
+        confirmButtonColor: '#4f46e5'
+      });
+    } else {
+      Swal.fire({
+        icon: 'success',
+        title: 'Session started',
+        text: 'The walk-in session timer is now running.',
+        timer: 1600,
+        showConfirmButton: false
+      });
+    }
   });
+
+  // ✅ CANCEL: discard session + form, do NOT record anything, STAY on page
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', function(e){
+      e.preventDefault(); // block the normal <a> navigation
+
+      Swal.fire({
+        title: 'Discard this walk-in session?',
+        text: 'All details you entered and the running timer (if any) will be discarded. No record will be saved.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, discard',
+        cancelButtonText: 'Continue session',
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6b7280',
+      }).then((result) => {
+        if (!result.isConfirmed) return;
+
+        // stop timer
+        if (timerInterval) {
+          clearInterval(timerInterval);
+          timerInterval = null;
+        }
+        sessionStart = null;
+
+        // clear storage
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(FORM_STORAGE_KEY);
+
+        // reset UI
+        if (timerEl) timerEl.textContent = '00:00';
+        if (startLabel) startLabel.textContent = 'Not started yet';
+
+        if (statusChip) {
+          statusChip.className =
+            'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700';
+          const dot = statusChip.querySelector('span.rounded-full');
+          if (dot) {
+            dot.className = 'inline-block w-1.5 h-1.5 rounded-full bg-slate-400 mr-1.5';
+          }
+          statusChip.lastChild && statusChip.lastChild.nodeType === Node.TEXT_NODE
+            ? statusChip.lastChild.textContent = ' Not started'
+            : statusChip.append(' Not started');
+        }
+
+        if (startInput) startInput.value = '';
+        if (endInput)   endInput.value   = '';
+
+        if (caseNoteSection) {
+          caseNoteSection.classList.add('hidden');
+          caseNoteSection.style.display = 'none';
+        }
+
+        // optional: also clear all visible form fields
+        if (topNameInput)    topNameInput.value = '';
+        if (emailInput)      emailInput.value = '';
+        if (topCourseInput)  topCourseInput.value = '';
+        if (topYearSelect)   topYearSelect.value = '';
+        if (topContactInput) topContactInput.value = '';
+        if (reasonTextarea)  reasonTextarea.value = '';
+        if (cnNameInput)     cnNameInput.value = '';
+        if (cnProgramYear)   cnProgramYear.value = '';
+
+        // re-enable Start button
+        startBtn.disabled = !canStartFlag;
+        startBtn.classList.remove('opacity-60', 'cursor-default', 'cursor-not-allowed');
+
+        Swal.fire({
+          icon: 'success',
+          title: 'Session discarded',
+          text: 'The walk-in session has been cleared and will not be recorded.',
+          timer: 1500,
+          showConfirmButton: false
+        });
+      });
+    });
+  }
 
   // ===== END SESSION =====
   endBtn.addEventListener('click', function (e){
@@ -678,7 +896,7 @@
       caseNoteVisible = true;
 
       syncCaseNoteHeader();
-      saveFormToStorage(); // make sure latest top fields are saved
+      saveFormToStorage();
 
       if (caseNoteSection) {
         caseNoteSection.classList.remove('hidden');
@@ -691,7 +909,6 @@
       return false;
     }
 
-    // final submit → linis lahat ng local storage for walk-in
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(FORM_STORAGE_KEY);
 
@@ -702,5 +919,4 @@
 })();
 </script>
 @endpush
-
 

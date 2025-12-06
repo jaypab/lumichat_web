@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Counselor;
 use App\Http\Controllers\Controller;
 use App\Models\Appointment;
 use App\Models\CaseNote;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\View\View;
 use Illuminate\Http\Request;
 
@@ -18,74 +20,88 @@ class WalkInController extends Controller
      * Resolve counselor primary key used in tbl_counselor_availabilities.counselor_id
      */
     private function myCounselorId(): ?int
-{
-    $uid  = Auth::id();
-    $user = Auth::user();
+    {
+        $uid  = Auth::id();
+        $user = Auth::user();
 
-    if (!$uid || !$user) {
+        if (!$uid || !$user) {
+            return null;
+        }
+
+        // Case A
+        if (Schema::hasColumn('tbl_counselors', 'user_id')) {
+            $cid = DB::table('tbl_counselors')
+                ->where('user_id', $uid)
+                ->value('id');
+            if ($cid) return (int) $cid;
+        }
+
+        // Case B
+        if (Schema::hasColumn('tbl_counselors', 'email')) {
+            $cid = DB::table('tbl_counselors')
+                ->where('email', $user->email)
+                ->value('id');
+            if ($cid) return (int) $cid;
+        }
+
+        // Case C
+        if (Schema::hasTable('tbl_counselors')) {
+            $exists = DB::table('tbl_counselors')
+                ->where('id', $uid)
+                ->exists();
+            if ($exists) return (int) $uid;
+        }
+
         return null;
     }
 
-    // Case A
-    if (Schema::hasColumn('tbl_counselors', 'user_id')) {
-        $cid = DB::table('tbl_counselors')
-            ->where('user_id', $uid)
-            ->value('id');
-        if ($cid) return (int) $cid;
+    /**
+     * Map short year (1st,2nd,3rd,4th) to the format used in tbl_users (1st Year, etc).
+     */
+    private function mapYearLevelForUser(?string $short): ?string
+    {
+        if (!$short) return null;
+
+        return match ($short) {
+            '1st' => '1st Year',
+            '2nd' => '2nd Year',
+            '3rd' => '3rd Year',
+            '4th' => '4th Year',
+            default => $short,
+        };
     }
-
-    // Case B
-    if (Schema::hasColumn('tbl_counselors', 'email')) {
-        $cid = DB::table('tbl_counselors')
-            ->where('email', $user->email)
-            ->value('id');
-        if ($cid) return (int) $cid;
-    }
-
-    // Case C
-    if (Schema::hasTable('tbl_counselors')) {
-        $exists = DB::table('tbl_counselors')
-            ->where('id', $uid)
-            ->exists();
-        if ($exists) return (int) $uid;
-    }
-
-    return null;
-}
-
 
     /**
-     * Check if counselor has any AVAILABLE slot right now
-     * based on tbl_counselor_availabilities structure.
-     *
-     * Columns:
-     *  - counselor_id
-     *  - date (nullable)
-     *  - weekday (0–6)
-     *  - start_time, end_time (TIME)
-     *  - slot_type: 'available' | 'blocked'
-     */
+ * Check if counselor has any AVAILABLE slot right now.
+ * ✅ Weekends (Sat/Sun) are auto-allowed for testing.
+ */
 private function hasCurrentAvailability(): bool
 {
+    // 0 = Sunday, 6 = Saturday
+    $now = Carbon::now();
+
+    // 🔓 Bypass availability completely on weekends for testing
+    if (in_array($now->dayOfWeek, [0, 6], true)) {
         return true;
-    // 1) If availability table doesn’t exist, allow walk-ins
+    }
+
+    // If availability table doesn’t exist, allow walk-ins
     if (!Schema::hasTable('tbl_counselor_availabilities')) {
         return true;
     }
 
     $cid = $this->myCounselorId();
 
-    // 2) If counselor mapping not wired yet, TEMP: allow
+    // If counselor mapping not wired yet, allow for now
     if (!$cid) {
-        return true; // or false if you want it strict; for now better true
+        return true;
     }
 
-    $now     = Carbon::now();
     $date    = $now->toDateString();
     $time    = $now->format('H:i:s');
     $weekday = (int) $now->dayOfWeek; // 0=Sun..6=Sat
 
-    // 3) If this counselor has no rows at all, don’t block yet
+    // If this counselor has no rows at all, don’t block yet
     $hasAnyRow = DB::table('tbl_counselor_availabilities')
         ->where('counselor_id', $cid)
         ->exists();
@@ -94,7 +110,7 @@ private function hasCurrentAvailability(): bool
         return true;
     }
 
-    // 4) Strict check when rows exist
+    // Strict check during weekdays
     return DB::table('tbl_counselor_availabilities')
         ->where('counselor_id', $cid)
         ->where('slot_type', 'available')
@@ -112,30 +128,102 @@ private function hasCurrentAvailability(): bool
 
     /**
      * Show New Walk-in Session form.
-     * Pass canStartWalkin flag to Blade.
      */
     public function create(): View
-{
-    $cid = $this->myCounselorId();
-    $canStartWalkin = $this->hasCurrentAvailability();
+    {
+        $cid = $this->myCounselorId();
+        $canStartWalkin = $this->hasCurrentAvailability();
 
-    logger()->info('Walk-in availability debug', [
-        'user_id'           => Auth::id(),
-        'counselor_id'      => $cid,
-        'can_start_walkin'  => $canStartWalkin,
-    ]);
+        logger()->info('Walk-in availability debug', [
+            'user_id'           => Auth::id(),
+            'counselor_id'      => $cid,
+            'can_start_walkin'  => $canStartWalkin,
+        ]);
 
-    return view('Counselor_Interface.walkins.create', [
-        'canStartWalkin' => $canStartWalkin,
-    ]);
-}
+        return view('Counselor_Interface.walkins.create', [
+            'canStartWalkin' => $canStartWalkin,
+        ]);
+    }
 
+    /**
+     * AJAX: check student, auto-create account if needed.
+     * Route: POST /counselor/walk-ins/check-student
+     */
+    public function checkStudent(Request $request)
+    {
+        $data = $request->validate([
+            'student_name' => ['required', 'string', 'max:255'],
+            'email'        => ['nullable', 'email', 'max:255'],
+            'course'       => ['nullable', 'string', 'max:255'],
+            'year_level'   => ['nullable', 'string', 'max:50'],
+            'contact_number' => ['nullable', 'string', 'max:50'], // <-- NEW
+        ]);
+
+        if (!Schema::hasTable('tbl_users')) {
+            return response()->json(['ok' => true, 'student' => null]);
+        }
+
+        $query = User::query()->where('role', 'student');
+
+        if (!empty($data['email'])) {
+            $query->where('email', $data['email']);
+        } else {
+            $query->whereRaw('LOWER(name) = ?', [mb_strtolower($data['student_name'])]);
+        }
+
+        $student = $query->first();
+        $created = false;
+
+        // If not found but we have email → create new account
+        if (!$student && !empty($data['email'])) {
+            $student = new User();
+            $student->sis            = null;
+            $student->name           = $data['student_name'];
+            $student->email          = $data['email'];
+            $student->course         = $data['course'] ?? null;
+            $student->year_level     = $this->mapYearLevelForUser($data['year_level'] ?? null);
+            $student->contact_number = $data['contact_number'] ?? null;   // <-- NEW
+            $student->role                 = 'student';
+            $student->appointments_enabled = 0;
+            $student->password             = Hash::make('12345678'); // default 1–8
+            $student->save();
+            $created = true;
+        }
+
+        // still nothing and no email → tell counselor to type an email
+        if (!$student) {
+            return response()->json([
+                'ok'      => false,
+                'message' => 'This student has no account yet. Please provide an email so a student account can be created automatically.',
+            ], 422);
+        }
+
+                return response()->json([
+                    'ok'      => true,
+                    'created' => $created,
+                    'student' => [
+                        'id'         => $student->id,
+                        'name'       => $student->name,
+                        'email'      => $student->email,
+                        'course'     => $this->normalizeCourse($student->course),
+                        'year_level' => $this->mapYearLevelShort($student->year_level),
+                        'contact_number' => $student->contact_number,
+                    ],
+                ]);
+
+    }
+
+    /**
+     * Store Walk-in + appointment + case note
+     */
     public function store(Request $request)
     {
         $request->validate([
             'student_name' => ['required', 'string', 'max:255'],
+            'email'        => ['required', 'string', 'email:filter', 'max:255'],
             'course'       => ['required', 'string', 'max:255'],
             'year_level'   => ['required', 'string', 'max:50'],
+            'contact_number' => ['nullable', 'string', 'max:50'],
             'start_time'   => ['required'],
             'end_time'     => ['required'],
             'reason'       => ['nullable', 'string'],
@@ -144,9 +232,7 @@ private function hasCurrentAvailability(): bool
 
         $counselorId = $this->myCounselorId();
 
-        // ==============================
-        // 1) Check counselor availability (server-side)
-        // ==============================
+        // If you want strict availability, put the check here
         if (!$this->hasCurrentAvailability()) {
             return back()
                 ->withErrors([
@@ -155,34 +241,42 @@ private function hasCurrentAvailability(): bool
                 ->withInput();
         }
 
-        // ==============================
-        // 2) Existing logic (unchanged)
-        // ==============================
         $date    = Carbon::now()->toDateString();
         $startAt = Carbon::parse($date.' '.$request->start_time);
         $endAt   = Carbon::parse($date.' '.$request->end_time);
 
-        // ===== resolve student_id as before =====
-        $studentId = null;
+        // =============================
+        // 1) Find or create STUDENT
+        // =============================
+        $student = null;
         if (Schema::hasTable('tbl_users')) {
-            $studentId = DB::table('tbl_users')
-                ->where('role', 'student')
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($request->student_name)])
-                ->value('id');
+            $student = User::where('role', 'student')
+                ->where('email', $request->email)
+                ->first();
+
+            if (!$student) {
+                $student = new User();
+                $student->sis            = null;
+                $student->name           = $request->student_name;
+                $student->email          = $request->email;
+                $student->course         = $request->course;
+                $student->year_level     = $this->mapYearLevelForUser($request->year_level);
+                 $student->contact_number = $request->contact_number;
+                $student->role                 = 'student';
+                $student->appointments_enabled = 0;
+                $student->password             = Hash::make('12345678'); // default 1–8
+                $student->save();
+            }
         }
 
+        $studentId = $student?->id ?? null;
+
+        // =============================
+        // 2) Create APPOINTMENT
+        // =============================
         $apptModel = new Appointment();
         $apptTable = $apptModel->getTable();
 
-        if (Schema::hasColumn($apptTable, 'student_id') && !$studentId) {
-            return back()
-                ->withErrors([
-                    'student_name' => 'This student is not yet registered. Please add them in Admin ▸ Students first, then record the walk-in.',
-                ])
-                ->withInput();
-        }
-
-        // ===== create appointment =====
         $appointment = new Appointment();
 
         if (Schema::hasColumn($apptTable, 'student_id')) {
@@ -219,14 +313,16 @@ private function hasCurrentAvailability(): bool
             $appointment->reason = $request->reason;
         }
         if (Schema::hasColumn($apptTable, 'appointment_source')) {
-            $appointment->appointment_source = 'walk_in'; // or 'Walk-in' if you prefer
+            $appointment->appointment_source = 'walk_in';
         }
 
         $appointment->created_at = now();
         $appointment->updated_at = now();
         $appointment->save();
 
-        // ===== create case note =====
+        // =============================
+        // 3) Create CASE NOTE
+        // =============================
         $caseNoteModel = new CaseNote();
         $cnTable       = $caseNoteModel->getTable();
         $caseNote      = new CaseNote();
@@ -244,7 +340,7 @@ private function hasCurrentAvailability(): bool
             $caseNote->student_name = $request->student_name;
         }
         if (Schema::hasColumn($cnTable, 'note_date')) {
-            $caseNote->note_date = $date; // auto today
+            $caseNote->note_date = $date;
         }
         if (Schema::hasColumn($cnTable, 'program_year')) {
             $caseNote->program_year = $request->course.' - '.$request->year_level;
@@ -279,33 +375,27 @@ private function hasCurrentAvailability(): bool
         if (Schema::hasColumn($cnTable, 'emergency_address')) {
             $caseNote->emergency_address = $cn['emergency_address'] ?? null;
         }
-               if (Schema::hasColumn($cnTable, 'created_by')) {
+        if (Schema::hasColumn($cnTable, 'created_by')) {
             $caseNote->created_by = Auth::id();
         }
         if (Schema::hasColumn($cnTable, 'updated_by')) {
             $caseNote->updated_by = Auth::id();
         }
-
-        // 🔹 Tag this case note as Walk-in
         if (Schema::hasColumn($cnTable, 'note_source')) {
             $caseNote->note_source = 'Walk-in';
         }
 
         $caseNote->save();
 
-
         return redirect()
             ->route('counselor.appointments.show', $appointment->id)
             ->with('swal', [
                 'icon'  => 'success',
                 'title' => 'Walk-in saved',
-                'text'  => 'Walk-in session has been recorded and a case note was created.',
+                'text'  => 'Walk-in session has been recorded and a case note was created. If the student had no account, one was created with the default password 12345678.',
             ]);
     }
 
-    /**
-     * Utility if ever needed later (not used right now)
-     */
     private function firstFreeScheduledAt(int $counselorId, Carbon $base): Carbon
     {
         $ts = $base->copy()->second(0);
@@ -320,5 +410,44 @@ private function hasCurrentAvailability(): bool
 
         return $ts;
     }
+    /**
+ * Normalize course to the short code used by the dropdown (BSIT, EDUC, etc.).
+ */
+private function normalizeCourse(?string $course): ?string
+{
+    if (!$course) return null;
+
+    $c = trim($course);
+
+    return match ($c) {
+        'College of Information Technology', 'BSIT'      => 'BSIT',
+        'College of Education',              'EDUC'      => 'EDUC',
+        'College of Arts and Sciences',      'CAS'       => 'CAS',
+        'College of Criminal Justice and Public Safety', 'CRIM' => 'CRIM',
+        'College of Library Information Science',        'BLIS' => 'BLIS',
+        'College of Midwifery',              'MIDWIFERY' => 'MIDWIFERY',
+        'College of Hospitality Management', 'BSHM'      => 'BSHM',
+        'College of Business',               'BSBA'      => 'BSBA',
+        default => $c,
+    };
+}
+
+/**
+ * Map stored year level (1st Year, First Year, etc.) → short code used in dropdown (1st, 2nd, 3rd, 4th).
+ */
+private function mapYearLevelShort(?string $full): ?string
+{
+    if (!$full) return null;
+
+    $f = mb_strtolower(trim($full));
+
+    return match ($f) {
+        '1st year', 'first year', '1st' => '1st',
+        '2nd year', 'second year', '2nd' => '2nd',
+        '3rd year', 'third year', '3rd' => '3rd',
+        '4th year', 'fourth year', '4th' => '4th',
+        default => $full,
+    };
+}
 
 }

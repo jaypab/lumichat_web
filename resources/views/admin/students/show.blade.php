@@ -278,70 +278,89 @@
                 <th class="px-4 py-2 text-left">Created</th>
                 <th class="px-4 py-2 text-left">Counselor</th>
                 <th class="px-4 py-2 text-left">Appointment</th>
-                <th class="px-4 py-2 text-left">Risk Level</th>
+                 <th class="px-4 py-2 text-left">Type</th>
                 <th class="px-4 py-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-              @foreach($caseNotes as $note)
-                @php
-                  $created = $note->created_at ? \Carbon\Carbon::parse($note->created_at) : null;
-                  $risk    = $note->risk_level ?? null;
-                @endphp
-                <tr class="hover:bg-slate-50">
-                  <td class="px-4 py-2 whitespace-nowrap text-slate-900 text-xs font-medium">
-                    {{ $note->title ?? 'Case Note #'.$note->id }}
-                  </td>
-                  <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
-                    @if($created)
-                      {{ $created->format('M d, Y • h:i A') }}
-                    @else
-                      —
-                    @endif
-                  </td>
-                  <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
-                    {{ $note->counselor?->name ?? '—' }}
-                  </td>
-                        <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
-                  @php
-                      $appt        = $note->appointment ?? null;
-                      $apptId      = $appt?->id;
-                      $apptSched   = $appt?->scheduled_at;
-                      $apptSchedStr = null;
+             @foreach($caseNotes as $note)
+  @php
+      $created = $note->created_at
+          ? \Carbon\Carbon::parse($note->created_at)
+          : null;
 
-                      if ($apptSched) {
-                          try {
-                              $apptSchedStr = \Carbon\Carbon::parse($apptSched)->format('M d, Y');
-                          } catch (\Throwable $e) {
-                              $apptSchedStr = null; // invalid date, just hide it
-                          }
-                      }
-                  @endphp
+      // Raw type from DB
+      $typeValue = $note->note_source;
 
-                  @if($apptId)
-                      #{{ $apptId }}
-                      @if($apptSchedStr)
-                          <span class="text-slate-400">
-                              ({{ $apptSchedStr }})
-                          </span>
-                      @endif
-                  @else
-                      —
-                  @endif
-                </td>
+      // If note_source is empty but there is an appointment, assume “Appointment”
+      if (!$typeValue && ($note->appointment?->id ?? null)) {
+          $typeValue = 'Appointment';
+      }
 
-                  <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
-                    {{ $risk ? ucfirst($risk) : '—' }}
-                  </td>
-                  <td class="px-4 py-2 whitespace-nowrap text-right">
-                      <a href="{{ route('admin.case-notes.show', $note->id) }}"
-                        class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                          View
-                      </a>
-                  </td>
+      // Final label (never blank)
+      $typeLabel = $typeValue ?: '—';
+  @endphp
 
-                </tr>
-              @endforeach
+  <tr class="hover:bg-slate-50">
+    <td class="px-4 py-2 whitespace-nowrap text-slate-900 text-xs font-medium">
+      {{ $note->title ?? 'Case Note #'.$note->id }}
+    </td>
+
+    <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
+      @if($created)
+        {{ $created->format('M d, Y • h:i A') }}
+      @else
+        —
+      @endif
+    </td>
+
+    <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
+      {{ $note->counselor?->name ?? '—' }}
+    </td>
+
+    {{-- Appointment column --}}
+    <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
+      @php
+          $appt         = $note->appointment ?? null;
+          $apptId       = $appt?->id;
+          $apptSched    = $appt?->scheduled_at;
+          $apptSchedStr = null;
+
+          if ($apptSched) {
+              try {
+                  $apptSchedStr = \Carbon\Carbon::parse($apptSched)->format('M d, Y');
+              } catch (\Throwable $e) {
+                  $apptSchedStr = null;
+              }
+          }
+      @endphp
+
+      @if($apptId)
+          #{{ $apptId }}
+          @if($apptSchedStr)
+              <span class="text-slate-400">
+                  ({{ $apptSchedStr }})
+              </span>
+          @endif
+      @else
+          —
+      @endif
+    </td>
+
+    {{-- TYPE from note_source --}}
+    <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
+      {{ $typeLabel }}
+    </td>
+
+    <td class="px-4 py-2 whitespace-nowrap text-right">
+      <a href="{{ route('admin.case-notes.show', $note->id) }}"
+         class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+        Viewg
+      </a>
+    </td>
+  </tr>
+@endforeach
+
             </tbody>
           </table>
         </div>

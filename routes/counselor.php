@@ -46,7 +46,7 @@ Route::middleware(['auth','counselor'])
             ->name('walkins.store');
 
         // ✅ AJAX: check if student exists for walk-in
-        Route::post('/walk-ins/check-student', [CounselorAppointmentController::class, 'checkStudent'])
+        Route::post('/walk-ins/check-student', [WalkInController::class, 'checkStudent'])
             ->name('walkins.check_student');
 
         Route::get('/appointments',                 [CounselorAppointmentController::class,'index'])->name('appointments.index');

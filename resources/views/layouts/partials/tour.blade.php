@@ -76,36 +76,39 @@
     const $     = (s)=>document.querySelector(s);
 
     function normalizePageKey(route){
-    if (!route) return 'unknown';
+      if (!route) return 'unknown';
 
-    // --- Counselor routes (put specific ones BEFORE the generic startsWith) ---
-    if (route === 'counselor.dashboard')                  return 'counselor.dashboard';
-    if (route === 'counselor.appointments.show')          return 'counselor.appointments.show';
-    if (route === 'counselor.appointments.index')         return 'counselor.appointments';
-    if (route.startsWith('counselor.appointments')) {
-      return /show|\/\d+/.test(window.location.pathname) 
-        ? 'counselor.appointments.show'
-        : 'counselor.appointments';
+      // --- Counselor routes (put specific ones BEFORE the generic startsWith) ---
+      if (route === 'counselor.dashboard')                  return 'counselor.dashboard';
+      if (route === 'counselor.appointments.show')          return 'counselor.appointments.show';
+      if (route === 'counselor.appointments.index')         return 'counselor.appointments';
+      if (route.startsWith('counselor.appointments')) {
+        return /show|\/\d+/.test(window.location.pathname) 
+          ? 'counselor.appointments.show'
+          : 'counselor.appointments';
+      }
+
+      // ✅ NEW: normalize walk-in routes
+      if (route.startsWith('counselor.walkins'))            return 'counselor.walkins';
+
+      if (route.startsWith('counselor.availability'))       return 'counselor.availability';
+      if (route.startsWith('counselor.'))                   return 'counselor';
+
+      // --- Student routes (unchanged) ---
+      if (route === 'chat.history')        return 'chat.history';
+      if (route === 'appointment.history') return 'appointment.history';
+      if (route === 'appointment.view' || route === 'appointment.show') return 'appointment.view';
+      if (route === 'profile.edit')        return 'profile.edit';
+      if (route === 'about.index')         return 'about.index';
+      if (route === 'settings.index')      return 'settings.index';
+      if (route.startsWith('appointment.'))return 'appointment';
+      if (route === 'home' || route === 'dashboard' || route === 'chat.index' || route === 'chat.show')
+                                            return 'chat';
+      if (route.startsWith('profile.'))    return 'profile';
+      if (route.startsWith('about.'))      return 'about';
+
+      return route;
     }
-
-    if (route.startsWith('counselor.availability'))       return 'counselor.availability';
-    if (route.startsWith('counselor.'))                   return 'counselor';
-
-    // --- Student routes (unchanged) ---
-    if (route === 'chat.history')        return 'chat.history';
-    if (route === 'appointment.history') return 'appointment.history';
-    if (route === 'appointment.view' || route === 'appointment.show') return 'appointment.view';
-    if (route === 'profile.edit')        return 'profile.edit';
-    if (route === 'about.index')         return 'about.index';
-    if (route === 'settings.index')      return 'settings.index';
-    if (route.startsWith('appointment.'))return 'appointment';
-    if (route === 'home' || route === 'dashboard' || route === 'chat.index' || route === 'chat.show')
-                                          return 'chat';
-    if (route.startsWith('profile.'))    return 'profile';
-    if (route.startsWith('about.'))      return 'about';
-
-    return route;
-  }
     const PAGE_KEY = normalizePageKey(ROUTE_KEY);
 
     async function ensureDriver(maxWait = 4000){
@@ -149,7 +152,7 @@
     }
 
     /* ---------- STEP BUILDERS ---------- */
-   function counselorAppointmentShowSteps(){
+    function counselorAppointmentShowSteps(){
       const steps = [];
 
       // --- PDF + Back (header) ---
@@ -173,7 +176,7 @@
         backBtn = Array.from(document.querySelectorAll('a,button')).find(a => {
           const t = (a.textContent || '').trim();
           if (!/(^|\s)back(\s|$)/i.test(t)) return false;
-          return !a.closest('nav, aside, [role="navigation"]'); // exclude sidebar/nav
+          return !a.closest('nav, aside, [role="navigation"]');
         }) || null;
       }
 
@@ -186,18 +189,15 @@
       const btnStart   = actionBtn('start');
       const btnDone    = actionBtn('done');
 
-      // ✅ Robust No-Show detection (route OR visible text)
       const btnNoShow =
         document.querySelector('form[action*="no_show"] button[type="submit"]') ||
         Array.from(document.querySelectorAll('form button[type="submit"], a, button')).find(el =>
           /no[-\s]?show/i.test((el.textContent || el.value || '').trim())
         ) || null;
 
-      // Diagnosis area
       const diagForm = document.querySelector('form[action*="/appointments"][action*="report"]');
       const diagBox  = diagForm || document.querySelector('.rounded-2xl.bg-indigo-50\\/40, .rounded-2xl.bg-indigo-50');
 
-      // Pulse helper
       const pulse = (el) => {
         try {
           el?.scrollIntoView({ behavior:'smooth', block:'center' });
@@ -209,7 +209,6 @@
         } catch(_) {}
       };
 
-      // Steps
       if (backBtn) steps.push({
         element: backBtn,
         popover: { title: 'Back to list', description: 'Return to all appointments.', side: 'top', align: 'center' },
@@ -240,7 +239,6 @@
         onNextClick: () => pulse(btnDone)
       });
 
-      // ✅ Now included, with resilient selector:
       if (btnNoShow) steps.push({
         element: btnNoShow,
         popover: { title: 'Mark as No-Show', description: 'Use when the student did not attend.', side: 'top', align: 'center' },
@@ -256,10 +254,141 @@
       return steps;
     }
 
-    /* Register this page in your STEP_BUILDERS map */
-    window.__LumiTour = window.__LumiTour || {};
-    if (window.STEP_BUILDERS) {
-      STEP_BUILDERS['counselor.appointments.show'] = counselorAppointmentShowSteps;
+    /* ✅ NEW: Walk-in counselor page tour */
+    function counselorWalkinsSteps(){
+      const $  = (s)=>document.querySelector(s);
+      const $$ = (s)=>Array.from(document.querySelectorAll(s));
+      const steps = [];
+
+      const card       = $('#walkinCard') || $('.max-w-4xl.mx-auto .rounded-2xl') || document.querySelector('.max-w-4xl.mx-auto');
+      const header     = $('#walkinHeader') || card?.querySelector('h1, h2');
+      const statusChip = $('#walkinStatus') || $$('span').find(s => /walk-?in/i.test(s.textContent||''));
+      const studentBox = $('#walkin-student') 
+                      || $('input[name="student_query"], input[name="student_search"], input[data-role="student-search"]');
+      const anonToggle = $('#walkin-anon') 
+                      || $('input[type="checkbox"][name="is_anonymous"], input[type="checkbox"][data-role="walkin-anon"]');
+      const concernBox = $('#walkin-concern') 
+                      || $('textarea[name*="concern"], textarea[name*="reason"], textarea[data-role="walkin-concern"]');
+      const riskSelect = $('#walkin-risk') 
+                      || $('select[name*="risk"], select[name*="severity"], select[data-role="walkin-risk"]');
+      const startBtn   = $('#btn-start-walkin') 
+                      || $$('button').find(b => /start\s+walk-?in|begin\s+session|start\s+session/i.test(b.textContent||''));
+      const saveBtn    = $('#btn-save-walkin') 
+                      || $$('button').find(b => /save\s+(notes|walk-?in)|update\s+details/i.test(b.textContent||''));
+      const cancelBtn  = $('#btn-cancel-walkin') 
+                      || $$('a,button').find(el => /cancel/i.test(el.textContent||'') && /walk-?in/i.test(el.closest('form')?.textContent||''));
+
+      if (card){
+        steps.push({
+          element: card,
+          popover:{
+            title: 'Walk-in Session',
+            description: 'Use this screen when a student comes directly to the counselor without an online booking.',
+            side: 'top', align: 'start'
+          }
+        });
+      }
+
+      if (header){
+        steps.push({
+          element: header,
+          popover:{
+            title: 'At-a-glance header',
+            description: 'Shows today’s date, current status, and quick context for the walk-in.',
+            side: 'bottom', align: 'start'
+          }
+        });
+      }
+
+      if (studentBox){
+        steps.push({
+          element: studentBox,
+          popover:{
+            title: 'Attach a student (optional)',
+            description: 'Search and link the student’s record if they are enrolled. Otherwise, you can keep it anonymous.',
+            side: 'bottom', align: 'start'
+          }
+        });
+      }
+
+      if (anonToggle){
+        steps.push({
+          element: anonToggle,
+          popover:{
+            title: 'Anonymous walk-in',
+            description: 'Toggle this when the student prefers not to link their identity to the case. Use with care.',
+            side: 'left', align: 'center'
+          }
+        });
+      }
+
+      if (concernBox){
+        steps.push({
+          element: concernBox,
+          popover:{
+            title: 'Presenting concern',
+            description: 'Summarize what the student shares at the start of the session. Focus on key points only.',
+            side: 'top', align: 'start'
+          }
+        });
+      }
+
+      if (riskSelect){
+        steps.push({
+          element: riskSelect,
+          popover:{
+            title: 'Risk level',
+            description: 'Tag the initial risk (Low / Moderate / High) based on the student’s situation for reporting and safety workflows.',
+            side: 'top', align: 'start'
+          }
+        });
+      }
+
+      if (startBtn){
+        steps.push({
+          element: startBtn,
+          popover:{
+            title: 'Start the walk-in',
+            description: 'When you are ready to proceed, start the session so it is logged as Ongoing in LumiCHAT.',
+            side: 'top', align: 'center'
+          }
+        });
+      }
+
+      if (saveBtn){
+        steps.push({
+          element: saveBtn,
+          popover:{
+            title: 'Save notes',
+            description: 'Capture quick notes or partial details even if the session is still in progress.',
+            side: 'top', align: 'center'
+          }
+        });
+      }
+
+      if (cancelBtn){
+        steps.push({
+          element: cancelBtn,
+          popover:{
+            title: 'Cancel / close',
+            description: 'Use this when you need to discard a draft walk-in or the student decides not to continue.',
+            side: 'top', align: 'center'
+          }
+        });
+      }
+
+      if (!steps.length && document.body){
+        steps.push({
+          element: document.body,
+          popover:{
+            title: 'Walk-in workflow',
+            description: 'Record unscheduled sessions by attaching (or not) a student, describing the concern, tagging risk, then starting the session.',
+            side: 'top', align: 'center'
+          }
+        });
+      }
+
+      return steps;
     }
 
     function counselorDashboardSteps(){
@@ -319,7 +448,6 @@
     function counselorAppointmentsSteps(){
       const steps = [];
 
-      // Find the filter form in a resilient way
       const searchBox  = document.getElementById('q');
       const filterForm = searchBox?.closest('form')
                       || document.querySelector('form[action*="/counselor/appointments"]')
@@ -328,22 +456,16 @@
       const statusSel  = filterForm?.querySelector('select[name="status"]');
       const periodSel  = filterForm?.querySelector('select[name="period"]');
 
-      // Robust Apply selector:
-      // 1) type="submit" inside the form
-      // 2) OR a button whose text includes "apply"
       let applyBtn = filterForm?.querySelector('button[type="submit"]');
       if (!applyBtn) {
         applyBtn = Array.from(filterForm?.querySelectorAll('button, a, input') || [])
           .find(el => /apply/i.test(el.textContent || el.value || ''));
       }
 
-      // First link inside the form that looks like a reset (your Reset button)
       const resetBtn   = filterForm?.querySelector('a[href]');
 
-      // Table + useful targets
       const table   = document.querySelector('table');
       const rows    = table?.querySelectorAll('tbody tr');
-      // first "View" action link in the table
       const firstView = table?.querySelector('tbody a[href*="/counselor/appointments/"]');
 
       if (statusSel) steps.push({ element: statusSel, popover: {
@@ -364,7 +486,6 @@
         side: 'bottom', align: 'start'
       }});
 
-      // ✅ New, explicit Apply step with safe focus pulse (no actual submit)
       if (applyBtn) steps.push({
         element: applyBtn,
         popover: {
@@ -376,7 +497,6 @@
           try {
             applyBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
             applyBtn.focus({ preventScroll: true });
-            // tiny pulse
             applyBtn.style.transition = 'transform .12s ease';
             applyBtn.style.transform = 'scale(1.03)';
             setTimeout(() => (applyBtn.style.transform = ''), 140);
@@ -411,13 +531,11 @@
       const $$ = (s)=>Array.from(document.querySelectorAll(s));
       const steps = [];
 
-      /* ---------------- First-time policy ---------------- */
       const FT_KEY = `lumi_first_chat_seen_${USER_ID}`;
       const isFirstTimeUser = !localStorage.getItem(FT_KEY);
       try { localStorage.setItem(FT_KEY,'1'); } catch(_) {}
 
-      /* ---------------- Core chat targets ---------------- */
-      const newChatBtn = document.querySelector('.nav-pill[data-new-chat="1"]'); // from TOOLS > New Chat
+      const newChatBtn = document.querySelector('.nav-pill[data-new-chat="1"]');
       const chatArea   = $('#chat-messages') || $('#lb-scope') || $('.msg-area') || $('[data-chat-area]');
       const inputBox   = $('#chat-message');
       const composer   = $('#chat-form');
@@ -437,7 +555,6 @@
         popover:{ title:'Type & Send', description:'Press Enter to send. Shift+Enter for a new line.', side:'top', align:'start' }
       });
 
-      /* ---------------- Appointment trigger explainer ---------------- */
       const triggerHtml = isFirstTimeUser
         ? `<div style="text-align:left;line-height:1.45">
             <p><b>First chat:</b> appointment suggestions are <b>disabled</b>. Send your first message normally.</p>
@@ -462,7 +579,6 @@
         popover:{ title:'Appointments from Chat', description: triggerHtml, side:'top', align:'center' }
       });
 
-      /* ---------------- Sidebar tour (IDs & labels from app.blade.php) ---------------- */
       const sidebar = $('#sidebar');
       const findByText = (txt) => {
         if (!sidebar) return null;
@@ -470,10 +586,9 @@
         return links.find(a => new RegExp(`\\b${txt}\\b`, 'i').test(a.textContent||'')) || null;
       };
 
-      // Exact IDs present in your layout:
       const linkChatHist = $('#nav-chat-history') || findByText('Chat History');
       const linkSettings = $('#nav-settings') || findByText('Settings');
-      const linkAppt     = $('#nav-appointment-link'); // changes label to Appointment History when user has bookings
+      const linkAppt     = $('#nav-appointment-link');
       const linkProfile  = findByText('Profile');
       const linkAbout    = findByText('About');
 
@@ -502,7 +617,6 @@
         popover:{ title:'About', description:'How Lumi works and our privacy commitments.', side:'right', align:'center' }
       });
 
-      // Fallback anchor to the sidebar block if any link is missing
       if (!(linkProfile && linkAppt && linkChatHist && linkSettings && linkAbout) && sidebar){
         steps.push({
           element:sidebar,
@@ -510,7 +624,6 @@
         });
       }
 
-      /* ---------------- Optional: live “Book counselor” pill (not on first chat) ---------------- */
       const apptPill = !isFirstTimeUser && ($$('.lumi-qr, a, button').find(el => {
         const t = (el.textContent || '').toLowerCase();
         const href = (el.getAttribute?.('href') || '').toLowerCase();
@@ -527,7 +640,6 @@
       const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
       const steps = [];
 
-      // Prefer stable hooks; fall back to legacy ids/classes
       const searchBox  = $('#historySearch') || $('#chat-history-search') || $('input[type="search"][name="q"]');
       const manageBtn  = $('#manageToggle')  || $('[data-manage-toggle]');
       const bulkBar    = $('#bulkBar')       || $('[data-bulk-bar]');
@@ -536,7 +648,6 @@
       const firstLink  = firstCard?.querySelector('form[action*="chat/activate"] button, a[href*="/chat/"]');
       const firstDelete= firstCard?.querySelector('.single-delete-form button[type="submit"], [data-action="delete-session"]');
 
-      // tiny focus pulse helper
       const pulse = (el) => {
         try {
           el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -615,7 +726,6 @@
         });
       }
 
-      // Fallbacks
       const emptyState = $('[data-empty-state]') || $('.empty-state');
       if (!steps.length && emptyState) {
         steps.push({
@@ -648,7 +758,6 @@
       const $$ = (s)=>Array.from(document.querySelectorAll(s));
       const steps = [];
 
-      // === Elements from your index.blade.php ===
       const historyBtn = $$('a').find(a => /appointment\/history/i.test(a.getAttribute('href')||'') || /View Appointment/i.test(a.textContent||'')) || null;
       const dateChip   = $('#dateChip');
       const dateInput  = $('#dateInput');
@@ -660,7 +769,6 @@
       const consent    = $('#consent-cbx');
       const submitBtn  = $('#submitBtn');
 
-      // 1) Entry point: “View Appointment / History”
       if (historyBtn){
         steps.push({
           element: historyBtn,
@@ -672,7 +780,6 @@
         });
       }
 
-      // 2) Date chip (opens your modal)
       if (dateChip){
         steps.push({
           element: dateChip,
@@ -685,7 +792,6 @@
         });
       }
 
-      // 4) Time slot grid (pills built from select)
       if (timeGrid){
         steps.push({
           element: timeGrid,
@@ -697,7 +803,6 @@
         });
       }
 
-      // 5) Consent checkbox
       if (consent){
         steps.push({
           element: consent,
@@ -709,7 +814,6 @@
         });
       }
 
-      // 6) Confirm button (disabled until date + time + consent)
       if (submitBtn){
         steps.push({
           element: submitBtn,
@@ -721,7 +825,6 @@
         });
       }
 
-      // Fallback (page scaffold)
       if (!steps.length && document.body){
         steps.push({
           element: document.body,
@@ -737,197 +840,180 @@
     }
     
     function appointmentHistorySteps(){
-    const $  = (s)=>document.querySelector(s);
-    const $$ = (s)=>Array.from(document.querySelectorAll(s));
-    const steps = [];
+      const $  = (s)=>document.querySelector(s);
+      const $$ = (s)=>Array.from(document.querySelectorAll(s));
+      const steps = [];
 
-    // Header band + actions
-    const headerBand  = $('section.rounded-2xl.bg-gradient-to-r');
-    const bookNewBtn  = $$('a').find(a => /appointment\/create/i.test(a.getAttribute('href')||''));
-    const pdfBtn      = $$('a').find(a => /appointment\/history\/export\/pdf/i.test(a.getAttribute('href')||''));
+      const headerBand  = $('section.rounded-2xl.bg-gradient-to-r');
+      const bookNewBtn  = $$('a').find(a => /appointment\/create/i.test(a.getAttribute('href')||''));
+      const pdfBtn      = $$('a').find(a => /appointment\/history\/export\/pdf/i.test(a.getAttribute('href')||''));
 
-    // Filters
-    const filtersForm = $$('form').find(f => /appointment\/history/i.test((f.getAttribute('action')||'')));
-    const periodWrap  = filtersForm ? filtersForm.querySelector('.flex.flex-wrap') : null; // the chips row
-    const statusSel   = filtersForm ? filtersForm.querySelector('select[name="status"]') : null;
-    const searchInput = $('#qInput');
-    const resetBtn    = filtersForm ? Array.from(filtersForm.querySelectorAll('a')).find(a => /appointment\/history$/.test(a.getAttribute('href')||'')) : null;
-    const applyBtn    = filtersForm ? filtersForm.querySelector('button[type="submit"]') : null;
+      const filtersForm = $$('form').find(f => /appointment\/history/i.test((f.getAttribute('action')||'')));
+      const periodWrap  = filtersForm ? filtersForm.querySelector('.flex.flex-wrap') : null;
+      const statusSel   = filtersForm ? filtersForm.querySelector('select[name="status"]') : null;
+      const searchInput = $('#qInput');
+      const resetBtn    = filtersForm ? Array.from(filtersForm.querySelectorAll('a')).find(a => /appointment\/history$/.test(a.getAttribute('href')||'')) : null;
+      const applyBtn    = filtersForm ? filtersForm.querySelector('button[type="submit"]') : null;
 
-    // Table + row actions
-    const tableEl     = $('table');
-    const anyViewBtn  = $$('a').find(a => /appointment\/view\/\d+/i.test(a.getAttribute('href')||'') || a.textContent.trim()==='View');
+      const tableEl     = $('table');
+      const anyViewBtn  = $$('a').find(a => /appointment\/view\/\d+/i.test(a.getAttribute('href')||'') || a.textContent.trim()==='View');
 
-    // 1) Header band
-    if (headerBand){
-      steps.push({
-        element: headerBand,
-        popover:{
-          title: 'Appointment History',
-          description: 'Overview of all your bookings with quick stats and actions.',
-          side: 'top', align: 'start'
-        }
-      });
+      if (headerBand){
+        steps.push({
+          element: headerBand,
+          popover:{
+            title: 'Appointment History',
+            description: 'Overview of all your bookings with quick stats and actions.',
+            side: 'top', align: 'start'
+          }
+        });
+      }
+
+      if (bookNewBtn){
+        steps.push({
+          element: bookNewBtn,
+          popover:{
+            title: 'Book New',
+            description: 'Create a new counseling appointment.',
+            side: 'left', align: 'center'
+          }
+        });
+      }
+
+      if (pdfBtn){
+        steps.push({
+          element: pdfBtn,
+          popover:{
+            title: 'Download PDF',
+            description: 'Export your current view (filters respected) to PDF.',
+            side: 'left', align: 'center'
+          }
+        });
+      }
+
+      if (periodWrap){
+        steps.push({
+          element: periodWrap,
+          popover:{
+            title: 'Date filters',
+            description: 'Quickly switch between All, Upcoming, Today, This Week, This Month, or Past.',
+            side: 'bottom', align: 'start'
+          }
+        });
+      }
+
+      if (statusSel){
+        steps.push({
+          element: statusSel,
+          popover:{
+            title: 'Status filter',
+            description: 'Narrow results to Pending, Confirmed, Completed, Canceled, or show all.',
+            side: 'top', align: 'start'
+          }
+        });
+      }
+
+      if (searchInput){
+        steps.push({
+          element: searchInput,
+          popover:{
+            title: 'Search counselor',
+            description: 'Type a counselor name to filter the list.',
+            side: 'top', align: 'start'
+          }
+        });
+      }
+
+      if (applyBtn){
+        steps.push({
+          element: applyBtn,
+          popover:{
+            title: 'Apply filters',
+            description: 'Click to run your selected filters. Use Reset to clear.',
+            side: 'top', align: 'end'
+          }
+        });
+      } else if (resetBtn){
+        steps.push({
+          element: resetBtn,
+          popover:{
+            title: 'Reset filters',
+            description: 'Return to the full list.',
+            side: 'top', align: 'end'
+          }
+        });
+      }
+
+      if (tableEl){
+        steps.push({
+          element: tableEl,
+          popover:{
+            title: 'Results',
+            description: 'Each row shows counselor, schedule, live countdown, and status.',
+            side: 'top', align: 'start'
+          }
+        });
+      }
+
+      if (anyViewBtn){
+        steps.push({
+          element: anyViewBtn,
+          popover:{
+            title: 'View details',
+            description: 'Open the appointment for full information and actions.',
+            side: 'left', align: 'center'
+          }
+        });
+      }
+
+      if (!steps.length){
+        steps.push({
+          element: document.body,
+          popover:{
+            title: 'Manage History',
+            description: 'Filter by date or status, search, and open a record to view details.',
+            side: 'top', align: 'center'
+          }
+        });
+      }
+
+      return steps;
     }
 
-    // 2) Book New
-    if (bookNewBtn){
-      steps.push({
-        element: bookNewBtn,
-        popover:{
-          title: 'Book New',
-          description: 'Create a new counseling appointment.',
-          side: 'left', align: 'center'
-        }
-      });
+    function appointmentViewSteps(){
+      const $  = (s, r=document) => r.querySelector(s);
+      const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+      const steps = [];
+
+      const card = $('#appointmentCard');
+
+      const closeBtn  = $('#btn-appt-close')
+                     || $$('a').find(a => /\/appointment\/history$/.test(a.getAttribute('href')||'') || /close/i.test(a.textContent||''));
+      const pdfBtn    = $$('a').find(a => /show\.export\.pdf/i.test(a.getAttribute('href')||'') || /download\s*pdf/i.test(a.textContent||''));
+      const cancelBtn = $$('button').find(b => /cancel/i.test(b.textContent||''));
+
+      const statusChip = card ? $('h2 + span.inline-flex', card) : null;
+      const countdown  = card ? $$('.inline-flex.rounded-full, .rounded-full.inline-flex', card)
+                              .find(el => /starts in|ago|starting now/i.test(el.textContent||'')) : null;
+      const counselorHdr = card ? $$('.text-xs', card).find(h => /counselor/i.test(h.textContent||'')) : null;
+      const counselorBox = counselorHdr ? counselorHdr.nextElementSibling : null;
+      const scheduleHdr  = card ? $$('.text-xs', card).find(h => /scheduled/i.test(h.textContent||'')) : null;
+      const scheduleBox  = scheduleHdr ? scheduleHdr.nextElementSibling : null;
+
+      if (card) steps.push({ element: card, popover:{ title:'Appointment details', description:'Booking number, countdown, counselor, and schedule.', side:'top', align:'start' }});
+      if (statusChip) steps.push({ element: statusChip, popover:{ title:'Status', description:'Pending, Confirmed, Completed, Canceled, or No-show.', side:'left', align:'center' }});
+      if (countdown) steps.push({ element: countdown, popover:{ title:'Countdown', description:'Time until session (or how long since it passed).', side:'bottom', align:'start' }});
+      if (counselorBox) steps.push({ element: counselorBox, popover:{ title:'Counselor', description:'Assigned counselor & contacts.', side:'top', align:'start' }});
+      if (scheduleBox) steps.push({ element: scheduleBox, popover:{ title:'Schedule', description:'Exact day and start time.', side:'top', align:'end' }});
+
+      if (cancelBtn) steps.push({ element: cancelBtn, popover:{ title:'Cancel booking', description:'Enabled only if the appointment is Pending and in the future.', side:'top', align:'start' }});
+      if (pdfBtn)    steps.push({ element: pdfBtn,   popover:{ title:'Download PDF', description:'Export this appointment.', side:'top', align:'end' }});
+      if (closeBtn)  steps.push({ element: closeBtn, popover:{ title:'Back to History', description:'Return to your appointment list.', side:'top', align:'end' }});
+
+      if (!steps.length) steps.push({ element: document.body, popover:{ title:'Appointment View', description:'See details, export, cancel if allowed, or go back to history.', side:'top', align:'center' }});
+      return steps;
     }
 
-    // 3) Download PDF
-    if (pdfBtn){
-      steps.push({
-        element: pdfBtn,
-        popover:{
-          title: 'Download PDF',
-          description: 'Export your current view (filters respected) to PDF.',
-          side: 'left', align: 'center'
-        }
-      });
-    }
-
-    // 4) Period chips (Today / This Week / etc.)
-    if (periodWrap){
-      steps.push({
-        element: periodWrap,
-        popover:{
-          title: 'Date filters',
-          description: 'Quickly switch between All, Upcoming, Today, This Week, This Month, or Past.',
-          side: 'bottom', align: 'start'
-        }
-      });
-    }
-
-    // 5) Status dropdown
-    if (statusSel){
-      steps.push({
-        element: statusSel,
-        popover:{
-          title: 'Status filter',
-          description: 'Narrow results to Pending, Confirmed, Completed, Canceled, or show all.',
-          side: 'top', align: 'start'
-        }
-      });
-    }
-
-    // 6) Search box
-    if (searchInput){
-      steps.push({
-        element: searchInput,
-        popover:{
-          title: 'Search counselor',
-          description: 'Type a counselor name to filter the list.',
-          side: 'top', align: 'start'
-        }
-      });
-    }
-
-    // 7) Apply / Reset
-    if (applyBtn){
-      steps.push({
-        element: applyBtn,
-        popover:{
-          title: 'Apply filters',
-          description: 'Click to run your selected filters. Use Reset to clear.',
-          side: 'top', align: 'end'
-        }
-      });
-    } else if (resetBtn){
-      steps.push({
-        element: resetBtn,
-        popover:{
-          title: 'Reset filters',
-          description: 'Return to the full list.',
-          side: 'top', align: 'end'
-        }
-      });
-    }
-
-    // 8) Results table
-    if (tableEl){
-      steps.push({
-        element: tableEl,
-        popover:{
-          title: 'Results',
-          description: 'Each row shows counselor, schedule, live countdown, and status.',
-          side: 'top', align: 'start'
-        }
-      });
-    }
-
-    // 9) Row action: View
-    if (anyViewBtn){
-      steps.push({
-        element: anyViewBtn,
-        popover:{
-          title: 'View details',
-          description: 'Open the appointment for full information and actions.',
-          side: 'left', align: 'center'
-        }
-      });
-    }
-
-    // Fallback
-    if (!steps.length){
-      steps.push({
-        element: document.body,
-        popover:{
-          title: 'Manage History',
-          description: 'Filter by date or status, search, and open a record to view details.',
-          side: 'top', align: 'center'
-        }
-      });
-    }
-
-    return steps;
-  }
-
-  function appointmentViewSteps(){
-  const $  = (s, r=document) => r.querySelector(s);
-  const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
-  const steps = [];
-
-  const card = $('#appointmentCard');
-
-  // NEW: stable hooks
-  const closeBtn  = $('#btn-appt-close')                               // ✅ prefer ID
-                 || $$('a').find(a => /\/appointment\/history$/.test(a.getAttribute('href')||'') || /close/i.test(a.textContent||''));
-  const pdfBtn    = $$('a').find(a => /show\.export\.pdf/i.test(a.getAttribute('href')||'') || /download\s*pdf/i.test(a.textContent||''));
-  const cancelBtn = $$('button').find(b => /cancel/i.test(b.textContent||''));
-
-  // existing pieces…
-  const statusChip = card ? $('h2 + span.inline-flex', card) : null;
-  const countdown  = card ? $$('.inline-flex.rounded-full, .rounded-full.inline-flex', card)
-                          .find(el => /starts in|ago|starting now/i.test(el.textContent||'')) : null;
-  const counselorHdr = card ? $$('.text-xs', card).find(h => /counselor/i.test(h.textContent||'')) : null;
-  const counselorBox = counselorHdr ? counselorHdr.nextElementSibling : null;
-  const scheduleHdr  = card ? $$('.text-xs', card).find(h => /scheduled/i.test(h.textContent||'')) : null;
-  const scheduleBox  = scheduleHdr ? scheduleHdr.nextElementSibling : null;
-
-  if (card) steps.push({ element: card, popover:{ title:'Appointment details', description:'Booking number, countdown, counselor, and schedule.', side:'top', align:'start' }});
-  if (statusChip) steps.push({ element: statusChip, popover:{ title:'Status', description:'Pending, Confirmed, Completed, Canceled, or No-show.', side:'left', align:'center' }});
-  if (countdown) steps.push({ element: countdown, popover:{ title:'Countdown', description:'Time until session (or how long since it passed).', side:'bottom', align:'start' }});
-  if (counselorBox) steps.push({ element: counselorBox, popover:{ title:'Counselor', description:'Assigned counselor & contacts.', side:'top', align:'start' }});
-  if (scheduleBox) steps.push({ element: scheduleBox, popover:{ title:'Schedule', description:'Exact day and start time.', side:'top', align:'end' }});
-
-  if (cancelBtn) steps.push({ element: cancelBtn, popover:{ title:'Cancel booking', description:'Enabled only if the appointment is Pending and in the future.', side:'top', align:'start' }});
-  if (pdfBtn)    steps.push({ element: pdfBtn,   popover:{ title:'Download PDF', description:'Export this appointment.', side:'top', align:'end' }});
-
-  // ✅ Now explicitly teach “Back to history” on Close
-  if (closeBtn)  steps.push({ element: closeBtn, popover:{ title:'Back to History', description:'Return to your appointment list.', side:'top', align:'end' }});
-
-  if (!steps.length) steps.push({ element: document.body, popover:{ title:'Appointment View', description:'See details, export, cancel if allowed, or go back to history.', side:'top', align:'center' }});
-  return steps;
-}
-    /* ✅ MISSING BEFORE: define this to avoid ReferenceError */
     function aboutSteps(){ const steps=[]; const hero=document.querySelector('.about-hero'); const toc=document.getElementById('about-toc'); const flow=document.getElementById('flow'); const faq=document.getElementById('faq'); const topFab=document.getElementById('about-top'); if (hero) steps.push({element:hero,popover:{title:'About LumiCHAT',description:'Quick overview and purpose.',side:'bottom',align:'start'}}); if (toc) steps.push({element:toc,popover:{title:'On this page',description:'Jump between sections; active item updates as you scroll.',side:'right',align:'start'}}); if (flow) steps.push({element:flow,popover:{title:'How it works',description:'From message to response timeline.',side:'top',align:'start'}}); if (faq) steps.push({element:faq,popover:{title:'FAQ',description:'Common questions and answers.',side:'top',align:'start'}}); if (topFab) steps.push({element:topFab,popover:{title:'Back to top',description:'Appears after you scroll.',side:'left',align:'center'}}); return steps; }
 
     const STEP_BUILDERS = {
@@ -939,8 +1025,6 @@
       'appointment.index': appointmentSteps,
       'appointment.create': appointmentSteps,
       'appointment.history': appointmentHistorySteps,
-
-      // 👇 add these two lines
       'appointment.view': appointmentViewSteps,
       'appointment.show': appointmentViewSteps,
 
@@ -948,6 +1032,9 @@
       'counselor.availability': counselorAvailabilitySteps,
       'counselor.appointments': counselorAppointmentsSteps,
       'counselor.appointments.show': counselorAppointmentShowSteps,
+
+      // ✅ NEW: walk-ins
+      'counselor.walkins': counselorWalkinsSteps,
     };
 
     async function startPageTour(pageKey = PAGE_KEY){
