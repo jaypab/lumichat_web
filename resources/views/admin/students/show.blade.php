@@ -206,17 +206,29 @@
             </thead>
             <tbody class="divide-y divide-slate-100">
               @foreach($appointments as $appt)
-                @php
+               @php
                   $dt          = $appt->scheduled_at ? \Carbon\Carbon::parse($appt->scheduled_at) : null;
                   $status      = strtolower((string) $appt->status);
                   $statusLabel = ucfirst($status ?: 'N/A');
                   $statusColor = match ($status) {
-                    'completed' => 'bg-emerald-50 text-emerald-700 ring-emerald-100',
-                    'ongoing'   => 'bg-indigo-50 text-indigo-700 ring-indigo-100',
-                    'canceled', 'cancelled', 'no-show' => 'bg-rose-50 text-rose-700 ring-rose-100',
-                    default     => 'bg-slate-50 text-slate-700 ring-slate-100',
+                      'completed' => 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+                      'ongoing'   => 'bg-indigo-50 text-indigo-700 ring-indigo-100',
+                      'canceled', 'cancelled', 'no-show' => 'bg-rose-50 text-rose-700 ring-rose-100',
+                      default     => 'bg-slate-50 text-slate-700 ring-slate-100',
                   };
-                @endphp
+
+                  // 🔹 map appointment_source → readable type
+                  $srcRaw   = strtolower((string) $appt->appointment_source);
+                  $typeLabel = match ($srcRaw) {
+                      'walk_in', 'walk-in'      => 'Walk-in Session',
+                      'chatbot', 'chat_referral'=> 'Chatbot Referral',
+                      'manual'                  => 'Manual Booking',
+                      'system', 'online'        => 'Online Booking',
+                      ''                        => 'System Booking',   // NULL / empty
+                      default                   => ucwords(str_replace('_', ' ', $srcRaw)),
+                  };
+              @endphp
+
                 <tr class="hover:bg-slate-50">
                   <td class="px-4 py-2 whitespace-nowrap text-slate-900 font-medium">
                     #{{ $appt->id }}
@@ -349,13 +361,14 @@
 
     {{-- TYPE from note_source --}}
     <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
-      {{ $typeLabel }}
+        {{ $typeLabel }}
     </td>
+
 
     <td class="px-4 py-2 whitespace-nowrap text-right">
       <a href="{{ route('admin.case-notes.show', $note->id) }}"
          class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
-        Viewg
+        View
       </a>
     </td>
   </tr>
