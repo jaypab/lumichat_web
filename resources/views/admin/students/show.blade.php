@@ -239,13 +239,13 @@
                       {{ $statusLabel }}
                     </span>
                   </td>
-                  <td class="px-4 py-2 whitespace-nowrap text-right">
-                    {{-- TODO: adjust route name if different in your routes/web.php --}}
-                    <a href="{{ route('admin.appointments.show', $appt->id) }}"
-                       class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                      View
-                    </a>
-                  </td>
+<td class="px-4 py-2 whitespace-nowrap text-right">
+    <a href="{{ route('admin.appointments.show', $appt->id) }}"
+       class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+        View
+    </a>
+</td>
+
                 </tr>
               @endforeach
             </tbody>
@@ -302,26 +302,44 @@
                   <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
                     {{ $note->counselor?->name ?? '—' }}
                   </td>
-                  <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
-                    @if($note->appointment)
-                      #{{ $note->appointment->id }}
-                      <span class="text-slate-400">
-                        ({{ \Carbon\Carbon::parse($note->appointment->scheduled_at)->format('M d, Y') }})
-                      </span>
-                    @else
+                        <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
+                  @php
+                      $appt        = $note->appointment ?? null;
+                      $apptId      = $appt?->id;
+                      $apptSched   = $appt?->scheduled_at;
+                      $apptSchedStr = null;
+
+                      if ($apptSched) {
+                          try {
+                              $apptSchedStr = \Carbon\Carbon::parse($apptSched)->format('M d, Y');
+                          } catch (\Throwable $e) {
+                              $apptSchedStr = null; // invalid date, just hide it
+                          }
+                      }
+                  @endphp
+
+                  @if($apptId)
+                      #{{ $apptId }}
+                      @if($apptSchedStr)
+                          <span class="text-slate-400">
+                              ({{ $apptSchedStr }})
+                          </span>
+                      @endif
+                  @else
                       —
-                    @endif
-                  </td>
+                  @endif
+                </td>
+
                   <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
                     {{ $risk ? ucfirst($risk) : '—' }}
                   </td>
                   <td class="px-4 py-2 whitespace-nowrap text-right">
-                    {{-- TODO: adjust route name if different in your routes/web.php --}}
-                    <a href="{{ route('admin.case-notes.show', $note->id) }}"
-                       class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                      View
-                    </a>
+                      <a href="{{ route('admin.case-notes.show', $note->id) }}"
+                        class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                          View
+                      </a>
                   </td>
+
                 </tr>
               @endforeach
             </tbody>
@@ -385,12 +403,12 @@
                     @endif
                   </td>
                   <td class="px-4 py-2 whitespace-nowrap text-right">
-                    {{-- TODO: adjust route name if different in your routes/web.php --}}
-                    <a href="{{ route('admin.chatbot_sessions.show', $session->id) }}"
-                       class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                      View
-                    </a>
-                  </td>
+    <a href="{{ route('admin.chatbot-sessions.show', $session->id) }}"
+       class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+        View
+    </a>
+</td>
+
                 </tr>
               @endforeach
             </tbody>
