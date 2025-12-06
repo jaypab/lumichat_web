@@ -243,9 +243,10 @@
                   <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
                     {{ $appt->counselor?->name ?? $appt->counselor_name ?? '—' }}
                   </td>
-                  <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
-                    {{ $appt->appointment_type ?? '—' }}
-                  </td>
+                    <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
+                        {{ $typeLabel }}
+                    </td>   
+
                   <td class="px-4 py-2 whitespace-nowrap">
                     <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ring-1 {{ $statusColor }}">
                       {{ $statusLabel }}
