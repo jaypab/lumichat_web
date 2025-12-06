@@ -4,7 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Facades\Artisan;  
+use Illuminate\Support\Facades\Artisan;
+
 class CaseNote extends Model
 {
     use SoftDeletes;
@@ -23,17 +24,30 @@ class CaseNote extends Model
         'note_date' => 'date',
     ];
 
-    public function appointment() { return $this->belongsTo(\App\Models\Appointment::class, 'appointment_id'); }
+    // ✅ from proper appointments or walk-ins
+    public function appointment()
+    {
+        return $this->belongsTo(\App\Models\Appointment::class, 'appointment_id');
+    }
+
+    // ✅ link to counselor record (adjust model if you use a different one)
+    public function counselor()
+    {
+        return $this->belongsTo(\App\Models\Counselor::class, 'counselor_id');
+    }
+
+    // ✅ link to student user account (for proper appointments)
+    public function student()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'student_id');
+    }
 
     protected static function booted()
     {
-        // Whenever a case note is created or updated
         static::saved(function (CaseNote $note) {
-            // Rebuild course analytics from case notes
             Artisan::call('analytics:rebuild-courses');
         });
 
-        // Whenever a case note is soft-deleted / force-deleted
         static::deleted(function (CaseNote $note) {
             Artisan::call('analytics:rebuild-courses');
         });
