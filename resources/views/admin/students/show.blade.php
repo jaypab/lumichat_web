@@ -333,12 +333,24 @@
                   <td class="px-4 py-2 whitespace-nowrap text-slate-700 text-xs">
                     {{ $risk ? ucfirst($risk) : '—' }}
                   </td>
-                  <td class="px-4 py-2 whitespace-nowrap text-right">
-                      <a href="{{ route('admin.case-notes.show', $note->id) }}"
-                        class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                          View
-                      </a>
-                  </td>
+                  <<td class="px-4 py-2 whitespace-nowrap text-right">
+    @php
+        use Illuminate\Support\Facades\Route as RouteFacade;
+
+        if (RouteFacade::has('admin.case-notes.show')) {
+            $caseNoteUrl = route('admin.case-notes.show', $note->id);
+        } else {
+            // Fallback to plain URL if the named route is missing in this env
+            $caseNoteUrl = url('/admin/case-notes/' . $note->id);
+        }
+    @endphp
+
+    <a href="{{ $caseNoteUrl }}"
+       class="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+        View
+    </a>
+</td>
+
 
                 </tr>
               @endforeach
