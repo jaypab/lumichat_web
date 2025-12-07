@@ -173,22 +173,32 @@ private function hasCurrentAvailability(): bool
 
         $student = $query->first();
         $created = false;
+                // If student exists but has no SIS yet → assign next SIS
+        if ($student && (empty($student->sis))) {
+            $student->sis = $this->generateNextSis();
+            $student->save();
+        }
+
 
         // If not found but we have email → create new account
         if (!$student && !empty($data['email'])) {
             $student = new User();
-            $student->sis            = null;
+
+            // 🔹 auto-generate SIS
+            $student->sis            = $this->generateNextSis();
+
             $student->name           = $data['student_name'];
             $student->email          = $data['email'];
             $student->course         = $data['course'] ?? null;
             $student->year_level     = $this->mapYearLevelForUser($data['year_level'] ?? null);
-            $student->contact_number = $data['contact_number'] ?? null;   // <-- NEW
+            $student->contact_number = $data['contact_number'] ?? null;
             $student->role                 = 'student';
             $student->appointments_enabled = 0;
             $student->password             = Hash::make('12345678'); // default 1–8
             $student->save();
             $created = true;
         }
+
 
         // still nothing and no email → tell counselor to type an email
         if (!$student) {
@@ -205,6 +215,7 @@ private function hasCurrentAvailability(): bool
                         'id'         => $student->id,
                         'name'       => $student->name,
                         'email'      => $student->email,
+                        'sis'            => $student->sis,
                         'course'     => $this->normalizeCourse($student->course),
                         'year_level' => $this->mapYearLevelShort($student->year_level),
                         'contact_number' => $student->contact_number,
@@ -254,14 +265,23 @@ private function hasCurrentAvailability(): bool
                 ->where('email', $request->email)
                 ->first();
 
+            // If student exists but has no SIS yet → assign one
+            if ($student && (empty($student->sis))) {
+                $student->sis = $this->generateNextSis();
+                $student->save();
+            }
+
             if (!$student) {
                 $student = new User();
-                $student->sis            = null;
+
+                // 🔹 auto-generate SIS
+                $student->sis            = $this->generateNextSis();
+
                 $student->name           = $request->student_name;
                 $student->email          = $request->email;
                 $student->course         = $request->course;
                 $student->year_level     = $this->mapYearLevelForUser($request->year_level);
-                 $student->contact_number = $request->contact_number;
+                $student->contact_number = $request->contact_number;
                 $student->role                 = 'student';
                 $student->appointments_enabled = 0;
                 $student->password             = Hash::make('12345678'); // default 1–8
@@ -448,6 +468,49 @@ private function mapYearLevelShort(?string $full): ?string
         '4th year', 'fourth year', '4th' => '4th',
         default => $full,
     };
+}
+   /**
+ * Generate the next SIS based on the current year.
+ *
+ * Format:
+ *   YYYYNNNN
+ * Example (year 2025):
+ *   First student this year: 20250000
+ *   Next:                    20250001, 20250002, ...
+ */
+private function generateNextSis(): ?string
+{
+    if (!Schema::hasTable('tbl_users') || !Schema::hasColumn('tbl_users', 'sis')) {
+        return null;
+    }
+
+    $yearPrefix = (string) now()->year; // e.g. "2025"
+
+    // 🔹 Get the highest SIS for this year, sorted NUMERICALLY
+    $lastSis = DB::table('tbl_users')
+        ->whereNotNull('sis')
+        ->where('sis', '!=', '')
+        ->where('sis', 'like', $yearPrefix.'%')
+        ->orderByRaw('CAST(sis AS UNSIGNED) DESC')   // ✅ numeric, not string
+        ->value('sis');
+
+    // No SIS for this year yet → start at YYYY0000
+    if (!$lastSis) {
+        return $yearPrefix.'0000';
+    }
+
+    // Take everything after the year prefix
+    $suffix = substr($lastSis, strlen($yearPrefix));   // e.g. "0007", "0011", "9"
+
+    // If malformed, treat as 0
+    if ($suffix === '' || !ctype_digit($suffix)) {
+        $suffix = '0';
+    }
+
+    $next = (int) $suffix + 1;                         // e.g. 11 -> 12
+    $nextStr = str_pad((string) $next, 4, '0', STR_PAD_LEFT); // "0012"
+
+    return $yearPrefix.$nextStr;                       // "2025"."0012" = 20250012
 }
 
 }

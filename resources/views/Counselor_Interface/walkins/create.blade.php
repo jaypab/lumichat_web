@@ -443,9 +443,11 @@
   let caseNoteVisible = false;
   let studentChecked  = false; // track if we already called backend
 
-  // 🔹 NEW: track if a student account was just created
+  // 🔹 Track new / existing account info
   let justCreatedAccount = false;
   let justCreatedEmail   = null;
+  let justCreatedSis     = null;   // 🔹 NEW
+  let currentStudentSis  = null;   // 🔹 NEW
 
   // flag from Blade
   const canStartFlag = startBtn.dataset.canStart === '1';
@@ -589,8 +591,6 @@
   })();
 
   // ===== COMMON HELPER: CHECK / CREATE STUDENT + AUTOFILL =====
-  // NOTE: This is now ONLY called from Start Session,
-  // after all top fields are filled. So new accounts get full info.
   async function performStudentLookup() {
     const liveErrorEl = document.getElementById('studentNameLiveError');
     if (liveErrorEl) {
@@ -603,7 +603,6 @@
     const courseVal = topCourseInput ? topCourseInput.value.trim()  : '';
     const yearVal   = topYearSelect  ? (topYearSelect.value || '').trim() : '';
 
-    // Just a safety net (we already validated before calling this)
     if (!nameVal || !emailVal || !courseVal || !yearVal) {
       return false;
     }
@@ -651,6 +650,8 @@
       // reset flags first
       justCreatedAccount = false;
       justCreatedEmail   = null;
+      justCreatedSis     = null;
+      currentStudentSis  = null;
 
       // Autofill from backend (in case there was existing data)
       if (data.student) {
@@ -670,9 +671,17 @@
           topContactInput.value = data.student.contact_number;
         }
 
+        if (data.student.sis) {
+          currentStudentSis = data.student.sis;
+        }
+
         if (studentAccountInfo) {
-          studentAccountInfo.textContent =
-            'Existing LumiCHAT student account detected for this email.';
+          // 🔹 Organized info line with SIS
+          studentAccountInfo.innerHTML =
+            'Existing LumiCHAT student account detected.' +
+            (currentStudentSis
+              ? '<br><span style="font-size:11px;">SIS: <b>' + currentStudentSis + '</b></span>'
+              : '');
           studentAccountInfo.classList.remove('hidden');
         }
 
@@ -680,17 +689,20 @@
         saveFormToStorage();
       }
 
-      // If backend created a new account, at this point
-      // all fields (name, email, course, year, contact) were already filled.
+      // If backend created a new account
       if (data.created) {
         const emailVal2 = emailInput ? emailInput.value : (data.student?.email || '');
         justCreatedAccount = true;
         justCreatedEmail   = emailVal2 || emailVal;
+        justCreatedSis     = data.student && data.student.sis ? data.student.sis : null;
+        currentStudentSis  = justCreatedSis;
 
         if (studentAccountInfo) {
-          studentAccountInfo.textContent =
-            'No account was found. A new student account has been created. ' +
-            'Please inform the student that they can log in using this email and the default password 12345678.';
+          studentAccountInfo.innerHTML =
+            'No previous account was found. A new student account has been created.' +
+            (justCreatedSis
+              ? '<br><span style="font-size:11px;">SIS: <b>' + justCreatedSis + '</b></span>'
+              : '');
           studentAccountInfo.classList.remove('hidden');
         }
       }
@@ -729,7 +741,6 @@
     const courseOk = topCourseInput && topCourseInput.value.trim() !== '';
     const yearOk   = topYearSelect  && topYearSelect.value && topYearSelect.value.trim() !== '';
 
-    // REQUIRE ALL TOP FIELDS BEFORE WE EVEN TOUCH THE BACKEND
     if (!nameOk || !emailOk || !courseOk || !yearOk) {
       Swal.fire({
         icon: 'warning',
@@ -767,28 +778,49 @@
 
     // 🔹 Popup logic AFTER starting the session
     if (justCreatedAccount) {
+      // Organized popup with SIS, username, password
+      let html =
+        '<p>The walk-in session timer is now running.</p>' +
+        '<br>' +
+        '<p>This student did not have an account. LumiCHAT has created one automatically.</p>' +
+        '<br>' +
+        '<p><b>Account details:</b></p>' +
+        '<ul style="text-align:left;margin-top:4px;font-size:13px;">';
+
+      if (justCreatedEmail) {
+        html += '<li>• Username (email): <b>' + justCreatedEmail + '</b></li>';
+      }
+      if (justCreatedSis) {
+        html += '<li>• SIS Number: <b>' + justCreatedSis + '</b></li>';
+      }
+      html += '<li>• Default password: <b>12345678</b></li>' +
+              '<li>• Ask the student to change the password after first login.</li>' +
+              '</ul>';
+
       Swal.fire({
         icon: 'success',
         title: 'Session started & student account created',
-        html:
-          '<p>The walk-in session timer is now running.</p><br>' +
-          '<p>This student did not have an account. LumiCHAT has created one automatically.</p>' +
-          '<br>' +
-          '<p><b>Please inform the student:</b></p>' +
-          '<ul style="text-align:left;margin-top:4px;">' +
-          (justCreatedEmail ? '<li>• Username: <b>' + justCreatedEmail + '</b></li>' : '') +
-          '<li>• Default password: <b>12345678</b></li>' +
-          '<li>• They should change their password after first login.</li>' +
-          '</ul>',
+        html: html,
         confirmButtonColor: '#4f46e5'
       });
     } else {
+      // Existing account – still show SIS if we have it
+      let html =
+        '<p>The walk-in session timer is now running.</p>';
+
+      if (currentStudentSis) {
+        html +=
+          '<br><p style="margin-top:6px;font-size:13px;">' +
+          'Student SIS: <b>' + currentStudentSis + '</b>' +
+          '</p>';
+      }
+
       Swal.fire({
         icon: 'success',
         title: 'Session started',
-        text: 'The walk-in session timer is now running.',
-        timer: 1600,
-        showConfirmButton: false
+        html: html,
+        timer: 1700,
+        showConfirmButton: !currentStudentSis // if we show SIS, let them close manually
       });
     }
   });
@@ -796,7 +828,7 @@
   // ✅ CANCEL: discard session + form, do NOT record anything, STAY on page
   if (cancelBtn) {
     cancelBtn.addEventListener('click', function(e){
-      e.preventDefault(); // block the normal <a> navigation
+      e.preventDefault();
 
       Swal.fire({
         title: 'Discard this walk-in session?',
@@ -810,18 +842,15 @@
       }).then((result) => {
         if (!result.isConfirmed) return;
 
-        // stop timer
         if (timerInterval) {
           clearInterval(timerInterval);
           timerInterval = null;
         }
         sessionStart = null;
 
-        // clear storage
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(FORM_STORAGE_KEY);
 
-        // reset UI
         if (timerEl) timerEl.textContent = '00:00';
         if (startLabel) startLabel.textContent = 'Not started yet';
 
@@ -845,7 +874,6 @@
           caseNoteSection.style.display = 'none';
         }
 
-        // optional: also clear all visible form fields
         if (topNameInput)    topNameInput.value = '';
         if (emailInput)      emailInput.value = '';
         if (topCourseInput)  topCourseInput.value = '';
@@ -855,7 +883,6 @@
         if (cnNameInput)     cnNameInput.value = '';
         if (cnProgramYear)   cnProgramYear.value = '';
 
-        // re-enable Start button
         startBtn.disabled = !canStartFlag;
         startBtn.classList.remove('opacity-60', 'cursor-default', 'cursor-not-allowed');
 
@@ -869,8 +896,7 @@
       });
     });
   }
-
-  // ===== END SESSION =====
+// ===== END SESSION =====
   endBtn.addEventListener('click', function (e){
     if (!sessionStart) {
       e.preventDefault();
@@ -891,6 +917,7 @@
       timerInterval = null;
     }
 
+    // First click → show Case Note section, don’t submit yet
     if (!caseNoteVisible) {
       e.preventDefault();
       caseNoteVisible = true;
@@ -909,6 +936,7 @@
       return false;
     }
 
+    // Second click → submit form, clear local storage
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(FORM_STORAGE_KEY);
 
@@ -919,4 +947,3 @@
 })();
 </script>
 @endpush
-

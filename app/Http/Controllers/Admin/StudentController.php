@@ -17,6 +17,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
 
 
 class StudentController extends Controller
@@ -83,78 +84,126 @@ class StudentController extends Controller
             ]);
     }
 
-      /**
-     * Show form to create a new student account.
-     */
-    public function create(): View
-    {
-        return view('admin.students.create');
-    }
+            public function create(): View
+            {
+                $nextSis = $this->generateNextSis();
+                return view('admin.students.create', compact('nextSis'));
+            }
 
     /**
-     * Store new student in tbl_users.
-     */
-    public function store(Request $request): RedirectResponse
-    {
-        $table = (new User)->getTable(); // should be 'tbl_users'
+ * Generate the next SIS based on the current year.
+ *
+ * Format:
+ *   YYYYNNNN
+ * Example (year 2025):
+ *   First student this year: 20250000
+ *   Next:                    20250001, 20250002, ...
+ */
+private function generateNextSis(): string
+{
+    $table      = (new User)->getTable();   // usually 'tbl_users'
+    $yearPrefix = (string) now()->year;     // e.g. "2025"
 
-        $validated = $request->validate([
-            'sis' => [
-                'required',
-                'digits_between:4,20',
-                'regex:/^[0-9]+$/',
-                Rule::unique($table, 'sis'),
-            ],
-            'name' => [
-                'required',
-                'string',
-                'max:120',
-                'regex:/^[A-Za-z\s\.\-]+$/',
-            ],
-            'email' => [
-                'required',
-                'string',
-                'email:filter',
-                'max:255',
-                Rule::unique($table, 'email'),
-            ],
-            'course' => [
-                'required',
-                Rule::in(['BSIT','EDUC','CAS','CRIM','BLIS','MIDWIFERY','BSHM','BSBA']),
-            ],
-            'year_level' => [
-                'required',
-                Rule::in(['1st Year','2nd Year','3rd Year','4th Year']),
-            ],
-            'contact_number' => [
-                'required',
-                'regex:/^[0-9]{10,13}$/',
-            ],
-        ], [
-            'sis.regex'               => 'The SIS ID may only contain numbers.',
-            'contact_number.regex'    => 'The contact number may only contain digits.',
-            'name.regex'              => 'The full name may only contain letters and basic punctuation.',
-            'course.required'         => 'The course field is required.',
-            'year_level.required'     => 'The year level field is required.',
-            'contact_number.required' => 'The contact number field is required.',
-        ]);
+    // Get the HIGHEST SIS for the current year, sorted NUMERICALLY
+    $lastSis = \DB::table($table)
+        ->whereNotNull('sis')
+        ->where('sis', '!=', '')
+        ->where('sis', 'like', $yearPrefix.'%')
+        ->orderByRaw('CAST(sis AS UNSIGNED) DESC')   // 🔹 numeric sort, not string
+        ->value('sis');
 
-        $user = new User();
-        $user->sis            = $validated['sis'];
-        $user->name           = $validated['name'];
-        $user->email          = $validated['email'];
-        $user->course         = $validated['course'];
-        $user->year_level     = $validated['year_level'];
-        $user->contact_number = $validated['contact_number'];
-        $user->role                 = 'student';
-        $user->appointments_enabled = 0;
-        $user->password             = Hash::make('12345678');
-        $user->save();
-
-        return redirect()
-            ->route('admin.students.index')
-            ->with('success', 'Student has been successfully added.');
+    // No SIS for this year yet → start at YYYY0000
+    if (!$lastSis) {
+        return $yearPrefix . '0000';
     }
+
+    // Take everything AFTER the year prefix (the suffix)
+    $suffix = substr($lastSis, strlen($yearPrefix)); // e.g. "0007", "0011", "9"
+
+    // Failsafe: if somehow not numeric, treat as 0
+    if ($suffix === '' || !ctype_digit($suffix)) {
+        $suffix = '0';
+    }
+
+    // Compute next sequence
+    $next      = (int) $suffix + 1;                 // e.g. 11 -> 12
+    $nextPart  = str_pad((string) $next, 4, '0', STR_PAD_LEFT); // "0012"
+
+    return $yearPrefix . $nextPart;                 // "2025" . "0012" = 20250012
+}
+
+
+
+
+    public function store(Request $request): RedirectResponse
+{
+    $table = (new User)->getTable(); // should be 'tbl_users'
+
+    // Auto-generate SIS if the field was left blank (just in case)
+    if (!$request->filled('sis')) {
+        if ($autoSis = $this->generateNextSis()) {
+            $request->merge(['sis' => $autoSis]);
+        }
+    }
+
+    $validated = $request->validate([
+        'sis' => [
+            'required',
+            'digits_between:4,20',
+            'regex:/^[0-9]+$/',
+            Rule::unique($table, 'sis'),
+        ],
+        'name' => [
+            'required',
+            'string',
+            'max:120',
+            'regex:/^[A-Za-z\s\.\-]+$/',
+        ],
+        'email' => [
+            'required',
+            'string',
+            'email:filter',
+            'max:255',
+            Rule::unique($table, 'email'),
+        ],
+        'course' => [
+            'required',
+            Rule::in(['BSIT','EDUC','CAS','CRIM','BLIS','MIDWIFERY','BSHM','BSBA']),
+        ],
+        'year_level' => [
+            'required',
+            Rule::in(['1st Year','2nd Year','3rd Year','4th Year']),
+        ],
+        'contact_number' => [
+            'required',
+            'regex:/^[0-9]{10,13}$/',
+        ],
+    ], [
+        'sis.regex'               => 'The SIS ID may only contain numbers.',
+        'contact_number.regex'    => 'The contact number may only contain digits.',
+        'name.regex'              => 'The full name may only contain letters and basic punctuation.',
+        'course.required'         => 'The course field is required.',
+        'year_level.required'     => 'The year level field is required.',
+        'contact_number.required' => 'The contact number field is required.',
+    ]);
+
+    $user = new User();
+    $user->sis                 = $validated['sis'];
+    $user->name                = $validated['name'];
+    $user->email               = $validated['email'];
+    $user->course              = $validated['course'];
+    $user->year_level          = $validated['year_level'];
+    $user->contact_number      = $validated['contact_number'];
+    $user->role                = 'student';
+    $user->appointments_enabled = 0;
+    $user->password            = Hash::make('12345678');
+    $user->save();
+
+    return redirect()
+        ->route('admin.students.index')
+        ->with('success', 'Student has been successfully added.');
+}
+
 public function show(Request $request, User $student): View
 {
     $requestedYear = (int) ($request->query('year') ?: now()->year);
@@ -295,49 +344,155 @@ public function exportPdf(Request $request)
         return [$labels, $series];
     }
     
-    public function exportShowPdf(int $student, Request $request): Response
+   public function exportShowPdf(int $student, Request $request): Response
 {
-    $year = (int) $request->query('year', now()->year);
+    // Always resolve the student first
+    $studentModel = User::query()
+        ->where('role', 'student')
+        ->findOrFail($student);
 
-    $studentModel = \App\Models\User::query()
-        ->where('role', 'student')->findOrFail($student);
+    // =========================================================
+    //  A) APPOINTMENT PDF MODE  (when ?appointment=ID is present)
+    // =========================================================
+    if ($request->filled('appointment')) {
 
-    [$labels, $series, $total] = $this->buildMonthlySeriesForStudent($studentModel->id, $year);
+        $appointmentId = (int) $request->query('appointment');
 
-    $logoData = null;
-    $logoPath = public_path('images/chatbot.png');
-    if (is_file($logoPath)) {
-        $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
+        // --- Fetch the appointment row for this student ---
+        $appointment = DB::table('tbl_appointments')
+            ->where('id', $appointmentId)
+            ->where('student_id', $studentModel->id)   // make sure it belongs to this student
+            ->first();
+
+        if (!$appointment) {
+            abort(404, 'Appointment not found for this student.');
+        }
+
+        // Ensure optional counselor_* properties exist so Blade won’t throw notices
+        foreach (['counselor_name', 'counselor_email', 'counselor_phone', 'counselor_dept'] as $col) {
+            if (!property_exists($appointment, $col)) {
+                $appointment->{$col} = null;
+            }
+        }
+
+        // --- Get case note (latest for this appointment, if any) ---
+        $caseNote = CaseNote::where('appointment_id', $appointment->id)
+            ->latest('created_at')
+            ->first();
+
+        // --- Logo for header ---
+        $logoData = null;
+        $logoPath = public_path('images/chatbot.png');
+        if (is_file($logoPath)) {
+            $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
+        }
+
+        // --- DomPDF setup ---
+        $pdf = app('dompdf.wrapper');
+        $pdf->setPaper('a4', 'portrait');
+        $pdf->setOptions([
+            'defaultFont'          => 'DejaVu Sans',
+            'isHtml5ParserEnabled' => true,
+            'isRemoteEnabled'      => true,
+            'chroot'               => public_path(),
+            'dpi'                  => 96,
+            'isPhpEnabled'         => true, // for <script type="text/php">
+        ]);
+
+        // --- Load the appointment PDF view ---
+        $pdf->loadView('admin.appointments.pdf-show', [
+            'student'     => $studentModel,
+            'appointment' => $appointment,
+            'caseNote'    => $caseNote,
+            'generatedAt' => now()->format('Y-m-d H:i'),
+            'logoData'    => $logoData,
+        ]);
+
+        $filename = 'Appointment_' . $appointment->id . '_' . now()->format('Ymd_His') . '.pdf';
+
+        if ($request->boolean('download')) {
+            return $pdf->download($filename); // force download
+        }
+
+        return $pdf->stream($filename); // inline view
     }
 
-    $pdf = app('dompdf.wrapper');
-    $pdf->setPaper('a4', 'portrait');
-    $pdf->setOptions([
-        'defaultFont'          => 'DejaVu Sans',
-        'isHtml5ParserEnabled' => true,
-        'isRemoteEnabled'      => true,
-        'chroot'               => public_path(),
-        'dpi'                  => 96,
-        'isPhpEnabled'         => true, // needed if your Blade uses <script type="text/php"> (page numbers)
-    ]);
+   // =========================================================
+//  B) STUDENT SUMMARY PDF MODE (old behavior)
+// =========================================================
 
-    $pdf->loadView('admin.students.show_pdf', [
-        'student'     => $studentModel,
-        'year'        => $year,
-        'labels'      => $labels,
-        'series'      => $series,
-        'total'       => $total,
-        'generatedAt' => now()->format('Y-m-d H:i'),
-        'logoData'    => $logoData,
-    ]);
+$year = (int) $request->query('year', now()->year);
 
-    $filename = 'Student_' . $studentModel->id . '_' . $year . '_' . now()->format('Ymd_His') . '.pdf';
+// chart data
+[$labels, $series, $total] = $this->buildMonthlySeriesForStudent($studentModel->id, $year);
 
-    if ($request->boolean('download')) {
-        return $pdf->download($filename); // force download
-    }
-    return $pdf->stream($filename); // inline view (opens in the new tab)
+// 🔹 fetch same related records as in show()
+$studentId = (int) $studentModel->id;
+
+// 1) appointments
+$appointments = Appointment::query()
+    ->with(['counselor:id,name'])
+    ->where('student_id', $studentId)
+    ->orderByDesc('scheduled_at')
+    ->get();
+
+// 2) case notes
+$caseNotes = CaseNote::query()
+    ->with([
+        'appointment:id,scheduled_at',
+        'counselor:id,name',
+    ])
+    ->where('student_id', $studentId)
+    ->orderByDesc('created_at')
+    ->get();
+
+// 3) chatbot sessions
+$chatSessions = ChatSession::query()
+    ->where('user_id', $studentId)
+    ->orderByDesc('created_at')
+    ->get();
+
+// Logo for header
+$logoData = null;
+$logoPath = public_path('images/chatbot.png');
+if (is_file($logoPath)) {
+    $logoData = 'data:image/png;base64,' . base64_encode(@file_get_contents($logoPath));
 }
+
+$pdf = app('dompdf.wrapper');
+$pdf->setPaper('a4', 'portrait');
+$pdf->setOptions([
+    'defaultFont'          => 'DejaVu Sans',
+    'isHtml5ParserEnabled' => true,
+    'isRemoteEnabled'      => true,
+    'chroot'               => public_path(),
+    'dpi'                  => 96,
+    'isPhpEnabled'         => true, // for <script type="text/php">
+]);
+
+$pdf->loadView('admin.students.show_pdf', [
+    'student'      => $studentModel,
+    'year'         => $year,
+    'labels'       => $labels,
+    'series'       => $series,
+    'total'        => $total,
+    'generatedAt'  => now()->format('Y-m-d H:i'),
+    'logoData'     => $logoData,
+    'appointments' => $appointments,
+    'caseNotes'    => $caseNotes,
+    'chatSessions' => $chatSessions,
+]);
+
+$filename = 'Student_' . $studentModel->id . '_' . $year . '_' . now()->format('Ymd_His') . '.pdf';
+
+if ($request->boolean('download')) {
+    return $pdf->download($filename);
+}
+
+return $pdf->stream($filename);
+}
+
+
     /**
      * Example helper so the PDF has the same numbers as the HTML page.
      * Return: [$labels, $series, $total]

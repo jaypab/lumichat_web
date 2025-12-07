@@ -52,29 +52,30 @@
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       {{-- ROW 1: SIS ID + FULL NAME --}}
 
-      {{-- SIS ID --}}
-      <div>
-        <label for="sis" class="block text-xs font-semibold text-slate-600 mb-1 uppercase tracking-wide">
-          SIS ID <span class="text-rose-500">*</span>
-        </label>
-        <input
-          type="text"
-          id="sis"
-          name="sis"
-          inputmode="numeric"
-          value="{{ old('sis') }}"
-          class="w-full h-10 rounded-xl border px-3 text-sm focus:ring-2
-            @error('sis')
-              border-rose-400 focus:border-rose-500 focus:ring-rose-500
-            @else
-              border-slate-200 focus:border-indigo-500 focus:ring-indigo-500
-            @enderror"
-          required
-        >
-        @error('sis')
-          <p class="mt-1 text-xs text-rose-600" data-error-for="sis">{{ $message }}</p>
-        @enderror
-      </div>
+        {{-- SIS ID --}}
+    <div>
+      <label for="sis" class="block text-xs font-semibold text-slate-600 mb-1 uppercase tracking-wide">
+        SIS ID <span class="text-rose-500">*</span>
+      </label>
+      <input
+        type="text"
+        id="sis"
+        name="sis"
+        inputmode="numeric"
+        value="{{ old('sis', $nextSis) }}"
+        class="w-full h-10 rounded-xl border px-3 text-sm focus:ring-2
+          @error('sis')
+            border-rose-400 focus:border-rose-500 focus:ring-rose-500
+          @else
+            border-slate-200 focus:border-indigo-500 focus:ring-indigo-500
+          @enderror"
+        required
+      >
+      @error('sis')
+        <p class="mt-1 text-xs text-rose-600" data-error-for="sis">{{ $message }}</p>
+      @enderror
+    </div>
+
 
       {{-- FULL NAME --}}
       <div>
