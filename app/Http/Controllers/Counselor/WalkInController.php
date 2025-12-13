@@ -149,80 +149,96 @@ private function hasCurrentAvailability(): bool
      * AJAX: check student, auto-create account if needed.
      * Route: POST /counselor/walk-ins/check-student
      */
-    public function checkStudent(Request $request)
-    {
-        $data = $request->validate([
-            'student_name' => ['required', 'string', 'max:255'],
-            'email'        => ['nullable', 'email', 'max:255'],
-            'course'       => ['nullable', 'string', 'max:255'],
-            'year_level'   => ['nullable', 'string', 'max:50'],
-            'contact_number' => ['nullable', 'string', 'max:50'], // <-- NEW
-        ]);
+public function checkStudent(Request $request)
+{
+    $data = $request->validate([
+        'student_name'    => ['nullable', 'string', 'max:255'],
+        'email'           => ['nullable', 'email', 'max:255'],
+        'course'          => ['nullable', 'string', 'max:255'],
+        'year_level'      => ['nullable', 'string', 'max:50'],
+        'contact_number'  => ['nullable', 'string', 'max:50'],
+    ]);
 
-        if (!Schema::hasTable('tbl_users')) {
-            return response()->json(['ok' => true, 'student' => null]);
-        }
+    if (!Schema::hasTable('tbl_users')) {
+        return response()->json(['ok' => true, 'student' => null]);
+    }
 
-        $query = User::query()->where('role', 'student');
+    $email = trim((string)($data['email'] ?? ''));
+    $name  = trim((string)($data['student_name'] ?? ''));
 
-        if (!empty($data['email'])) {
-            $query->where('email', $data['email']);
-        } else {
-            $query->whereRaw('LOWER(name) = ?', [mb_strtolower($data['student_name'])]);
-        }
+    // Require at least email OR name to search
+    if ($email === '' && $name === '') {
+        return response()->json([
+            'ok' => false,
+            'message' => 'Provide at least an email or student name to search.',
+        ], 422);
+    }
 
-        $student = $query->first();
-        $created = false;
-                // If student exists but has no SIS yet → assign next SIS
-        if ($student && (empty($student->sis))) {
-            $student->sis = $this->generateNextSis();
-            $student->save();
-        }
+    $query = User::query()->whereRaw('LOWER(role) = ?', ['student']);
 
 
-        // If not found but we have email → create new account
-        if (!$student && !empty($data['email'])) {
-            $student = new User();
+    if ($email !== '') {
+        $query->where('email', $email);
+    } else {
+        $query->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
+    }
 
-            // 🔹 auto-generate SIS
-            $student->sis            = $this->generateNextSis();
+    $student = $query->first();
+    $created = false;
 
-            $student->name           = $data['student_name'];
-            $student->email          = $data['email'];
-            $student->course         = $data['course'] ?? null;
-            $student->year_level     = $this->mapYearLevelForUser($data['year_level'] ?? null);
-            $student->contact_number = $data['contact_number'] ?? null;
-            $student->role                 = 'student';
-            $student->appointments_enabled = 0;
-            $student->password             = Hash::make('12345678'); // default 1–8
-            $student->save();
-            $created = true;
-        }
+    if ($student && empty($student->sis)) {
+        $student->sis = $this->generateNextSis();
+        $student->save();
+    }
 
+    // If not found, only CREATE if we have enough info
+    if (!$student && $email !== '') {
+        $hasEnoughToCreate = ($name !== '' && !empty($data['course']) && !empty($data['year_level']));
 
-        // still nothing and no email → tell counselor to type an email
-        if (!$student) {
+        if (!$hasEnoughToCreate) {
             return response()->json([
-                'ok'      => false,
-                'message' => 'This student has no account yet. Please provide an email so a student account can be created automatically.',
+                'ok' => false,
+                'message' => 'No student account found for this email. Fill Student Name, Course, and Year Level to auto-create.',
             ], 422);
         }
 
-                return response()->json([
-                    'ok'      => true,
-                    'created' => $created,
-                    'student' => [
-                        'id'         => $student->id,
-                        'name'       => $student->name,
-                        'email'      => $student->email,
-                        'sis'            => $student->sis,
-                        'course'     => $this->normalizeCourse($student->course),
-                        'year_level' => $this->mapYearLevelShort($student->year_level),
-                        'contact_number' => $student->contact_number,
-                    ],
-                ]);
+        $student = new User();
+        $student->sis            = $this->generateNextSis();
+        $student->name           = $name;
+        $student->email          = $email;
+        $student->course         = $data['course'];
+        $student->year_level     = $this->mapYearLevelForUser($data['year_level']);
+        $student->contact_number = $data['contact_number'] ?? null;
+        $student->role                 = 'student';
+        $student->appointments_enabled = 0;
+        $student->password             = Hash::make('12345678');
+        $student->save();
 
+        $created = true;
     }
+
+    if (!$student) {
+        return response()->json([
+            'ok' => false,
+            'message' => 'Student not found. Provide an email to auto-create an account.',
+        ], 422);
+    }
+
+    return response()->json([
+        'ok'      => true,
+        'created' => $created,
+        'student' => [
+            'id'             => $student->id,
+            'name'           => $student->name,
+            'email'          => $student->email,
+            'sis'            => $student->sis,
+            'course'         => $this->normalizeCourse($student->course),
+            'year_level'     => $this->mapYearLevelShort($student->year_level),
+            'contact_number' => $student->contact_number,
+        ],
+    ]);
+}
+
 
     /**
      * Store Walk-in + appointment + case note

@@ -603,31 +603,33 @@
     const courseVal = topCourseInput ? topCourseInput.value.trim()  : '';
     const yearVal   = topYearSelect  ? (topYearSelect.value || '').trim() : '';
 
-    if (!nameVal || !emailVal || !courseVal || !yearVal) {
+    if (!emailVal && !nameVal) {
       return false;
     }
+
 
     try {
       const url   = '{{ route('counselor.walkins.check_student') }}';
       const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-CSRF-TOKEN': token,
-        },
-        body: JSON.stringify({
-          student_name:   nameVal,
-          email:          emailVal,
-          course:         courseVal,
-          year_level:     yearVal,
-          contact_number: topContactInput ? topContactInput.value : null,
-        }),
-      });
+const res = await fetch(url, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'X-CSRF-TOKEN': token,
+  },
+  body: JSON.stringify({
+    student_name:   nameVal || null,
+    email:          emailVal || null,
+    course:         courseVal || null,
+    year_level:     yearVal || null,
+    contact_number: topContactInput ? topContactInput.value : null,
+  }),
+});
 
-      const data = await res.json();
+const data = await res.json();
+
 
       if (!data.ok) {
         const msg = data.message || 'Could not verify or create the student account.';
@@ -896,6 +898,26 @@
       });
     });
   }
+  let lookupTimer = null;
+
+function debounceLookup() {
+  clearTimeout(lookupTimer);
+  lookupTimer = setTimeout(async () => {
+    // only try if there is an email
+    const emailVal = emailInput ? emailInput.value.trim() : '';
+    if (!emailVal) return;
+    await performStudentLookup();
+  }, 450);
+}
+
+if (emailInput) {
+  emailInput.addEventListener('blur', debounceLookup);
+  emailInput.addEventListener('input', () => {
+    studentChecked = false;
+    debounceLookup();
+  });
+}
+
 // ===== END SESSION =====
   endBtn.addEventListener('click', function (e){
     if (!sessionStart) {
