@@ -13,6 +13,9 @@
   //    e.g. $canStartWalkin = $hasAnyAvailabilityForNow;
   $canStartWalkin = $canStartWalkin ?? true;
 @endphp
+<style>
+  #studentAccountInfo b { font-weight: 700; }
+</style>
 
 
 <div class="max-w-4xl mx-auto">
@@ -505,6 +508,43 @@
       ? statusChip.lastChild.textContent = ' Completed'
       : statusChip.append(' Completed');
   }
+  function setLookupState(state, msg = '') {
+  if (!studentAccountInfo) return;
+
+  const base = 'mt-2 text-xs leading-relaxed';
+  studentAccountInfo.classList.remove('hidden');
+
+  if (state === 'checking') {
+    studentAccountInfo.className = base + ' text-slate-500';
+    studentAccountInfo.textContent = msg || 'Verifying student…';
+    return;
+  }
+
+  if (state === 'ok') {
+    studentAccountInfo.className = base + ' text-emerald-700';
+    // ok messages are controlled by your code; keep as text for consistency
+    studentAccountInfo.innerHTML = msg;
+    return;
+  }
+
+  if (state === 'error') {
+    studentAccountInfo.className = base + ' text-rose-700';
+    studentAccountInfo.textContent = msg || 'Could not verify the student.';
+    return;
+  }
+
+  // idle
+  studentAccountInfo.classList.add('hidden');
+  studentAccountInfo.textContent = '';
+}
+
+function lockNameField(locked) {
+  if (!topNameInput) return;
+  topNameInput.readOnly = !!locked;
+  topNameInput.classList.toggle('bg-slate-50', !!locked);
+  topNameInput.classList.toggle('cursor-not-allowed', !!locked);
+}
+
 
   // ===== SYNC CASE NOTE HEADER FROM TOP FIELDS =====
   function syncCaseNoteHeader() {
@@ -591,138 +631,169 @@
   })();
 
   // ===== COMMON HELPER: CHECK / CREATE STUDENT + AUTOFILL =====
-  async function performStudentLookup() {
-    const liveErrorEl = document.getElementById('studentNameLiveError');
-    if (liveErrorEl) {
-      liveErrorEl.textContent = '';
-      liveErrorEl.classList.add('hidden');
-    }
+async function performStudentLookup({ silent = true } = {}) {
+  const liveErrorEl = document.getElementById('studentNameLiveError');
+  if (liveErrorEl) {
+    liveErrorEl.textContent = '';
+    liveErrorEl.classList.add('hidden');
+  }
 
-    const nameVal   = topNameInput   ? topNameInput.value.trim()    : '';
-    const emailVal  = emailInput     ? emailInput.value.trim()      : '';
-    const courseVal = topCourseInput ? topCourseInput.value.trim()  : '';
-    const yearVal   = topYearSelect  ? (topYearSelect.value || '').trim() : '';
+  const nameVal   = topNameInput   ? topNameInput.value.trim()    : '';
+  const emailVal  = emailInput     ? emailInput.value.trim()      : '';
+  const courseVal = topCourseInput ? topCourseInput.value.trim()  : '';
+  const yearVal   = topYearSelect  ? (topYearSelect.value || '').trim() : '';
 
-    if (!emailVal && !nameVal) {
-      return false;
-    }
+  if (!emailVal && !nameVal) return false;
 
+  // smooth UI feedback
+  setLookupState('checking', 'Verifying student…');
 
-    try {
-      const url   = '{{ route('counselor.walkins.check_student') }}';
-      const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+  try {
+    const url   = '{{ route('counselor.walkins.check_student') }}';
+    const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 
-const res = await fetch(url, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-    'X-CSRF-TOKEN': token,
-  },
-  body: JSON.stringify({
-    student_name:   nameVal || null,
-    email:          emailVal || null,
-    course:         courseVal || null,
-    year_level:     yearVal || null,
-    contact_number: topContactInput ? topContactInput.value : null,
-  }),
-});
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-TOKEN': token,
+      },
+      body: JSON.stringify({
+        student_name:   nameVal || null,
+        email:          emailVal || null,
+        course:         courseVal || null,
+        year_level:     yearVal || null,
+        contact_number: topContactInput ? topContactInput.value : null,
+      }),
+    });
 
-const data = await res.json();
+    const data = await res.json();
 
+    if (!data.ok) {
+      const msg = data.message || 'Could not verify or create the student account.';
 
-      if (!data.ok) {
-        const msg = data.message || 'Could not verify or create the student account.';
+      // show quiet inline error while typing
+      setLookupState('error', msg);
 
-        if (liveErrorEl) {
-          liveErrorEl.textContent = msg;
-          liveErrorEl.classList.remove('hidden');
-        }
+      // still keep the old red error under name if you want
+      if (liveErrorEl) {
+        liveErrorEl.textContent = msg;
+        liveErrorEl.classList.remove('hidden');
+      }
 
+      // only show Swal if NOT silent (e.g., Start Session)
+      if (!silent) {
         Swal.fire({
           icon: 'error',
           title: 'Student account issue',
           text: msg,
           confirmButtonColor: '#ef4444'
         });
-
-        return false;
       }
 
-      // reset flags first
-      justCreatedAccount = false;
-      justCreatedEmail   = null;
-      justCreatedSis     = null;
-      currentStudentSis  = null;
+      studentChecked = false;
+      lockNameField(false);
+      return false;
+    }
 
-      // Autofill from backend (in case there was existing data)
-      if (data.student) {
-        if (topCourseInput && data.student.course) {
-          topCourseInput.value = data.student.course;
-        }
+    // reset flags
+    justCreatedAccount = false;
+    justCreatedEmail   = null;
+    justCreatedSis     = null;
+    currentStudentSis  = null;
 
-        if (topYearSelect && data.student.year_level) {
-          topYearSelect.value = data.student.year_level;
-        }
+    // ===== EXISTING STUDENT =====
+    if (data.student && !data.created) {
+      // SIS
+      if (data.student.sis) currentStudentSis = data.student.sis;
 
-        if (emailInput && data.student.email) {
-          emailInput.value = data.student.email;
-        }
+      // auto-fill + normalize fields
+      if (topCourseInput && data.student.course) topCourseInput.value = data.student.course;
+      if (topYearSelect && data.student.year_level) topYearSelect.value = data.student.year_level;
+      if (emailInput && data.student.email) emailInput.value = data.student.email;
+      if (topContactInput && data.student.contact_number) topContactInput.value = data.student.contact_number;
 
-        if (data.student.contact_number && topContactInput) {
-          topContactInput.value = data.student.contact_number;
-        }
-
-        if (data.student.sis) {
-          currentStudentSis = data.student.sis;
-        }
-
-        if (studentAccountInfo) {
-          // 🔹 Organized info line with SIS
-          studentAccountInfo.innerHTML =
-            'Existing LumiCHAT student account detected.' +
-            (currentStudentSis
-              ? '<br><span style="font-size:11px;">SIS: <b>' + currentStudentSis + '</b></span>'
-              : '');
-          studentAccountInfo.classList.remove('hidden');
-        }
-
-        syncCaseNoteHeader();
-        saveFormToStorage();
-      }
-
-      // If backend created a new account
-      if (data.created) {
-        const emailVal2 = emailInput ? emailInput.value : (data.student?.email || '');
-        justCreatedAccount = true;
-        justCreatedEmail   = emailVal2 || emailVal;
-        justCreatedSis     = data.student && data.student.sis ? data.student.sis : null;
-        currentStudentSis  = justCreatedSis;
-
-        if (studentAccountInfo) {
-          studentAccountInfo.innerHTML =
-            'No previous account was found. A new student account has been created.' +
-            (justCreatedSis
-              ? '<br><span style="font-size:11px;">SIS: <b>' + justCreatedSis + '</b></span>'
-              : '');
-          studentAccountInfo.classList.remove('hidden');
+      // ✅ auto-correct name (truth comes from DB)
+      if (topNameInput && data.student.name) {
+        const actual = (data.student.name || '').trim();
+        if (actual) {
+          topNameInput.value = actual;
+          if (cnNameInput) cnNameInput.value = actual;
         }
       }
+
+      // lock name so user can’t re-break it after match
+      lockNameField(true);
+
+      // clean message (single source of truth — no double overwrite)
+      let msg = 'Student found. Details were auto-filled.';
+      if (currentStudentSis) msg += ` SIS: ${currentStudentSis}`;
+      msg += ' Name is locked to avoid mismatch. Change email to unlock.';
+      setLookupState('ok', msg);  
+
+
+      syncCaseNoteHeader();
+      saveFormToStorage();
 
       studentChecked = true;
       return true;
+    }
 
-    } catch (err) {
-      console.error(err);
+    // ===== NEW ACCOUNT CREATED =====
+    if (data.student && data.created) {
+      justCreatedAccount = true;
+      justCreatedEmail   = (data.student.email || emailVal || null);
+      justCreatedSis     = data.student.sis || null;
+      currentStudentSis  = justCreatedSis;
+
+      // don’t lock name here; they just provided it
+      lockNameField(false);
+
+      let msg = `
+        <div class="space-y-1">
+          <div><b>No account found</b> — a new student account was created.</div>
+          ${justCreatedSis ? `<div class="text-[11px] text-slate-600">SIS: <b class="text-slate-900">${justCreatedSis}</b></div>` : ''}
+          <div class="text-[11px] text-slate-500">Default password: <b class="text-slate-900">12345678</b></div>
+          <div class="text-[11px] text-slate-500">Ask the student to change it after first login.</div>
+        </div>
+      `;
+      setLookupState('ok', msg);
+
+
+
+      syncCaseNoteHeader();
+      saveFormToStorage();
+
+      studentChecked = true;
+      return true;
+    }
+
+    // fallback
+    setLookupState('idle');
+    lockNameField(false);
+    studentChecked = false;
+    return false;
+
+  } catch (err) {
+    console.error(err);
+    setLookupState('error', 'Server error — could not verify the student right now.');
+
+    if (!silent) {
       Swal.fire({
         icon: 'error',
         title: 'Server error',
         text: 'Could not verify the student right now. Please try again.',
         confirmButtonColor: '#ef4444'
       });
-      return false;
     }
+
+    studentChecked = false;
+    lockNameField(false);
+    return false;
   }
+}
+
 
   // ===== START SESSION =====
   startBtn.addEventListener('click', async function (e){
@@ -757,7 +828,7 @@ const data = await res.json();
 
     // If we haven't checked yet (or fields changed), do it now
     if (!studentChecked) {
-      const ok = await performStudentLookup();
+      const ok = await performStudentLookup({ silent: false });
       if (!ok) return;
     }
 
@@ -888,6 +959,10 @@ const data = await res.json();
         startBtn.disabled = !canStartFlag;
         startBtn.classList.remove('opacity-60', 'cursor-default', 'cursor-not-allowed');
 
+        setLookupState('idle');
+        lockNameField(false);
+
+
         Swal.fire({
           icon: 'success',
           title: 'Session discarded',
@@ -900,23 +975,39 @@ const data = await res.json();
   }
   let lookupTimer = null;
 
+function looksLikeEmail(v) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+}
+
 function debounceLookup() {
   clearTimeout(lookupTimer);
   lookupTimer = setTimeout(async () => {
-    // only try if there is an email
     const emailVal = emailInput ? emailInput.value.trim() : '';
-    if (!emailVal) return;
-    await performStudentLookup();
-  }, 450);
+    if (!looksLikeEmail(emailVal)) return;  // ✅ don’t call backend too early
+    await performStudentLookup({ silent: true });
+  }, 500);
 }
+
 
 if (emailInput) {
   emailInput.addEventListener('blur', debounceLookup);
+
   emailInput.addEventListener('input', () => {
     studentChecked = false;
+    lockNameField(false);
+
+    const emailVal = emailInput.value.trim();
+
+    // ✅ if cleared or invalid, reset UI (seamless)
+    if (!emailVal || !looksLikeEmail(emailVal)) {
+      setLookupState('idle');
+      return;
+    }
+
     debounceLookup();
   });
 }
+
 
 // ===== END SESSION =====
   endBtn.addEventListener('click', function (e){

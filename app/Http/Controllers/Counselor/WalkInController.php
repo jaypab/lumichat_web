@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\View\View;
 use Illuminate\Http\Request;
-
+use Illuminate\Database\QueryException;
 class WalkInController extends Controller
 {
     /**
@@ -149,6 +149,8 @@ private function hasCurrentAvailability(): bool
      * AJAX: check student, auto-create account if needed.
      * Route: POST /counselor/walk-ins/check-student
      */
+
+
 public function checkStudent(Request $request)
 {
     $data = $request->validate([
@@ -166,7 +168,6 @@ public function checkStudent(Request $request)
     $email = trim((string)($data['email'] ?? ''));
     $name  = trim((string)($data['student_name'] ?? ''));
 
-    // Require at least email OR name to search
     if ($email === '' && $name === '') {
         return response()->json([
             'ok' => false,
@@ -174,8 +175,20 @@ public function checkStudent(Request $request)
         ], 422);
     }
 
-    $query = User::query()->whereRaw('LOWER(role) = ?', ['student']);
+    // ✅ If email exists in tbl_users but NOT a student -> BLOCK (prevents SQLSTATE mess)
+    if ($email !== '') {
+        $anyUser = User::where('email', $email)->first();
 
+        if ($anyUser && mb_strtolower((string)$anyUser->role) !== 'student') {
+            return response()->json([
+                'ok' => false,
+                'message' => 'This email is already used by a non-student account (Admin/Counselor). Please use the student’s email.',
+            ], 422);
+        }
+    }
+
+    // Student lookup (only students)
+    $query = User::query()->whereRaw('LOWER(role) = ?', ['student']);
 
     if ($email !== '') {
         $query->where('email', $email);
@@ -186,15 +199,15 @@ public function checkStudent(Request $request)
     $student = $query->first();
     $created = false;
 
+    // Assign SIS if missing
     if ($student && empty($student->sis)) {
         $student->sis = $this->generateNextSis();
         $student->save();
     }
 
-    // If not found, only CREATE if we have enough info
+    // ✅ Create only if email is new AND we have enough info
     if (!$student && $email !== '') {
         $hasEnoughToCreate = ($name !== '' && !empty($data['course']) && !empty($data['year_level']));
-
         if (!$hasEnoughToCreate) {
             return response()->json([
                 'ok' => false,
@@ -202,19 +215,27 @@ public function checkStudent(Request $request)
             ], 422);
         }
 
-        $student = new User();
-        $student->sis            = $this->generateNextSis();
-        $student->name           = $name;
-        $student->email          = $email;
-        $student->course         = $data['course'];
-        $student->year_level     = $this->mapYearLevelForUser($data['year_level']);
-        $student->contact_number = $data['contact_number'] ?? null;
-        $student->role                 = 'student';
-        $student->appointments_enabled = 0;
-        $student->password             = Hash::make('12345678');
-        $student->save();
+        try {
+            $student = new User();
+            $student->sis            = $this->generateNextSis();
+            $student->name           = $name;
+            $student->email          = $email;
+            $student->course         = $data['course'];
+            $student->year_level     = $this->mapYearLevelForUser($data['year_level']);
+            $student->contact_number = $data['contact_number'] ?? null;
+            $student->role                 = 'student';
+            $student->appointments_enabled = 0;
+            $student->password             = Hash::make('12345678');
+            $student->save();
 
-        $created = true;
+            $created = true;
+        } catch (QueryException $e) {
+            // ✅ Never leak SQL errors to UI
+            return response()->json([
+                'ok' => false,
+                'message' => 'Cannot create student with this email. It may already be used. Please use a different student email.',
+            ], 422);
+        }
     }
 
     if (!$student) {
