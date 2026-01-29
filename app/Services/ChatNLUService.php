@@ -308,6 +308,9 @@ class ChatNLUService
             'disappointed' => [
                 'disappoint', 'disappointed', 'dissapointed', 'dissappointed', 'disapointed',
                 'let down', 'letdown', 'let me down',
+                'failed', 'fail', 'failing', 'failure',
+                'didnt make it', 'didn\'t make it', 'cant do it', 'can\'t do it',
+                'not good enough', 'not enough',
             ],
             
             'anxious' => [
@@ -315,6 +318,8 @@ class ChatNLUService
                 'panicky', 'panic', 'panicking',
                 'afraid', 'scared', 'terrified', 'fearful', 'worried', 'worrying',
                 'nervous', 'on edge', 'uneasy',
+                'grade', 'grades', 'gpa', 'score', 'scores',
+                'performance', 'mess up', 'messed up', 'screwed up', 'screw up',
             ],
 
             'stressed' => [
@@ -322,6 +327,8 @@ class ChatNLUService
                 'pressure', 'pressured', 'under pressure',
                 'overwhelm', 'overwhelmed', 'too much',
                 'burnout', 'burn out', 'burned out',
+                'academic pressure', 'school pressure',
+                'deadline', 'deadlines', 'requirements',
             ],
 
             'tired' => [
@@ -369,6 +376,8 @@ class ChatNLUService
             'confused' => [
                 'confused', 'confusing', 'lost', 'dont know what to do', 'don\'t know what to do',
                 'unsure', 'uncertain', 'mixed up',
+                'dont know', 'don\'t know', 'idk', 'no idea',
+                'what do i do', 'what should i do', 'what can i do',
             ],
 
             'bored' => [
