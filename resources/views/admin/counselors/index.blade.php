@@ -155,30 +155,35 @@
                 </div>
               </td>
 
-              {{-- Weekly availability (redesigned for cleaner look) --}}
+              {{-- Weekly availability (cleaner, more organized layout) --}}
               <td class="px-6 lg:pl-6 py-4 align-top">
                 @php
                   $dayLabel = [0=>'Sun',1=>'Mon',2=>'Tue',3=>'Wed',4=>'Thu',5=>'Fri',6=>'Sat',7=>'Sun'];
                   $weekly   = ($c->availabilities ?? collect())->filter(fn($a) => !is_null($a->weekday));
                 @endphp
 
-                <div class="max-w-md">
+                <div class="max-w-xl">
                   @if($weekly->isEmpty())
-                    <span class="text-slate-400 text-xs">No slots</span>
+                    <span class="text-slate-400 text-xs italic">No availability set</span>
                   @else
-                    <div class="grid grid-cols-2 gap-2">
+                    <div class="space-y-2">
                       @foreach ($weekly->groupBy('weekday') as $weekday => $slots)
                         @php $label = $dayLabel[(int)$weekday] ?? '—'; @endphp
-                        <div class="flex items-start gap-2 bg-slate-50 dark:bg-gray-800 rounded-lg px-3 py-2 border border-slate-200 dark:border-gray-700">
-                          <div class="flex-shrink-0 w-9 pt-0.5">
-                            <span class="text-xs font-bold text-slate-600 dark:text-gray-400">{{ $label }}</span>
+                        <div class="flex items-start gap-2">
+                          {{-- Day label --}}
+                          <div class="flex-shrink-0 w-12">
+                            <span class="inline-flex items-center justify-center w-10 h-6 text-[11px] font-semibold text-indigo-700 bg-indigo-50 rounded border border-indigo-200">
+                              {{ $label }}
+                            </span>
                           </div>
-                          <div class="flex-1 min-w-0">
-                            <div class="text-xs text-slate-700 dark:text-gray-300 space-y-0.5">
-                              @foreach ($slots as $slot)
-                                <div class="truncate">{{ $fmtTime($slot->start_time) }}–{{ $fmtTime($slot->end_time) }}</div>
-                              @endforeach
-                            </div>
+                          
+                          {{-- Time slots as inline pills --}}
+                          <div class="flex-1 flex flex-wrap gap-1.5">
+                            @foreach ($slots as $slot)
+                              <span class="inline-flex items-center px-2.5 py-1 text-[11px] font-medium text-slate-700 bg-slate-100 rounded-md border border-slate-200 whitespace-nowrap">
+                                {{ $fmtTime($slot->start_time) }}–{{ $fmtTime($slot->end_time) }}
+                              </span>
+                            @endforeach
                           </div>
                         </div>
                       @endforeach

@@ -142,8 +142,8 @@ class ChatController extends Controller
                 }
                 return $chat;
             });
-    } elseif ($showGreeting && session('start_fresh')) {
-        // ✅ Create a fresh session with greeting message
+    } elseif ($showGreeting) {
+        // ✅ Create a fresh session with greeting message (on first login or "New Chat")
         $isFirstLoad = true;  // Flag to trigger animation
         session()->forget('start_fresh');
         
@@ -490,6 +490,20 @@ if ($nonMental && !$unreadable) {
     $inEmotionalRange = ($msgRisk !== 'low') || !empty($labels);
     $inVentWindow     = $inEmotionalRange && ($ventTurns < 3) && !$bypass;
 
+    // 🔍 DEBUG: Track venting flow decision
+    \Log::info('[VENT_FLOW] Session state', [
+        'session_id' => $sessionId,
+        'user_id' => $userId,
+        'vent_turns' => $ventTurns,
+        'msg_risk' => $msgRisk,
+        'labels' => $labels,
+        'bypass' => $bypass,
+        'in_emotional_range' => $inEmotionalRange,
+        'in_vent_window' => $inVentWindow,
+        'flags' => $flags,
+        'message_preview' => \Illuminate\Support\Str::limit($analysisText, 60),
+    ]);
+
     // Session-level stats for smarter context
     $sessionEmotionCounts = $this->emotionsAsCounts($session->emotions ?? []);
     $sessionUserMsgCount  = Chat::where('chat_session_id', $sessionId)
@@ -616,6 +630,15 @@ if ($nonMental && !$unreadable) {
             ],
         ];
     } elseif ($inVentWindow && !$askedForAppt && $msgRisk !== 'high') {
+        // 🔍 DEBUG: Venting branch taken
+        \Log::info('[VENT_FLOW] Taking VENTING branch', [
+            'session_id' => $sessionId,
+            'stage' => $ventTurns + 1,
+            'in_vent_window' => $inVentWindow,
+            'asked_for_appt' => $askedForAppt,
+            'msg_risk' => $msgRisk,
+        ]);
+        
         $stage = max(1, min(3, $ventTurns + 1));
         
         // ✅ Get conversation memory FIRST for context
@@ -648,6 +671,12 @@ if ($nonMental && !$unreadable) {
         
         $botReplies[] = ['text' => $replyText, 'buttons' => []];
         session([$ventKey => $ventTurns + 1]);
+        
+        \Log::info('[VENT_FLOW] Venting response generated', [
+            'session_id' => $sessionId,
+            'new_vent_turns' => $ventTurns + 1,
+            'topic' => $topic,
+        ]);
    } elseif (
     (
         ($flags['wants_coping'] ?? false)
@@ -656,10 +685,27 @@ if ($nonMental && !$unreadable) {
     )
     && $canOfferCoping
 ) {
-    // we’re explicitly going into coping flow
+    // we're explicitly going into coping flow
+    \Log::info('[VENT_FLOW] Taking COPING branch', [
+        'session_id' => $sessionId,
+        'wants_coping' => $flags['wants_coping'] ?? false,
+        'auto_coping_trigger' => $autoCopingTrigger,
+        'moderate_hits' => $moderateHits,
+    ]);
+    
     session([$copingThrottleKey => $nowEpoch]);
     $callRasa = true;
 } else {
+    // 🔍 DEBUG: Default Rasa branch
+    \Log::info('[VENT_FLOW] Taking DEFAULT RASA branch', [
+        'session_id' => $sessionId,
+        'reason' => 'No venting/coping conditions met',
+        'in_vent_window' => $inVentWindow,
+        'vent_turns' => $ventTurns,
+        'bypass' => $bypass,
+        'msg_risk' => $msgRisk,
+    ]);
+    
     $callRasa = true;
 }
 
