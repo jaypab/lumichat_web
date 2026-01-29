@@ -2,26 +2,26 @@
 @section('title', 'Contact Support')
 
 @section('content')
-<div class="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
+<div class="max-w-5xl mx-auto p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
 
-  {{-- ======= Header (gradient band) ======= --}}
-  <section class="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm animate-fadeup">
-    <div class="p-5 sm:p-6">
+  {{-- ======= Header (gradient band) - Mobile Optimized ======= --}}
+  <section class="rounded-xl sm:rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm animate-fadeup">
+    <div class="p-4 sm:p-5 md:p-6">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 class="text-xl sm:text-2xl font-bold tracking-tight">Contact Support</h2>
-          <p class="text-white/80 text-sm mt-0.5">Reach the LumiCHAT developers directly.</p>
+          <h2 class="text-lg sm:text-xl md:text-2xl font-bold tracking-tight">Contact Support</h2>
+          <p class="text-white/80 text-xs sm:text-sm mt-0.5">Reach the LumiCHAT developers directly.</p>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           {{-- in the gradient header pill --}}
-          <span class="inline-flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm ring-1 ring-white/20">
-            <svg class="h-4 w-4 opacity-90" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5z"/></svg>
+          <span class="inline-flex items-center gap-2 rounded-lg sm:rounded-xl bg-white/15 px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm ring-1 ring-white/20">
+            <svg class="h-3.5 w-3.5 sm:h-4 sm:w-4 opacity-90" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5z"/></svg>
             5 developers
           </span>
 
           <a href="{{ url('/settings') }}"
-             class="inline-flex items-center gap-2 rounded-xl bg-white text-slate-900 px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
+             class="inline-flex items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl bg-white text-slate-900 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
             ← Back to Settings
           </a>
         </div>

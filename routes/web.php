@@ -99,7 +99,7 @@ Route::middleware('auth' , 'tos')->group(function () {
     Route::get('/chat/new',             [ChatController::class, 'newChat'])->name('chat.new');
     Route::get('/chat/history',         [ChatController::class, 'history'])->name('chat.history');
     Route::post('/chat',                [ChatController::class, 'store'])
-         ->middleware('throttle:60,1')
+         ->middleware('throttle:10,1') // 10 messages per minute to prevent spam
          ->name('chat.store');
     Route::get('/chat/view/{id}',       [ChatController::class, 'viewSession'])->name('chat.view');
     Route::delete('/chat/session/{id}', [ChatController::class, 'deleteSession'])->name('chat.deleteSession');

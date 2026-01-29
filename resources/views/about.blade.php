@@ -150,51 +150,51 @@
 @endpush
 
 @section('content')
-<div class="max-w-6xl mx-auto p-6 lg:p-8 space-y-8">
+<div class="max-w-6xl mx-auto p-3 sm:p-4 md:p-6 lg:p-8 space-y-6 sm:space-y-8">
 
-  {{-- ======= HERO ======= --}}
-  <section class="about-hero rounded-3xl shadow-sm ring-1 ring-gray-200/60 dark:ring-gray-700/60 p-6 md:p-10 reveal">
-    <div class="flex items-start gap-5">
+  {{-- ======= HERO - Mobile Optimized ======= --}}
+  <section class="about-hero rounded-2xl sm:rounded-3xl shadow-sm ring-1 ring-gray-200/60 dark:ring-gray-700/60 p-4 sm:p-6 md:p-10 reveal">
+    <div class="flex flex-col sm:flex-row items-start gap-4 sm:gap-5">
       <div class="shrink-0 relative">
         <img src="{{ asset('images/chatbot.png') }}" alt="LumiCHAT logo"
-             class="w-14 h-14 md:w-16 md:h-16 rounded-2xl shadow ring-1 ring-black/5 dark:ring-white/10
+             class="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-xl sm:rounded-2xl shadow ring-1 ring-black/5 dark:ring-white/10
                     transition-transform duration-300 will-change-transform hover:scale-[1.03]">
       </div>
       <div class="grow">
-        <h2 class="text-2xl md:text-3xl font-extrabold tracking-tight">What is LumiCHAT?</h2>
-        <p class="mt-2 text-[15px] md:text-[16px] leading-relaxed text-gray-600 dark:text-gray-300 max-w-3xl">
+        <h2 class="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight">What is LumiCHAT?</h2>
+        <p class="mt-2 text-sm sm:text-[15px] md:text-[16px] leading-relaxed text-gray-600 dark:text-gray-300 max-w-3xl">
           {{ $build['name'] }} is a student-focused, expert-aligned support chatbot built for {{ $build['institution'] }}.
           It offers empathetic, guided conversations, basic self-help suggestions, and counselor referrals — <span class="font-semibold">without</span> providing medical diagnosis.
         </p>
-        <div class="mt-4 text-[13px] text-gray-500 dark:text-gray-400">
+        <div class="mt-3 sm:mt-4 text-xs sm:text-[13px] text-gray-500 dark:text-gray-400">
           <span class="font-semibold">Version:</span> {{ $build['version'] }}
         </div>
       </div>
     </div>
 
-    {{-- Quick stats --}}
-    <div class="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
-      <div class="rounded-2xl bg-white/70 dark:bg-gray-800/60 p-4 ring-1 ring-gray-200/60 dark:ring-gray-700/60 text-center">
-        <div class="text-xs text-gray-500 dark:text-gray-400">Stack</div>
-        <div class="text-sm font-semibold">Laravel + React + Rasa</div>
+    {{-- Quick stats - Mobile responsive --}}
+    <div class="mt-4 sm:mt-6 grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+      <div class="rounded-xl sm:rounded-2xl bg-white/70 dark:bg-gray-800/60 p-3 sm:p-4 ring-1 ring-gray-200/60 dark:ring-gray-700/60 text-center">
+        <div class="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">Stack</div>
+        <div class="text-xs sm:text-sm font-semibold mt-0.5">Laravel + React + Rasa</div>
       </div>
-      <div class="rounded-2xl bg-white/70 dark:bg-gray-800/60 p-4 ring-1 ring-gray-200/60 dark:ring-gray-700/60 text-center">
-        <div class="text-xs text-gray-500 dark:text-gray-400">Encryption</div>
-        <div class="text-sm font-semibold">Data-at-Rest (opt-in)</div>
+      <div class="rounded-xl sm:rounded-2xl bg-white/70 dark:bg-gray-800/60 p-3 sm:p-4 ring-1 ring-gray-200/60 dark:ring-gray-700/60 text-center">
+        <div class="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">Encryption</div>
+        <div class="text-xs sm:text-sm font-semibold mt-0.5">Data-at-Rest (opt-in)</div>
       </div>
-      <div class="rounded-2xl bg-white/70 dark:bg-gray-800/60 p-4 ring-1 ring-gray-200/60 dark:ring-gray-700/60 text-center">
-        <div class="text-xs text-gray-500 dark:text-gray-400">Safety</div>
-        <div class="text-sm font-semibold">High-risk escalation</div>
+      <div class="rounded-xl sm:rounded-2xl bg-white/70 dark:bg-gray-800/60 p-3 sm:p-4 ring-1 ring-gray-200/60 dark:ring-gray-700/60 text-center">
+        <div class="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">Safety</div>
+        <div class="text-xs sm:text-sm font-semibold mt-0.5">High-risk escalation</div>
       </div>
-      <div class="rounded-2xl bg-white/70 dark:bg-gray-800/60 p-4 ring-1 ring-gray-200/60 dark:ring-gray-700/60 text-center">
-        <div class="text-xs text-gray-500 dark:text-gray-400">Audience</div>
-        <div class="text-sm font-semibold">TCC Students</div>
+      <div class="rounded-xl sm:rounded-2xl bg-white/70 dark:bg-gray-800/60 p-3 sm:p-4 ring-1 ring-gray-200/60 dark:ring-gray-700/60 text-center">
+        <div class="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">Audience</div>
+        <div class="text-xs sm:text-sm font-semibold mt-0.5">TCC Students</div>
       </div>
     </div>
   </section>
 
   {{-- ======= WRAPPER: sticky section nav + main ======= --}}
-  <div class="grid lg:grid-cols-[220px,1fr] gap-6">
+  <div class="grid lg:grid-cols-[220px,1fr] gap-4 sm:gap-6">
     @php
       $anchors = [
         ['id'=>'build','label'=>'How we built it'],
@@ -233,32 +233,32 @@
         </select>
       </div>
 
-      {{-- Build / Stack --}}
+      {{-- Build / Stack - Mobile Fixed --}}
       <section id="build" class="section-anchor space-y-4 reveal">
-        <h3 class="text-xl font-bold">How we created & implemented LumiCHAT</h3>
-        <div class="grid md:grid-cols-2 gap-4">
-          <div class="rounded-2xl bg-white/80 dark:bg-gray-800/70 shadow-sm ring-1 ring-gray-200/60 dark:ring-gray-700/60 p-5 transition hover:shadow-md hover:-translate-y-[2px]">
-            <h4 class="font-semibold">Frontend (Student UI)</h4>
-            <ul class="mt-2 list-disc pl-5 text-gray-600 dark:text-gray-300 space-y-1">
-              @foreach ($techStack['Frontend'] as $item) <li>{{ $item }}</li> @endforeach
+        <h3 class="text-lg sm:text-xl font-bold break-words">How we created & implemented LumiCHAT</h3>
+        <div class="grid md:grid-cols-2 gap-3 sm:gap-4">
+          <div class="rounded-xl sm:rounded-2xl bg-white/80 dark:bg-gray-800/70 shadow-sm ring-1 ring-gray-200/60 dark:ring-gray-700/60 p-4 sm:p-5 transition hover:shadow-md hover:-translate-y-[2px] overflow-hidden">
+            <h4 class="font-semibold text-sm sm:text-base break-words">Frontend (Student UI)</h4>
+            <ul class="mt-2 list-disc pl-4 sm:pl-5 text-gray-600 dark:text-gray-300 space-y-1 text-xs sm:text-sm break-words">
+              @foreach ($techStack['Frontend'] as $item) <li class="break-words">{{ $item }}</li> @endforeach
             </ul>
           </div>
-          <div class="rounded-2xl bg-white/80 dark:bg-gray-800/70 shadow-sm ring-1 ring-gray-200/60 dark:ring-gray-700/60 p-5 transition hover:shadow-md hover:-translate-y-[2px]">
-            <h4 class="font-semibold">Backend (Server)</h4>
-            <ul class="mt-2 list-disc pl-5 text-gray-600 dark:text-gray-300 space-y-1">
-              @foreach ($techStack['Backend'] as $item) <li>{{ $item }}</li> @endforeach
+          <div class="rounded-xl sm:rounded-2xl bg-white/80 dark:bg-gray-800/70 shadow-sm ring-1 ring-gray-200/60 dark:ring-gray-700/60 p-4 sm:p-5 transition hover:shadow-md hover:-translate-y-[2px] overflow-hidden">
+            <h4 class="font-semibold text-sm sm:text-base break-words">Backend (Server)</h4>
+            <ul class="mt-2 list-disc pl-4 sm:pl-5 text-gray-600 dark:text-gray-300 space-y-1 text-xs sm:text-sm break-words">
+              @foreach ($techStack['Backend'] as $item) <li class="break-words">{{ $item }}</li> @endforeach
             </ul>
           </div>
-          <div class="rounded-2xl bg-white/80 dark:bg-gray-800/70 shadow-sm ring-1 ring-gray-200/60 dark:ring-gray-700/60 p-5 transition hover:shadow-md hover:-translate-y-[2px]">
-            <h4 class="font-semibold">NLP & Chat Brain</h4>
-            <ul class="mt-2 list-disc pl-5 text-gray-600 dark:text-gray-300 space-y-1">
-              @foreach ($techStack['NLP / Chat'] as $item) <li>{{ $item }}</li> @endforeach
+          <div class="rounded-xl sm:rounded-2xl bg-white/80 dark:bg-gray-800/70 shadow-sm ring-1 ring-gray-200/60 dark:ring-gray-700/60 p-4 sm:p-5 transition hover:shadow-md hover:-translate-y-[2px] overflow-hidden">
+            <h4 class="font-semibold text-sm sm:text-base break-words">NLP & Chat Brain</h4>
+            <ul class="mt-2 list-disc pl-4 sm:pl-5 text-gray-600 dark:text-gray-300 space-y-1 text-xs sm:text-sm break-words">
+              @foreach ($techStack['NLP / Chat'] as $item) <li class="break-words">{{ $item }}</li> @endforeach
             </ul>
           </div>
-          <div class="rounded-2xl bg-white/80 dark:bg-gray-800/70 shadow-sm ring-1 ring-gray-200/60 dark:ring-gray-700/60 p-5 transition hover:shadow-md hover:-translate-y-[2px]">
-            <h4 class="font-semibold">Build & Config</h4>
-            <ul class="mt-2 list-disc pl-5 text-gray-600 dark:text-gray-300 space-y-1">
-              @foreach ($techStack['Infra / Build'] as $item) <li>{{ $item }}</li> @endforeach
+          <div class="rounded-xl sm:rounded-2xl bg-white/80 dark:bg-gray-800/70 shadow-sm ring-1 ring-gray-200/60 dark:ring-gray-700/60 p-4 sm:p-5 transition hover:shadow-md hover:-translate-y-[2px] overflow-hidden">
+            <h4 class="font-semibold text-sm sm:text-base break-words">Build & Config</h4>
+            <ul class="mt-2 list-disc pl-4 sm:pl-5 text-gray-600 dark:text-gray-300 space-y-1 text-xs sm:text-sm break-words">
+              @foreach ($techStack['Infra / Build'] as $item) <li class="break-words">{{ $item }}</li> @endforeach
             </ul>
           </div>
         </div>

@@ -15,8 +15,22 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Route;
 use App\Support\RiskHeuristics;
 
+// Import our new service classes
+use App\Services\ChatNLUService;
+use App\Services\ChatResponseService;
+use App\Services\ChatSessionService;
+
 class ChatController extends Controller
 {
+    /**
+     * Constructor with dependency injection for service classes
+     */
+    public function __construct(
+        private ChatNLUService $nluService,
+        private ChatResponseService $responseService,
+        private ChatSessionService $sessionService
+    ) {}
+
     /* =========================================================================
      | Helpers: language, risk, appointment, crisis
      * =========================================================================*/
@@ -111,7 +125,11 @@ class ChatController extends Controller
     $showGreeting = !$activeId;
 
     $chats = collect();
+    $greeting = null;
+    $isFirstLoad = false;
+    
     if ($activeId) {
+        // ✅ Load all messages including greeting from database
         $chats = Chat::where('chat_session_id', $activeId)
             ->orderBy('sent_at')
             ->orderBy('id')
@@ -124,13 +142,46 @@ class ChatController extends Controller
                 }
                 return $chat;
             });
+    } elseif ($showGreeting && session('start_fresh')) {
+        // ✅ Create a fresh session with greeting message
+        $isFirstLoad = true;  // Flag to trigger animation
+        session()->forget('start_fresh');
+        
+        $newSession = ChatSession::create([
+            'user_id' => $userId,
+            'title' => 'Starting conversation...',
+            'risk_level' => 'low',
+        ]);
+        
+        session(['chat_session_id' => $newSession->id]);
+        $activeId = $newSession->id;
+        
+        // Get user's first name for greeting
+        $first = $this->sessionService->preferredName();
+        
+        // Create personalized greeting
+        $greetingText = "Hi {$first}! 💜 I'm Lumi, and I'm really glad you're here. This is a safe space for whatever you're feeling — whether it's big or small, messy or clear, I'm here to listen. What's on your mind today?";
+        
+        // Save greeting message to database for persistence
+        Chat::create([
+            'chat_session_id' => $newSession->id,
+            'user_id' => $userId,
+            'sender' => 'bot',
+            'message' => Crypt::encryptString($greetingText),
+            'sent_at' => now(),
+        ]);
+        
+        // ✅ Pass greeting to JavaScript for animated display on first load only
+        // Keep it OUT of $chats during animation to avoid double display
+        // On subsequent page loads, activeId will be set and greeting will load from DB normally
+        $greeting = $greetingText;
     }
 
     // you don't actually use $thread in the blade, so either remove or keep if needed
     $thread  = null;
     $isLocked = false;
 
-    return view('chat', compact('chats', 'showGreeting', 'thread', 'isLocked'));
+    return view('chat', compact('chats', 'showGreeting', 'thread', 'isLocked', 'greeting'));
 }
 
 
@@ -213,26 +264,6 @@ public function store(Request $request)
     session()->forget('start_fresh');
 
     $sessionId = (int) $session->id;
-
-    // ===== 2.a) Seed a persistent greeting for this fresh session =====
-    if ($justCreated) {
-        $welcomeText = "Hi {$first}! I’m Lumi — how can I help you today?";
-
-        // Avoid duplicates if something runs twice accidentally
-        $alreadyHasBot = Chat::where('chat_session_id', $sessionId)
-            ->where('sender', 'bot')
-            ->exists();
-
-        if (!$alreadyHasBot) {
-            Chat::create([
-                'user_id'         => $userId,
-                'chat_session_id' => $sessionId,
-                'sender'          => 'bot',
-                'message'         => \Illuminate\Support\Facades\Crypt::encryptString($welcomeText),
-                'sent_at'         => now()->subSecond(),
-            ]);
-        }
-    }
 
     // ===== 3) ENGLISH-ONLY ANALYSIS (typo-tolerant) =====
     $norm       = $this->nluNormalize($analysisText);
@@ -359,7 +390,7 @@ $declinedReferral = $this->declinedReferral($analysisText);
             'chat_session_id' => $sessionId,
             'sender'          => 'bot',
             'message'         => \Illuminate\Support\Facades\Crypt::encryptString(
-                "No problem. Thank you for sharing with me today."
+                "Of course, {$first}. Thank you so much for trusting me with your feelings today — that takes real courage. 💜"
             ),
             'sent_at'         => now(),
         ]);
@@ -369,7 +400,7 @@ $declinedReferral = $this->declinedReferral($analysisText);
             'chat_session_id' => $sessionId,
             'sender'          => 'bot',
             'message'         => \Illuminate\Support\Facades\Crypt::encryptString(
-                "If you ever feel like talking again, you can just send another message and we’ll start from there."
+                "Anytime you need to talk, vent, or just have someone listen, I'm here. You never have to go through anything alone. Take care of yourself. 🤍"
             ),
             'sent_at'         => now(),
         ]);
@@ -582,12 +613,39 @@ if ($nonMental && !$unreadable) {
             'text'    => $ctaReply,
             'buttons' => [
                 ['title' => 'Book counselor', 'payload' => '{APPOINTMENT_LINK}'],
-                ['title' => 'Not now',        'payload' => '/deny{"confirm_topic":"referral"}'],
             ],
         ];
     } elseif ($inVentWindow && !$askedForAppt && $msgRisk !== 'high') {
-        $stage     = max(1, min(3, $ventTurns + 1));
-        $replyText = $this->empathicPrompt($first, $labels, $stage);
+        $stage = max(1, min(3, $ventTurns + 1));
+        
+        // ✅ Get conversation memory FIRST for context
+        $memory = $this->sessionService->getMemory($sessionId);
+        $previousTopic = $this->sessionService->getPrimaryTopic($memory);
+        
+        // ✅ Extract context from user input with memory context
+        $topic = $this->nluService->extractTopic($norm, $previousTopic, $memory);
+        $keywords = $this->nluService->extractKeyPhrases($norm);
+        
+        // ✅ Build memory-aware response (references previous turns)
+        $replyText = $this->responseService->buildMemoryAwareResponse(
+            $first,
+            $norm,
+            $labels,
+            $topic,
+            $keywords,
+            $stage,
+            $memory
+        );
+        
+        // ✅ Update conversation memory AFTER generating response
+        $this->sessionService->updateMemory(
+            $sessionId,
+            $topic,
+            $keywords,
+            $labels,
+            $replyText  // Store the question we asked
+        );
+        
         $botReplies[] = ['text' => $replyText, 'buttons' => []];
         session([$ventKey => $ventTurns + 1]);
    } elseif (
@@ -908,65 +966,66 @@ if ($nonMental && !$unreadable) {
 
       private function empathicPrompt(string $first, array $labels, int $stage): string
     {
-        $first = trim($first) !== '' ? $first : 'there';
+  $first = trim($first) !== '' ? $first : 'there';
 
-        $top = array_values(array_unique(array_slice($labels, 0, 2)));
-        $mirror = '';
-        if (!empty($top)) {
-            $mirror = ' — ' . implode(' & ', array_map(fn($x)=>strtolower($x), $top));
-        }
+  $top = array_values(array_unique(array_slice($labels, 0, 2)));
+  $mirror = '';
+  if (!empty($top)) {
+      $mirror = ' — ' . implode(' & ', array_map(fn($x)=>strtolower($x), $top));
+  }
 
-        $primary = strtolower($top[0] ?? '');
-        $validate = [
-            'sad'          => "That sounds really heavy",
-            'anxious'      => "That sounds tense and overwhelming",
-            'stressed'     => "That’s a lot to carry at once",
-            'tired'        => "You must be exhausted",
-            'angry'        => "I can hear the frustration",
-            'lonely'       => "Feeling alone can hurt a lot",
-            'hopeless'     => "When things feel hopeless, it can be scary",
-            'not_ok'       => "It makes sense that you’re not feeling okay",
-            'disappointed' => "It’s tough when expectations fall through",
-            'hurt'         => "Being hurt like that really stings",
-            'confused'     => "It’s okay not to have it all figured out",
-            'bored'        => "Feeling stuck can be draining",
-            'jealous'      => "Those feelings can be hard to sit with",
-            'ashamed'      => "Shame is a heavy feeling to carry",
-            'guilty'       => "Guilt can take up a lot of space",
-            'overwhelmed'  => "Everything piling up can feel like too much",
-            'overthinking' => "It sounds like your mind hasn’t had a break",
-        ];
-        $v = $validate[$primary] ?? "Thank you for trusting me with this";
+  $primary = strtolower($top[0] ?? '');
+  // Enhanced validation with warmer, more conversational tone
+  $validate = [
+      'sad'          => "I hear you, and that sounds really heavy to carry",
+      'anxious'      => "That sounds so tense — anxiety can be exhausting",
+      'stressed'     => "Wow, that's a lot to handle all at once",
+      'tired'        => "You must be absolutely exhausted",
+      'angry'        => "I can really feel the frustration in your words",
+      'lonely'       => "Feeling alone can hurt in such a deep way",
+      'hopeless'     => "When hope feels distant, everything can feel scary — I'm here",
+      'not_ok'       => "It makes complete sense that you're not feeling okay right now",
+      'disappointed' => "That disappointment must really sting",
+      'hurt'         => "Being hurt like that can cut so deep",
+      'confused'     => "It's totally okay not to have it all figured out",
+      'bored'        => "Feeling stuck and restless can be so draining",
+      'jealous'      => "Those feelings can be really hard to sit with",
+      'ashamed'      => "Shame is such a heavy, painful feeling to carry",
+      'guilty'       => "Guilt can take up so much space in your heart",
+      'overwhelmed'  => "Everything piling up like this must feel like way too much",
+      'overthinking' => "It sounds like your mind hasn't had any peace lately",
+  ];
+  $v = $validate[$primary] ?? "Thank you so much for trusting me with this";
 
-        // Stage 1: opening up
-        if ($stage <= 1) {
-            $options = [
-                "{$v}{$mirror}, {USER_FIRST}. I’m really glad you told me. If you feel okay to share, what’s been weighing on you the most right now?",
-                "{$v}{$mirror}, {USER_FIRST}. You don’t have to filter anything here. What part of this has been the hardest for you lately?",
-                "{$v}{$mirror}, {USER_FIRST}. When you think about everything that’s been happening, what’s the first thing that comes to your mind?",
-                "{$v}{$mirror}, {USER_FIRST}. I’m here with you. What’s one thing that you wish someone really understood about what you’re going through?",
-            ];
-        }
-        // Stage 2: exploring causes and patterns
-        elseif ($stage === 2) {
-            $options = [
-                "I’m here with you, {USER_FIRST}. When you look back a bit, was there a moment or situation that made these feelings stronger?",
-                "Thank you for opening up, {USER_FIRST}. If you think about the past days or weeks, what do you notice usually makes this feeling show up?",
-                "You’ve shared a lot already, {USER_FIRST}. Are there certain people, places, or situations that tend to trigger this for you?",
-                "You’re doing your best in a tough situation, {USER_FIRST}. When did you first start noticing that things were feeling this heavy?",
-            ];
-        }
-        // Stage 3+: meaning, needs, and next steps
-        else {
-            $options = [
-                "Thank you for sharing so much, {USER_FIRST}. If you put it into your own words, how would you describe what you’re carrying right now?",
-                "You’re explaining this really clearly, even if it feels messy inside, {USER_FIRST}. What do you feel you need most from people around you right now?",
-                "You don’t have to have all the answers, {USER_FIRST}. If there was one small thing that could make today a bit lighter, what do you think it would be?",
-                "You’ve been holding a lot, {USER_FIRST}. What worries you the most about this situation, and what do you wish could change?",
-            ];
-        }
+  // Stage 1: opening up - warmer, more inviting questions
+  if ($stage <= 1) {
+      $options = [
+          "{$v}{$mirror}, {USER_FIRST}. I'm really listening — what's been weighing heaviest on you lately?",
+          "{$v}{$mirror}. You don't need to have it all figured out — just share whatever feels right. What's going on?",
+          "I'm here, {USER_FIRST}{$mirror}. Take all the time you need — what's been on your heart recently?",
+          "{$v}{$mirror}, {USER_FIRST}. This is a safe space for whatever you're feeling. What part of this has been the hardest?",
+      ];
+  }
+  // Stage 2: exploring causes and patterns - more supportive, less interrogative
+  elseif ($stage === 2) {
+      $options = [
+          "I'm here with you, {USER_FIRST}. When you look back a bit, was there a moment that made these feelings stronger, or has it been more gradual?",
+          "Thanks so much for opening up, {USER_FIRST}. If you think back over the past days or weeks, what tends to trigger this feeling for you?",
+          "You've been so brave in sharing, {USER_FIRST}. Are there certain people, places, or situations that seem to bring this up?",
+          "You're doing your best in a really tough situation, {USER_FIRST}. When did you first start noticing that things felt this heavy?",
+      ];
+  }
+  // Stage 3+: meaning, needs, and next steps - collaborative and gentle
+  else {
+      $options = [
+          "Thank you for sharing so openly, {USER_FIRST}. If you put it in your own words, how would you describe what you're carrying right now?",
+          "You're explaining this so clearly, even if it feels messy inside, {USER_FIRST}. What do you feel you need most from people around you right now?",
+          "You really don't have to have all the answers, {USER_FIRST}. If there was one small thing that could make today a bit lighter, what might that be?",
+          "You've been holding so much, {USER_FIRST}. What worries you the most about this, and what do you wish could change?",
+      ];
+  }
 
-        return $options[array_rand($options)];
+  return $options[array_rand($options)];
     }
 
 
@@ -2737,10 +2796,10 @@ private function applyEmotionTone(string $replyText, string $norm, array $labels
             !str_contains($lower, 'im really glad you told me') &&
             !str_contains($lower, "i'm really glad you told me") &&
             !str_contains($lower, 'you are not alone') &&
-            !str_contains($lower, 'you’re not alone') &&
+            !str_contains($lower, 'you\'re not alone') &&
             !str_contains($lower, 'if you are in immediate danger')
         ) {
-            $base .= " I’m really glad you told me this — you don’t have to go through it alone.";
+            $base .= " I'm really here with you right now, and I care about what you're going through. You don't have to face this alone.";
         }
         return $base;
     }
@@ -2754,24 +2813,25 @@ private function applyEmotionTone(string $replyText, string $norm, array $labels
     // Strong painful emotions → validating / comforting tone
     if ($has('sad') || $has('lonely') || $has('hopeless') || $has('not_ok')) {
         if (
-            !str_contains($base, 'You’re not alone') &&
-            !str_contains($base, 'You are not alone')
+            !str_contains($base, 'You\'re not alone') &&
+            !str_contains($base, 'You are not alone') &&
+            !str_contains($base, 'I\'m here')
         ) {
-            $base .= " You’re not alone in feeling this way — I’m here with you. 💜";
+            $base .= " I'm here with you, and you're not alone in feeling this way. 💜";
         }
         return $base;
     }
 
     if ($has('anxious') || $has('stressed') || $has('overwhelmed') || $has('tired')) {
-        if (!str_contains(mb_strtolower($base), 'one small step')) {
-            $base .= " It really does sound like a lot — we can take it one small step at a time. 🤍";
+        if (!str_contains(mb_strtolower($base), 'one step')) {
+            $base .= " What you're feeling makes complete sense given everything you're dealing with. Let's take this one small step at a time. 🤍";
         }
         return $base;
     }
 
     if ($has('angry')) {
         if (!str_contains(mb_strtolower($base), 'frustrat')) {
-            $base .= " I can feel how frustrating this is for you, and that reaction makes sense. 😤";
+            $base .= " I can really feel how frustrating this is, and that reaction makes total sense. It's okay to feel angry. 😤";
         }
         return $base;
     }
@@ -2782,7 +2842,7 @@ private function applyEmotionTone(string $replyText, string $norm, array $labels
             !str_contains($lower, "doesn't make you a bad") &&
             !str_contains($lower, 'does not make you a bad')
         ) {
-            $base .= " Feeling this way doesn’t make you a bad person — it just shows how much you care. 💭";
+            $base .= " Feeling this way doesn't make you a bad person — it actually shows how much you care. You're being so hard on yourself. 💭";
         }
         return $base;
     }
@@ -2804,10 +2864,10 @@ private function applyEmotionTone(string $replyText, string $norm, array $labels
     if ($risk !== 'high') {
         if (preg_match('/\b(thanks?|thank you|salamat|appreciate it)\b/u', $normLower)) {
             if (!preg_match('/[\x{1F600}-\x{1F64F}]/u', $base)) {
-                $base .= " I’m really glad I could be here for you. 🙂";
+                $base .= " Of course! I'm really glad I could be here for you. That's what I'm here for — you're never bothering me. 🙂";
             } else {
                 // If there is already an emoji, just add the line without another face
-                $base .= " I’m really glad I could be here for you.";
+                $base .= " Of course! I'm really glad I could be here for you. That's what I'm here for.";
             }
             return $base;
         }
@@ -2815,9 +2875,9 @@ private function applyEmotionTone(string $replyText, string $norm, array $labels
         // Student says they feel a bit better / okay now
         if (preg_match('/\b(better now|feel better|feeling better|okay now|ok na ako|medyo ok na)\b/u', $normLower)) {
             if (!preg_match('/[\x{1F600}-\x{1F64F}]/u', $base)) {
-                $base .= " I’m happy to hear that, and I’m still here if things feel heavy again. 😊";
+                $base .= " That's so good to hear! I'm really happy about that. And remember, I'm still here whenever you need — even if it's just to talk. 😊";
             } else {
-                $base .= " I’m happy to hear that, and I’m still here if things feel heavy again.";
+                $base .= " That's so good to hear! I'm really happy about that. And I'm still here whenever you need.";
             }
             return $base;
         }

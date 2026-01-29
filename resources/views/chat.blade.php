@@ -42,7 +42,7 @@
   }
 </style>
 
-<div class="px-4 sm:px-6 animate-fadeup">
+<div class="px-2 sm:px-4 md:px-6 animate-fadeup">
   <div class="mx-auto w-full max-w-5xl h-[80vh]">
 
     {{-- ===================== Chat Panel ===================== --}}
@@ -54,12 +54,12 @@
          {{-- NEW: pass lock state from controller --}}
          data-locked="{{ !empty($isLocked) ? '1' : '0' }}">
 
-      {{-- ===================== Header ===================== --}}
-      <div class="flex items-center gap-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-5 py-3 shadow">
-        <img src="{{ asset('images/chatbot.png') }}" class="w-6 h-6" alt="Bot">
-        <div class="min-w-0">
-          <strong class="text-lg leading-tight">LumiCHAT Assistant</strong>
-          <div class="text-xs text-white/80 hidden sm:block">Friendly support that respects your privacy</div>
+      {{-- ===================== Header - Mobile Optimized ===================== --}}
+      <div class="flex items-center gap-2 sm:gap-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-3 sm:px-5 py-2.5 sm:py-3 shadow">
+        <img src="{{ asset('images/chatbot.png') }}" class="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" alt="Bot">
+        <div class="min-w-0 flex-1">
+          <strong class="text-base sm:text-lg leading-tight block truncate">LumiCHAT Assistant</strong>
+          <div class="text-[11px] sm:text-xs text-white/80 hidden xs:block truncate">Friendly support that respects your privacy</div>
         </div>
       </div>
 
@@ -77,6 +77,9 @@
       {{-- ===================== Messages ===================== --}}
       <div class="flex-1 min-h-0 flex flex-col">
         <div id="chat-messages"
+             role="log"
+             aria-live="polite"
+             aria-label="Chat conversation"
              class="flex-1 min-h-0 flex flex-col gap-3 p-4 overflow-y-auto bg-gray-50 dark:bg-gray-900">
 
           @foreach ($chats as $chat)
@@ -96,8 +99,9 @@
                 );
               }
               $base = 'display:inline-block !important;box-sizing:border-box !important;width:auto !important;max-width:min(520px,46ch) !important;min-height:0 !important;padding:6px 10px !important;margin:0 !important;border-radius:16px !important;white-space:pre-wrap !important;word-break:normal !important;overflow-wrap:anywhere !important;font-size:15px !important;line-height:22px !important;text-align:left !important;';
-              $bot  = $base.'background:#f3f4f6 !important;color:#111827 !important;align-self:flex-start !important;';
-              $user = $base.'background:#4f46e5 !important;color:#ffffff !important;align-self:flex-end !important;margin-left:auto !important;';
+              // ✅ Let CSS classes handle colors for proper dark mode
+              $bot  = $base.'align-self:flex-start !important;';
+              $user = $base.'align-self:flex-end !important;margin-left:auto !important;';
               $timeStyle = 'font-size:10px;color:#9ca3af;margin-top:4px;'.($mine ? 'text-align:right;align-self:flex-end;' : 'text-align:left;align-self:flex-start;');
             @endphp
 
@@ -118,29 +122,35 @@
         </div>
       </div>
 
-      {{-- ===================== Composer ===================== --}}
+      {{-- ===================== Composer - Mobile Optimized ===================== --}}
       <form id="chat-form" action="{{ route('chat.store') }}" method="POST"
-            class="px-4 py-3 border-t bg-white dark:bg-gray-800 dark:border-gray-700">
+            class="px-3 sm:px-4 py-2.5 sm:py-3 border-t bg-white dark:bg-gray-800 dark:border-gray-700">
         @csrf
         <input type="hidden" id="idem" name="_idem" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
 
-        <div class="group relative flex items-center h-12 rounded-full bg-white dark:bg-gray-800
+        <div class="group relative flex items-center h-11 sm:h-12 rounded-full bg-white dark:bg-gray-800
                     ring-1 ring-indigo-200 dark:ring-gray-700 focus-within:ring-2 focus-within:ring-indigo-400
                     transition shadow-sm">
 
           <textarea id="chat-message" name="message" maxlength="2000" rows="1" enterkeyhint="send"
-            class="flex-1 h-full px-4 py-2 pr-[7.5rem] bg-transparent border-0 rounded-l-full
+            aria-label="Type your message here"
+            aria-describedby="char-counter"
+            class="flex-1 h-full px-3 sm:px-4 py-2 pr-[6.5rem] sm:pr-[7.5rem] bg-transparent border-0 rounded-l-full
+                   text-[15px] sm:text-base
                    focus:outline-none focus:ring-0 focus:border-0 focus:shadow-none
                    placeholder:text-gray-400 dark:placeholder-gray-500 resize-none"
             placeholder="Type your message..." autocomplete="off" required></textarea>
 
           <div id="char-counter"
-               class="absolute right-24 top-1/2 -translate-y-1/2 text-[11px] text-gray-400 select-none">
+               role="status"
+               aria-live="polite"
+               class="absolute right-[5rem] sm:right-24 top-1/2 -translate-y-1/2 text-[10px] sm:text-[11px] text-gray-400 select-none hidden xs:block">
             0/2000
           </div>
 
           <button id="sendBtn" disabled
-            class="btn-primary absolute right-1.5 top-1/2 -translate-y-1/2 h-9 px-4 rounded-full
+            aria-label="Send message"
+            class="btn-primary absolute right-1 sm:right-1.5 top-1/2 -translate-y-1/2 h-8 sm:h-9 px-3 sm:px-4 rounded-full text-sm sm:text-base
                    disabled:opacity-50 disabled:pointer-events-none" type="submit">
             Send
           </button>
@@ -253,6 +263,15 @@
     }
     const renderBotContent = s => /[<>]/.test(s) ? sanitizeBotHtml(s) : sanitizeBotHtml(linkify(s));
 
+    // Debounce utility for performance optimization
+    function debounce(fn, delay) {
+      let timer = null;
+      return function(...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), delay);
+      };
+    }
+
     function updateCounter(){
       let v = input.value || '';
       if (v.length > MAXLEN){ v = v.slice(0, MAXLEN); input.value = v; }
@@ -274,15 +293,37 @@
       updateCounter();
     });
 
-    function appendUserBubble(text, time=''){
+    function appendUserBubble(text, time='', status='sending'){
+      const statusIcons = {
+        sending: '<span class="status-icon" title="Sending...">⏳</span>',
+        sent: '<span class="status-icon" title="Sent">✓</span>',
+        error: '<span class="status-icon" title="Failed - Click to retry" style="color:#ef4444;cursor:pointer">⚠</span>'
+      };
+      
       messages.insertAdjacentHTML('beforeend', `
         <div class="msg-row flex flex-col w-full min-w-0">
           <div class="bubble bubble-user" data-sender="user" style="${userStyle}"></div>
-          <div style="font-size:10px;color:#9ca3af;margin-top:4px;text-align:right;align-self:flex-end;">${time}</div>
+          <div style="font-size:10px;color:#9ca3af;margin-top:4px;text-align:right;align-self:flex-end;display:flex;align-items:center;gap:4px;justify-content:flex-end">
+            <span class="msg-time">${time}</span>
+            <span class="msg-status">${statusIcons[status] || ''}</span>
+          </div>
         </div>`);
       const bubble = messages.lastElementChild.querySelector('.bubble-user');
       bubble.textContent = text;
       messages.scrollTop = messages.scrollHeight;
+      return messages.lastElementChild;
+    }
+    
+    function updateMessageStatus(msgRow, status){
+      if (!msgRow) return;
+      const statusSpan = msgRow.querySelector('.msg-status');
+      if (!statusSpan) return;
+      const statusIcons = {
+        sending: '<span class="status-icon" title="Sending...">⏳</span>',
+        sent: '<span class="status-icon" title="Sent">✓</span>',
+        error: '<span class="status-icon" title="Failed - Click to retry" style="color:#ef4444;cursor:pointer">⚠</span>'
+      };
+      statusSpan.innerHTML = statusIcons[status] || '';
     }
 
     function appendBotBubbleShell(time=''){
@@ -373,15 +414,31 @@
     const runQ = (task) => (Q = Q.then(task).catch(()=>{}));
     const now12h = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
 
-    async function showOutageNotice(kind){
-      const msg = (kind === 'http') ? 'LumiChat temporarily unavailable.' : 'Sorry, I’m having trouble right now.';
+    // Enhanced error handling with reconnection
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT_ATTEMPTS = 3;
+    
+    async function showOutageNotice(kind, retry = false){
+      if (retry && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        reconnectAttempts++;
+        const countdown = 3 - reconnectAttempts + 1;
+        const msg = `Connection issue detected. Retrying in ${countdown} seconds... (Attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`;
+        await runQ(() => appendBotBubble(msg, ''));
+        return;
+      }
+      
+      const msg = (kind === 'http') 
+        ? 'LumiChat is temporarily unavailable. Please try again in a moment.' 
+        : 'I\'m having trouble connecting right now. Please check your internet connection and try again.';
       await runQ(() => appendBotBubble(msg, ''));
+      reconnectAttempts = 0;
     }
 
     let _pendingDisplayText = null;
+    let _currentMsgRow = null;
 
     function sendAction(displayText, payloadText){
-      appendUserBubble(displayText, now12h());
+      _currentMsgRow = appendUserBubble(displayText, now12h(), 'sending');
       _pendingDisplayText = displayText;
       send(payloadText ?? displayText);
     }
@@ -408,8 +465,16 @@
 
         _pendingDisplayText = null;
 
-        if (!res.ok){ await showOutageNotice('http'); return; }
+        if (!res.ok){ 
+          updateMessageStatus(_currentMsgRow, 'error');
+          await showOutageNotice('http'); 
+          return; 
+        }
         const data = await res.json();
+        
+        // Mark message as sent
+        updateMessageStatus(_currentMsgRow, 'sent');
+        reconnectAttempts = 0; // Reset on success
 
         // NEW: if backend locked the thread, disable immediately
         if (data?.locked) {
@@ -425,6 +490,7 @@
         }
       } catch {
         _pendingDisplayText = null;
+        updateMessageStatus(_currentMsgRow, 'error');
         await showOutageNotice('net');
       } finally {
         if (sendBtn) sendBtn.disabled = true === (wrap?.dataset.locked === '1') ? true : false;
@@ -593,18 +659,21 @@ async function appendBotBubble(payload, time = ''){
       } catch(_) {}
     })();
 
+    // ✅ Show animated greeting for new sessions
     try {
-      const hasMessages = !!messages.querySelector('.msg-row');
-      const threadId = wrap?.dataset.threadId || location.pathname;
-      const KEY = `lumi_welcome_${threadId}`;
-      const now = Date.now();
-      let last = 0;
-      try { last = JSON.parse(sessionStorage.getItem(KEY))?.ts || 0; } catch {}
-      const elapsedMin = (now - last) / 60000;
-      if (!hasMessages && (!last || elapsedMin >= 60)){
-        sessionStorage.setItem(KEY, JSON.stringify({ ts: now }));
-        const uname = (wrap?.dataset.userName || 'there').trim();
-        runQ(() => appendBotBubble(`Hi ${uname}! I’m Lumi — how can I help you today?`, ""));
+      const serverGreeting = @json($greeting ?? null);
+      
+      if (serverGreeting) {
+        // Server provided a personalized greeting - animate it!
+        runQ(() => {
+          const bubble = appendBotBubbleShell("");
+          return new Promise(resolve => {
+            setTimeout(() => {
+              typewriter(bubble, serverGreeting, 20, 800)
+                .then(resolve);
+            }, 300);
+          });
+        });
       }
     } catch {}
   });

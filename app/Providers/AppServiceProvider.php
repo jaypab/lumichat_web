@@ -38,6 +38,7 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        \Illuminate\Pagination\Paginator::useTailwind();
         // Force HTTPS in production
         if (app()->environment('production')) {
             URL::forceScheme('https');
