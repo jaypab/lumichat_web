@@ -17,6 +17,9 @@ class ChatNLUService
         $s = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u', '', $raw) ?? '';
         $s = str_replace(["\r", "\n", "\t"], ' ', $s);
         
+        // Remove apostrophes first (don't → dont, can't → cant, I'm → im)
+        $s = str_replace("'", '', $s);
+        
         // leetspeak & common swaps
         $s = strtr($s, [
             '0' => 'o', '1' => 'i', '3' => 'e', '4' => 'a', '5' => 's', '7' => 't', '@' => 'a', '$' => 's', '!' => 'i'
