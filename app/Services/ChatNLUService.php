@@ -20,6 +20,37 @@ class ChatNLUService
         // Remove apostrophes first (don't → dont, can't → cant, I'm → im)
         $s = str_replace("'", '', $s);
         
+        // Common typo corrections for emotion/mental health words
+        $typoMap = [
+            // Emotion words
+            'depresed' => 'depressed', 'depressd' => 'depressed', 'deprsd' => 'depressed',
+            'anxios' => 'anxious', 'anxeos' => 'anxious', 'anxety' => 'anxiety',
+            'overwelmed' => 'overwhelmed', 'overwelm' => 'overwhelm',
+            'stresed' => 'stressed', 'stressd' => 'stressed',
+            'disapointed' => 'disappointed', 'dissapointed' => 'disappointed',
+            'fustrated' => 'frustrated', 'frustr8ed' => 'frustrated',
+            'lonly' => 'lonely', 'lonley' => 'lonely',
+            'tierd' => 'tired', 'exausted' => 'exhausted',
+            'scarred' => 'scared', 'scred' => 'scared',
+            'confuzed' => 'confused', 'confusd' => 'confused',
+            
+            // Actions
+            'faild' => 'failed', 'failld' => 'failed', 'faled' => 'failed',
+            'strugle' => 'struggle', 'strugling' => 'struggling',
+            'wory' => 'worry', 'woried' => 'worried', 'woryng' => 'worrying',
+            
+            // Common words
+            'becuase' => 'because', 'becuz' => 'because', 'cuz' => 'because',
+            'realy' => 'really', 'rly' => 'really',
+            'definately' => 'definitely', 'definetly' => 'definitely',
+            'seperate' => 'separate',
+        ];
+        
+        $s = mb_strtolower($s);
+        foreach ($typoMap as $typo => $correct) {
+            $s = str_replace($typo, $correct, $s);
+        }
+        
         // leetspeak & common swaps
         $s = strtr($s, [
             '0' => 'o', '1' => 'i', '3' => 'e', '4' => 'a', '5' => 's', '7' => 't', '@' => 'a', '$' => 's', '!' => 'i'
@@ -32,7 +63,7 @@ class ChatNLUService
         $s = preg_replace('/([^\w\s])/u', ' $1 ', $s);
         $s = preg_replace('/\s+/u', ' ', $s);
         
-        return trim(mb_strtolower($s));
+        return trim($s);
     }
 
     /**
