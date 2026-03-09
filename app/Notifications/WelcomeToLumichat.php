@@ -7,7 +7,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class WelcomeToLumiChat extends Notification /* implements ShouldQueue */
+class WelcomeToLumichat extends Notification /* implements ShouldQueue */
 {
     use Queueable;
 

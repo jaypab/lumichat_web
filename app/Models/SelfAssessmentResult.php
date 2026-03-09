@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class SelfAssessment extends Model
+class SelfAssessmentResult extends Model
 {
     protected $table = 'tbl_self_assessment';
 
