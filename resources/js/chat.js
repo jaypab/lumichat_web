@@ -1,8 +1,4 @@
-// resources/js/chat.js
-import axios from "axios";
-
-axios.defaults.headers.common["X-Requested-With"] = "XMLHttpRequest";
-console.log("%c[LumiCHAT] chat.js loaded", "color:#6d28d9;font-weight:bold");
+// chat.js
 
 if (!window.LUMI_CHAT_JS_ACTIVE) {
   window.LUMI_CHAT_JS_ACTIVE = true;

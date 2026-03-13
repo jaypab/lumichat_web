@@ -10,354 +10,191 @@
 @endphp
 
 {{-- ===== Outer layout: center, then animate to split ===== --}}
-<div class="min-h-[88vh] flex items-center justify-center">
-  {{-- Shell that will animate left/right --}}
-  <div id="loginShell"
-     class="relative w-full max-w-6xl flex items-center justify-between gap-10 px-8 md:px-10 transition-all duration-500">
+<div id="beams-root" class="fixed inset-0 z-0 pointer-events-none overflow-hidden"></div>
 
-    {{-- LEFT: Guidance panel --}}
-    <div class="login-side hidden md:flex flex-col items-center text-center">
-      <div class="relative mb-5">
-        <div class="absolute inset-0 blur-3xl bg-amber-300/40 rounded-full scale-110"></div>
-        <div class="relative w-40 h-40 rounded-full bg-gradient-to-tr from-amber-50 via-amber-100 to-amber-200 shadow-2xl flex items-center justify-center ring-4 ring-amber-300/70">
-          <img src="{{ asset('images/icons/guidance_logo.png') }}" alt="Guidance & Counseling Office"
-              class="w-32 h-32 object-contain">
+<div class="h-screen w-full flex items-center justify-center overflow-hidden p-6 md:p-12">
+  {{-- Shell: Centered & Balanced --}}
+  <div id="loginShell"
+     class="relative w-full max-w-5xl flex items-center justify-between gap-16 transition-all duration-700 px-8">
+
+    {{-- LEFT: Guidance & Counseling Office (Compact Centered) --}}
+    <div class="login-side hidden lg:flex flex-col items-center justify-center text-center max-w-xs">
+      {{-- Luxury Logo Emblem --}}
+      <div class="relative mb-6 group">
+        {{-- Radiant Aura --}}
+        <div class="absolute inset-x-0 -top-4 -bottom-4 blur-[50px] bg-amber-500/10 rounded-full scale-110"></div>
+        <div class="absolute inset-0 blur-[20px] bg-violet-600/5 rounded-full"></div>
+        
+        <div class="relative w-36 h-36 rounded-full p-1 bg-gradient-to-b from-amber-400/30 via-amber-900/10 to-violet-900/30 shadow-xl overflow-hidden ring-1 ring-amber-500/20">
+          <div class="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/brushed-alum.png')] opacity-10 mix-blend-overlay"></div>
+          <div class="w-full h-full rounded-full bg-black/30 backdrop-blur-2xl flex items-center justify-center p-6 border border-white/5">
+            <img src="{{ asset('images/icons/guidance_logo.png') }}" alt="Guidance Logo" 
+                 class="w-full h-full object-contain filter drop-shadow-[0_8px_16px_rgba(0,0,0,0.4)] brightness-110">
+          </div>
+          {{-- Subtle shimmer --}}
+          <div class="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
         </div>
       </div>
 
-      {{-- ⬇️ text block with wider width --}}
-      <div class="space-y-1 max-w-xs">
-        <p class="text-xs font-semibold tracking-[.2em] text-amber-700 uppercase">
-          Guidance & Counseling Office
+      <div class="space-y-4 flex flex-col items-center">
+        <div class="space-y-2">
+          <p class="text-[10px] font-black tracking-[0.4em] text-[#d4af37] uppercase drop-shadow-sm font-inter">
+            Guidance & Counseling Office
+          </p>
+          <div class="h-px w-12 bg-gradient-to-r from-transparent via-amber-500/40 to-transparent mx-auto"></div>
+          <h2 class="text-3xl font-bold tracking-tight text-white font-poppins leading-tight">
+            Tagoloan Community College
+          </h2>
+        </div>
+
+        <p class="text-[14px] leading-relaxed text-slate-400 font-medium max-w-[320px] font-inter mx-auto">
+          Official LumiChat portal of <span class="text-white">Tagoloan Community College</span>. 
+          Your conversations are managed by the <span class="text-amber-200/80 font-semibold italic">Guidance & Counseling Office</span> with <span class="text-white/80">strict confidentiality</span>.
         </p>
 
-        <h2 class="text-2xl font-extrabold tracking-tight text-slate-900 whitespace-nowrap">
-          Tagoloan Community College
-        </h2>
-
-        <p class="text-[13px] leading-relaxed text-slate-600 mt-2 max-w-[22rem] mx-auto">
-          Official LumiChat portal of Tagoloan Community College.
-          Your conversations are managed by the Guidance & Counseling Office 
-          with strict confidentiality.
-        </p>
+        {{-- Luxury detail ornament --}}
+        <div class="flex items-center justify-center gap-4 pt-4 opacity-30">
+          <div class="h-px w-16 bg-gradient-to-r from-transparent to-amber-500/30"></div>
+          <div class="w-1.5 h-1.5 rounded-full bg-amber-500 rotate-45 shadow-[0_0_8px_rgba(251,191,36,0.3)]"></div>
+          <div class="h-px w-16 bg-gradient-to-l from-transparent to-amber-500/30"></div>
+        </div>
       </div>
     </div>
 
-    {{-- RIGHT: Login card --}}
-    <div class="relative w-full max-w-lg login-panel rounded-3xl overflow-hidden">
-      <div class="absolute inset-0 bg-gradient-to-r from-violet-400/40 via-indigo-400/40 to-blue-400/40 blur opacity-60"></div>
-      <div class="relative lumi-card bg-white backdrop-blur-xl shadow-2xl ring-1 ring-slate-200/60 p-8">
+    {{-- RIGHT: Login card (Sleeker & Spread) --}}
+    <div class="relative w-full max-w-[400px] login-panel rounded-[2rem] overflow-hidden group shadow-2xl">
+      <div class="absolute inset-0 bg-gradient-to-br from-violet-500/5 via-transparent to-fuchsia-500/5 opacity-30"></div>
+      <div class="relative lumi-card bg-white/5 backdrop-blur-3xl ring-1 ring-white/10 p-8 border border-white/5">
 
         {{-- Header --}}   
         <div class="flex flex-col items-center text-center">
           <div class="relative mb-4">
-            <span class="absolute inset-0 -top-2 -left-2 -right-2 -bottom-2 rounded-full blur-2xl opacity-30"
-                  style="background: radial-gradient(60% 60% at 50% 40%, #818cf8 0%, rgba(129,140,248,0) 65%);"></span>
-            <img src="{{ asset('images/chatbot.png') }}" alt="LumiChat Logo" class="relative w-14 h-14 rounded-full shadow-md">
+            <span class="absolute inset-0 -top-4 -left-4 -right-4 -bottom-4 rounded-full blur-2xl opacity-10"
+                  style="background: radial-gradient(circle at 50% 50%, #a855f7 0%, rgba(168,85,247,0) 70%);"></span>
+            <div class="w-14 h-14 rounded-2xl bg-white/5 p-3 ring-1 ring-white/20 backdrop-blur-md rotate-2 group-hover:rotate-0 transition-transform duration-700">
+               <img src="{{ asset('images/chatbot.png') }}" alt="LumiChat Logo" class="w-full h-full object-contain">
+            </div>
           </div>
-          <h1 class="text-2xl font-extrabold tracking-tight text-slate-900">LumiChat</h1>
-          <p class="mt-1 text-sm text-slate-500">Your mental health support companion</p>
+          <h1 class="text-2xl font-black tracking-tight text-white mb-0.5 font-poppins">LumiChat</h1>
+          <p class="text-[12px] text-slate-400 font-medium italic mb-4">Mental health support companion</p>
 
-          <div class="mt-3 inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
-            <span class="inline-block h-1.5 w-1.5 rounded-full bg-indigo-500"></span>
-            School Account Login
+          <div class="inline-flex items-center gap-2 rounded-full bg-white/5 border border-white/10 px-4 py-1.5 text-[8px] font-bold text-violet-300 uppercase tracking-widest">
+            <span class="inline-block h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse"></span>
+            School Core Access
           </div>
         </div>
 
         {{-- ===== Scoped CSS ===== --}}
-               {{-- ===== Scoped CSS ===== --}}
         <style>
           :root{
-            --ring-hover: 165,180,252;  /* indigo-300 */
-            --ring-focus: 129,140,248;  /* indigo-400 */
+            --ring-hover: 167,139,250; 
+            --ring-focus: 139,92,246; 
           }
 
           #loginForm .field.error{
             border-color:#ef4444;
-            box-shadow:inset 0 0 0 2px rgba(239,68,68,.22);
+            box-shadow:inset 0 0 0 2px rgba(239,68,68,.15);
           }
 
-          .lumi-card { --card-bg:#ffffff; }
+          .lumi-card { --card-bg: rgba(255,255,255,0.02); }
 
-          /* ===== Field shell ===== */
+          /* ===== Field shell (Masterfully Refactored for Line-Cut) ===== */
           #loginForm .field{
             position:relative; display:flex; align-items:center;
-            height:48px; background:transparent;
-            border:1px solid #cbd5e1; /* slate-300 */
-            border-radius:0.875rem; padding:0 .75rem;
-            transition: box-shadow .18s ease, border-color .18s ease;
+            height:48px; background: rgba(255,255,255,0.02);
+            /* Remove standard border to use pseudo-element for cut-logic */
+            border: none; 
+            border-radius:0.875rem; padding:0 0.75rem;
+            transition: all .3s ease;
           }
-          #loginForm .field:hover{
-            border-color: rgba(99,102,241,.5);
-            box-shadow:
-              inset 0 0 0 1px rgba(99,102,241,.25),
-              inset 0 4px 12px rgba(0,0,0,.04);
+          
+          /* The actual border line */
+          #loginForm .field::before {
+            content: ''; position: absolute; inset: 0;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: inherit;
+            pointer-events: none;
+            transition: all 0.3s ease;
           }
-          #loginForm .field:focus-within{
-            border-color: rgba(99,102,241,.85);
-            box-shadow:
-              inset 0 0 0 2px rgba(99,102,241,.35),
-              inset 0 6px 14px rgba(0,0,0,.06);
-            background:transparent;
+
+          #loginForm .field:hover::before{
+            border-color: rgba(167,139,250,.3);
+            background: rgba(255,255,255,0.02);
+          }
+          
+          /* The Magic: Carving a hole in the line for the label (Tighter gap) */
+          #loginForm .field:focus-within::before,
+          #loginForm .field:has(.peer:not(:placeholder-shown))::before,
+          #loginForm .field:has(.peer[data-filled="true"])::before {
+            border-color: rgba(167,139,250,.5);
+            /* Surgical Cut: Tuned for a precise fit around "Email or Student ID" */
+            clip-path: polygon(0 0, 2.6rem 0, 2.6rem 2px, 11.6rem 2px, 11.6rem 0, 100% 0, 100% 100%, 0 100%);
+            box-shadow: 0 0 0 3px rgba(167,139,250,0.06);
           }
 
           #loginForm .icon-20{
-            width:20px; height:20px; margin-right:.5rem;
-            opacity:.85; user-select:none; pointer-events:none;
+            width:18px; height:18px; margin-right:.625rem;
+            opacity:.4; filter: invert(1); transition: all .2s;
+            z-index: 1;
           }
+          #loginForm .field:hover .icon-20,
+          #loginForm .field:focus-within .icon-20{ opacity: 0.9; filter: invert(1) brightness(1.2); }
 
           /* Inputs */
           #loginForm input.input{
             width:100%; height:100%; background:transparent;
             border:none; outline:none; box-shadow:none;
-            font-size:14px; color:#0f172a; line-height:48px;
-            padding:0 2.25rem 0 .25rem;
+            font-size:13.5px; color:#fff; line-height:48px;
+            padding:0 2rem 0 .25rem; font-weight: 500;
+            position: relative; z-index: 1;
           }
-          #loginForm input:-webkit-autofill,
-          #loginForm input:-webkit-autofill:hover,
-          #loginForm input:-webkit-autofill:focus{
-            -webkit-box-shadow: 0 0 0px 1000px transparent inset !important;
-            transition: background-color 99999s ease-in-out 0s !important;
-            -webkit-text-fill-color: #0f172a !important;
-          }
+          #loginForm input::placeholder { color: rgba(255,255,255,0.15); font-weight: 400; }
 
-          /* Floating label */
+          /* Floating label - Truly Transparent & Seated */
           #loginForm .float-label{
-            position:absolute; left:3rem; top:50%; transform:translateY(-54%);
-            font-size:.80rem; line-height:1; color:#64748b;
-            padding:0; margin:0; pointer-events:none; z-index:2;
-            transition:transform .18s ease, color .18s ease, font-size .18s ease, opacity .18s ease;
-          }
-          #loginForm .float-label::after{
-            content:""; position:absolute; left:-1px; right:-1px; top:0; bottom:0;
-            background: var(--card-bg); border-radius:6px;
-            box-shadow:0 0 0 6px var(--card-bg); z-index:-1;
-            transition:left .18s ease, right .18s ease, top .18s ease, bottom .18s ease, box-shadow .18s ease;
+            position:absolute; left:2.75rem; top:50%; transform:translateY(-50%);
+            font-size:13.5px; color:rgba(255,255,255,0.3);
+            padding: 0; margin:0; pointer-events:none; z-index:10;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            background: transparent !important; /* Total transparency as requested */
           }
           #loginForm .peer:focus ~ .float-label,
           #loginForm .peer[data-filled="true"] ~ .float-label,
           #loginForm .peer:not(:placeholder-shown) ~ .float-label{
-            color:#334155; font-size:.72rem; transform:translateY(-250%) scale(.98);
+            color:#a78bfa; font-size:10px; transform:translateY(-220%);
+            font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em;
+            text-shadow: 0 0 10px rgba(167,139,250,0.3);
+            background: transparent !important;
           }
 
           /* Eye button */
           .eye-btn{
             position:absolute; right:.5rem; top:50%; transform:translateY(-50%);
-            padding:.25rem; border-radius:.375rem;
+            padding:.35rem; border-radius:.625rem; opacity: 0.3; transition: all 0.2s;
           }
-          .eye-btn:hover{ background:#e5e7eb; }
-          .eye-btn img{ display:block; width:20px; height:20px; }
+          .eye-btn:hover{ background:rgba(255,255,255,0.08); opacity: 0.8; }
+          .eye-btn img{ display:block; width:16px; height:16px; filter: invert(1); }
 
-          @supports not ((-webkit-backdrop-filter: blur(24px)) or (backdrop-filter: blur(24px))){
-            .lumi-card{ background:#fff; }
-          }
-          @media (prefers-reduced-motion: reduce){
-            *{ transition:none !important; }
-          }
-          @media (max-width: 420px){
-            .swal2-title.lumi-title{ font-size: 20px !important; }
-            .swal2-html-container.lumi-body{ font-size: 14px !important; }
-          }
-
-          /* ==== Custom checkbox (Remember me) ==== */
-          .checkbox-wrapper-46 .cbx span:last-child{ padding-left:12px }
-          .checkbox-wrapper-46 input[type="checkbox"]{
-            display:none; visibility:hidden;
-          }
-          .checkbox-wrapper-46 .cbx{
-            -webkit-user-select:none; user-select:none; cursor:pointer;
-            display:flex; align-items:center;
-          }
-          .checkbox-wrapper-46 .cbx span{
-            display:inline-block; vertical-align:middle; transform:translate3d(0,0,0);
-          }
+          /* ==== Custom checkbox ==== */
+          .checkbox-wrapper-46 .cbx span:last-child{ padding-left:8px; color: rgba(255,255,255,0.3); font-size: 12.5px; }
+          .checkbox-wrapper-46 input[type="checkbox"]{ display:none; }
+          .checkbox-wrapper-46 .cbx{ cursor:pointer; display:flex; align-items:center; }
           .checkbox-wrapper-46 .cbx span:first-child{
-            position:relative; width:18px; height:18px; border-radius:3px;
-            border:1px solid #9098a9; transition:all .2s ease; background:transparent;
+            position:relative; width:16px; height:16px; border-radius:4px;
+            border:1px solid rgba(255,255,255,0.2); transition:all .2s ease; background:transparent;
           }
           .checkbox-wrapper-46 .cbx span:first-child svg{
-            position:absolute; top:3px; left:2px; fill:none; stroke:#fff; stroke-width:2;
-            stroke-linecap:round; stroke-linejoin:round;
-            stroke-dasharray:16px; stroke-dashoffset:16px; transition:all .3s ease .1s;
+            position:absolute; top:3px; left:2px; fill:none; stroke:#fff; stroke-width:3;
+            stroke-dasharray:16px; stroke-dashoffset:16px; transition:all .3s ease .05s;
           }
-          .checkbox-wrapper-46 .cbx:hover span:first-child{ border-color:#6366f1 }
+          .checkbox-wrapper-46 .cbx:hover span:first-child{ border-color:#a78bfa }
           .checkbox-wrapper-46 .inp-cbx:checked + .cbx span:first-child{
-            background:#6366f1; border-color:#6366f1; animation:wave-46 .4s ease;
+            background:#8b5cf6; border-color:#8b5cf6;
           }
-          .checkbox-wrapper-46 .inp-cbx:checked + .cbx span:first-child svg{
-            stroke-dashoffset:0;
-          }
-          .checkbox-wrapper-46 .cbx span:first-child:before{
-            content:""; width:100%; height:100%; background:#6366f1;
-            display:block; transform:scale(0); opacity:1; border-radius:50%;
-          }
-          .checkbox-wrapper-46 .inp-cbx:checked + .cbx span:first-child:before{
-            transform:scale(3.5); opacity:0; transition:all .6s ease;
-          }
-          @keyframes wave-46{ 50%{ transform:scale(.9) } }
+          .checkbox-wrapper-46 .inp-cbx:checked + .cbx span:first-child svg{ stroke-dashoffset:0; }
 
-          /* ==== Lumi SweetAlert style ==== */
-          .swal2-container.lumi-container{
-            backdrop-filter: blur(2px);
-            background:
-              radial-gradient(40% 25% at 50% 0%, rgba(124,58,237,.18) 0%, rgba(124,58,237,0) 60%),
-              radial-gradient(45% 25% at 50% 100%, rgba(79,70,229,.16) 0%, rgba(79,70,229,0) 65%),
-              rgba(0,0,0,.45) !important;
-          }
-          .swal2-popup.lumi-alert{
-            border-radius: 1rem !important;
-            width: min(440px, 92vw) !important;
-            padding: 20px 22px 16px !important;
-            box-shadow:
-              0 22px 60px rgba(2,6,23,.20),
-              0 2px 8px rgba(2,6,23,.08) !important;
-            border: 1px solid rgba(15,23,42,.06);
-          }
-          .swal2-title.lumi-title{
-            margin: 4px 0 0 !important;
-            font-weight: 800 !important;
-            color: #0f172a !important;
-            letter-spacing: .1px;
-            font-size: clamp(22px, 2.6vw, 30px) !important;
-          }
-          .swal2-html-container.lumi-body{
-            text-wrap: pretty;
-            letter-spacing: .1px;
-            margin: 10px 0 0 !important;
-            color:#334155 !important;
-            font-size: 15px !important;
-            line-height: 1.55 !important;
-            text-align: center !important;
-          }
-          .swal2-actions.lumi-actions{
-            margin-top: 18px !important;
-          }
-          .swal2-confirm.lumi-confirm{
-            font-size: 14.5px !important;
-            min-width: 108px;
-            background-image: linear-gradient(90deg,#4f46e5,#7c3aed) !important;
-            color:#fff !important;
-            border-radius: 0.9rem !important;
-            font-weight: 800 !important;
-            padding: .75rem 1.35rem !important;
-            border: 0 !important;
-            box-shadow: 0 12px 28px rgba(79,70,229,.28);
-          }
-          .swal2-confirm.lumi-confirm:hover{ filter: brightness(.98); }
-          .swal2-confirm.lumi-confirm:active{ transform: translateY(1px); }
-          .swal2-confirm.lumi-confirm:focus-visible{
-            outline: none !important;
-            box-shadow:
-              0 0 0 3px rgba(255,255,255,.9),
-              0 0 0 6px rgba(99,102,241,.55) !important;
-          }
-
-          /* Animated error icon */
-          .lumi-cross{
-            margin: 6px auto 0;
-            width:64px;height:64px;border-radius:9999px;
-            display:grid;place-items:center;margin:10px auto 0;
-            background:#fee2e2;border:1px solid #fecaca;
-            box-shadow: inset 0 0 0 6px #fff; position:relative;
-            transform: translateY(-6px);
-          }
-          .lumi-cross::before{
-            content:""; position:absolute; inset:-10px; border-radius:inherit;
-            background: radial-gradient(60% 60% at 50% 50%, rgba(124,58,237,.10), rgba(124,58,237,0) 70%);
-          }
-          .lumi-cross::after{
-            content:""; position:absolute; inset:-6px; border-radius:inherit;
-            box-shadow: 0 0 0 0 rgba(239,68,68,.26);
-            animation:pulseRing 1.6s ease-out infinite;
-          }
-          @keyframes pulseRing{
-            0%{box-shadow:0 0 0 0 rgba(239,68,68,.26)}
-            100%{box-shadow:0 0 0 18px rgba(239,68,68,0)}
-          }
-          .lumi-cross-svg{ width:28px;height:28px; stroke:#ef4444; stroke-width:3; }
-
-          /* ===== Layout / Animation for loginShell & guidance panel ===== */
-
-          #loginShell{
-            position:relative;
-            display:flex;
-            align-items:center;
-            justify-content:center;    /* login card starts centered */
-            width:100%;
-          }
-
-          /* Login card default (centered) */
-          #loginShell .login-panel{
-            flex:0 0 450px;
-            transform:translateX(0);
-            box-shadow:
-              0 18px 45px rgba(15,23,42,.18),
-              0 0 0 1px rgba(15,23,42,.03);
-            transition:
-              transform .55s cubic-bezier(.16,.84,.44,1),
-              box-shadow .55s ease,
-              filter .55s ease;
-            z-index:10;
-          }
-
-          /* Base guidance panel: hidden on mobile, collapsed on desktop */
-          #loginShell .login-side{
-            display:none;
-          }
-
-          /* Desktop / big screens: enable split animation */
-          @media (min-width: 1024px){
-            #loginShell .login-side{
-                display:flex;
-                flex-direction:column;
-                align-items:center;
-                text-align:center;
-                opacity:0;
-                transform:translateX(-10px);
-                max-width:0;
-                width:0;
-                /* overflow:hidden;  ← REMOVE this, causes clipping */
-                pointer-events:none;
-                transition:
-                  opacity .55s cubic-bezier(.16,.84,.44,1),
-                  transform .55s cubic-bezier(.16,.84,.44,1),
-                  max-width .55s cubic-bezier(.16,.84,.44,1),
-                  width .55s cubic-bezier(.16,.84,.44,1);
-            }
-
-            /* When user focuses/clicks → slide card right, logo far left */
-            #loginShell.engaged .login-panel{
-              transform:translateX(160px);   /* how far card moves to the right */
-              box-shadow:
-                0 34px 90px rgba(15,23,42,.35),
-                0 0 0 1px rgba(129,140,248,.14);
-            }
-
-            #loginShell.engaged .login-side{
-                opacity:1;
-                max-width:360px;   /* mas maluwag for full text */
-                width:360px;
-                pointer-events:auto;
-                transform:translateX(-80px); /* slight pull to the left, adjust if needed */
-                overflow:visible;  /* make sure walang cut */
-            }
-          }
-
-          /* Mobile: keep only centered card, no logo panel */
-          @media (max-width: 1023px){
-            #loginShell{
-              max-width:100%;
-            }
-            #loginShell .login-panel{
-              flex:1 1 auto;
-              transform:none !important;
-              box-shadow:
-                0 18px 45px rgba(15,23,42,.18),
-                0 0 0 1px rgba(15,23,42,.03);
-            }
-            #loginShell .login-side{
-              display:none !important;
-            }
+          @media (max-width: 420px){
+            .lumi-card { padding: 20px !important; }
           }
         </style>
 
@@ -367,19 +204,18 @@
           @csrf
 
           {{-- Email / Student ID --}}
-          <div class="field">
-            <img src="{{ asset('images/icons/mail.png') }}" alt="mail" class="icon-20">
-            <input
-              id="login-email" name="email" aria-describedby="emailHelp"
-              type="text" value="{{ old('email') }}" required placeholder=" "
-              autocomplete="username" autocapitalize="off" spellcheck="false" inputmode="text" maxlength="254"
-              class="input peer" data-filled="false"
-            />
-            <label for="login-email" class="float-label">Email or Student ID</label>
+          <div class="space-y-1">
+            <div class="field">
+              <img src="{{ asset('images/icons/mail.png') }}" alt="mail" class="icon-20">
+              <input
+                id="login-email" name="email" aria-describedby="emailHelp"
+                type="text" value="{{ old('email') }}" required placeholder=" "
+                autocomplete="username" autocapitalize="off" spellcheck="false" inputmode="text" maxlength="254"
+                class="input peer" data-filled="false"
+              />
+              <label for="login-email" class="float-label">Email or Student ID</label>
+            </div>
           </div>
-          <p id="emailHelp" class="!mt-1 text-xs text-slate-500">
-            Enter your campus email or SIS ID (e.g., 2025001).
-          </p>
 
           {{-- Password --}}
           <div class="field">
@@ -388,39 +224,42 @@
               id="passwordInput" name="password" type="password" required placeholder=" "
               autocomplete="current-password" class="input pr-10 peer" data-filled="false"
             />
-            <label for="passwordInput" class="float-label">Password</label>
+            <label for="passwordInput" class="float-label">Secure Password</label>
             <button id="togglePassword" type="button" class="eye-btn" aria-label="Show password" aria-pressed="false">
               <img src="{{ asset('images/icons/eye.png') }}" alt="toggle">
             </button>
           </div>
-          <p id="capsNote" class="!mt-1 text-xs text-amber-600 hidden">Caps Lock is on.</p>
+          <p id="capsNote" class="!mt-1 text-[10px] text-amber-500 font-bold hidden">⚠️ CAPS LOCK IS ON</p>
 
           {{-- Remember me --}}
-          <div class="flex items-center justify-between text-sm mt-4">
+          <div class="flex items-center justify-between mt-3">
             <div class="checkbox-wrapper-46">
               <input type="checkbox" id="remember-cbx" class="inp-cbx" name="remember" value="1" {{ old('remember') ? 'checked' : '' }}/>
               <label for="remember-cbx" class="cbx">
                 <span>
                   <svg viewBox="0 0 12 10" height="10" width="12"><polyline points="1.5 6 4.5 9 10.5 1"></polyline></svg>
                 </span>
-                <span class="text-slate-700">Remember me</span>
+                <span>Keep me signed in</span>
               </label>
             </div>
           </div>
 
           {{-- Submit --}}
-          <button id="loginBtn" type="submit"
-                  class="w-full inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white py-2.5
-                         font-semibold shadow-lg shadow-indigo-500/20 ring-1 ring-white/10 shadow-inner
-                         hover:shadow-xl hover:brightness-[.99] active:translate-y-[1px] transition duration-150
-                         disabled:opacity-70 disabled:cursor-not-allowed">
-            Login
-          </button>
-
-          <p class="text-center text-[12px] text-slate-500 mt-2">
-            For authorized campus users only. Accounts are provisioned by the school.
-          </p>
+          <div class="relative group/btn pt-1">
+            <div class="absolute -inset-0.5 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-lg blur opacity-15 group-hover/btn:opacity-30 transition duration-700"></div>
+            <button id="loginBtn" type="submit"
+                    class="relative w-full flex items-center justify-center rounded-lg bg-white text-slate-900 py-3
+                           font-bold text-sm shadow-xl transition-all duration-300
+                           hover:-translate-y-0.5 hover:shadow-violet-500/10 active:translate-y-0
+                           disabled:opacity-70 disabled:cursor-not-allowed">
+              Log In
+            </button>
+          </div>
         </form>
+
+        <p class="text-center text-[9px] text-slate-500 mt-5 font-medium leading-relaxed opacity-60">
+          Private & Secure Mental Health Portal • TCC GCO
+        </p>
       </div>
     </div>
   </div>
@@ -442,84 +281,82 @@
 </div>
 
 <style>
-  /* ===== LumiCHAT circular loader (indigo–violet) ===== */
+  /* ===== LumiCHAT Loading & Modal Suite ===== */
+  #loginLoading { background: rgba(0,0,0,0.4); backdrop-blur: 12px; }
+  
   #loginLoading .lumi-loader-wrapper {
-    position: relative;
-    width: 120px;
-    height: 120px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto;
+    position: relative; width: 140px; height: 140px;
+    display: flex; align-items: center; justify-content: center; margin: 0 auto;
   }
 
   #loginLoading .lumi-loader-circle {
-    position: relative;
-    width: 80px;
-    height: 80px;
-    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.08), transparent 60%);
-    border-radius: 9999px;
-    border: 3px solid rgba(148,163,184,0.45); /* slate track */
-    text-align: center;
-    line-height: 80px;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-size: 11px;
-    letter-spacing: .14em;
-    text-transform: uppercase;
-    color: #e0e7ff; /* indigo-100 */
-    text-shadow: 0 0 8px rgba(129,140,248,.9);
-    box-shadow:
-      0 0 18px rgba(15,23,42,.55),
-      0 14px 40px rgba(15,23,42,.85);
+    position: relative; width: 90px; height: 90px;
+    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.05), transparent 70%);
+    border-radius: 9999px; border: 2px solid rgba(167,139,250,0.1);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-family: 'Poppins', sans-serif; font-size: 10px; font-weight: 800;
+    letter-spacing: .2em; text-transform: uppercase; color: #fff;
+    text-shadow: 0 0 20px rgba(167,139,250,0.6);
+    box-shadow: 0 0 40px rgba(0,0,0,0.4), inset 0 0 20px rgba(167,139,250,0.05);
   }
 
-  /* spinning rim with indigo → violet accent */
   #loginLoading .lumi-loader-circle::before {
-    content: "";
-    position: absolute;
-    inset: -3px;
-    border-radius: inherit;
-    border: 3px solid transparent;
-    border-top-color: #6366f1;  /* indigo-500 */
-    border-right-color: #a855f7; /* violet-500 */
-    animation: lumi-spin 1.8s linear infinite;
+    content: ""; position: absolute; inset: -4px; border-radius: inherit;
+    border: 2px solid transparent; border-top-color: #a78bfa; border-right-color: #f472b6;
+    animation: lumi-spin 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   }
 
-  #loginLoading .lumi-loader-circle span {
-    display: block;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 52%;
-    height: 4px;
-    transform-origin: left center;
-    background: transparent;
-    animation: lumi-orbit 1.8s linear infinite;
+  /* ===== SweetAlert2 Premium Redesign (The "Surgical" Modal) ===== */
+  .lumi-container { backdrop-filter: blur(8px) !important; background: rgba(0,0,0,0.6) !important; }
+  
+  .lumi-alert {
+    background: rgba(15, 12, 26, 0.6) !important;
+    backdrop-filter: blur(30px) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 2rem !important;
+    padding: 2.5rem !important;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
   }
 
-  #loginLoading .lumi-loader-circle span::before {
-    content: "";
-    position: absolute;
-    width: 16px;
-    height: 16px;
-    border-radius: 9999px;
-    background: radial-gradient(circle at 30% 30%, #a855f7, #6366f1); /* violet → indigo */
-    top: -6px;
-    right: -8px;
-    box-shadow:
-      0 0 14px rgba(129,140,248,.9),
-      0 0 28px rgba(129,140,248,.75);
+  .lumi-title {
+    color: #fff !important; font-family: 'Poppins', sans-serif !important;
+    font-weight: 800 !important; font-size: 1.5rem !important;
+    letter-spacing: -0.02em !important; margin-bottom: 0.5rem !important;
   }
 
-  @keyframes lumi-spin {
-    0%   { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+  .lumi-body {
+    color: rgba(255,255,255,0.6) !important; font-family: 'Inter', sans-serif !important;
+    font-size: 0.95rem !important; line-height: 1.6 !important;
+    font-weight: 500 !important;
   }
 
-  @keyframes lumi-orbit {
-    0%   { transform: rotate(45deg); }
-    100% { transform: rotate(405deg); }
+  .lumi-body ul { list-style: none !important; padding: 0 !important; margin: 1rem 0 !important; }
+  .lumi-body li::before { content: "•"; margin-right: 0.5rem; opacity: 0.5; }
+
+  .lumi-cooldown-msg { text-align: center; font-weight: 500; color: rgba(255,255,255,0.7); margin-top: 0.5rem; }
+  .lumi-timer { color: #a78bfa; font-weight: 800; font-size: 1.25rem; display: block; margin-top: 0.25rem; text-shadow: 0 0 10px rgba(167,139,250,0.3); }
+
+  .lumi-cross {
+    width: 64px; height: 64px; margin: 0 auto 1.5rem;
+    background: rgba(239, 68, 68, 0.1); border-radius: 1.25rem;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.1);
   }
+  .lumi-cross-svg { width: 28px; height: 28px; stroke: #ef4444; stroke-width: 2.5; stroke-linecap: round; }
+
+  .lumi-actions { margin-top: 2rem !important; width: 100% !important; }
+  
+  .lumi-confirm {
+    background: #fff !important; color: #0f172a !important;
+    border-radius: 0.875rem !important; padding: 0.875rem 2rem !important;
+    font-weight: 800 !important; font-size: 0.875rem !important;
+    width: 100% !important; transition: all 0.3s ease !important;
+    border: none !important; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1) !important;
+  }
+  .lumi-confirm:hover { transform: translateY(-2px); box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2) !important; }
+
+  @keyframes lumi-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
 
 {{-- SweetAlert2 --}}
@@ -548,16 +385,16 @@ document.addEventListener('DOMContentLoaded', () => {
   let bodyHtml = '';
   if (cooldown > 0) {
     bodyHtml = `
-      <div style="margin-top:4px;color:#334155;font-size:15px;line-height:1.55;text-align:center">
-        Too many login attempts. Please try again in
-        <span id="lumi-count" style="font-weight:800;color:#4f46e5">${fmt(cooldown)}</span>.
+      <div class="lumi-cooldown-inner">
+        Too many login attempts. Please try again in<br/>
+        <span id="lumi-count" class="lumi-timer">${fmt(cooldown)}</span>.
       </div>`;
   } else if (bladeErrors && bladeErrors.length) {
-    bodyHtml = `<ul style="margin:6px 0 0;padding:0 0 0 18px;text-align:left">
+    bodyHtml = `<ul>
       ${bladeErrors.map(e => `<li>${escapeHtml(e)}</li>`).join('')}
     </ul>`;
   } else if (flashError) {
-    bodyHtml = `<div style="text-align:center">${escapeHtml(flashError)}</div>`;
+    bodyHtml = `<div class="text-center">${escapeHtml(flashError)}</div>`;
   }
 
   if (bodyHtml) {
@@ -569,14 +406,14 @@ document.addEventListener('DOMContentLoaded', () => {
       html: `
         <div class="lumi-cross">
           <svg class="lumi-cross-svg" viewBox="0 0 24 24" fill="none">
-            <path d="M6 6l12 12M18 6L6 18"></path>
+            <path stroke="currentColor" d="M6 6l12 12M18 6L6 18"></path>
           </svg>
         </div>
-        <div class="lumi-body">${bodyHtml}</div>
+        <div class="lumi-body-inner">${bodyHtml}</div>
       `,
       showConfirmButton: true,
       confirmButtonText: 'Okay',
-      width: 460,
+      width: 420,
       allowEnterKey: true,
       customClass: {
         container: 'lumi-container',
