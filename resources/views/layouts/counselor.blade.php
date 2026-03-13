@@ -19,11 +19,6 @@
     :root{
       --z-modal: 1100;     /* panel */
       --z-backdrop: 1099;  /* backdrop */
-      --rail-expanded: 18rem;
-      --rail-collapsed: 84px;
-      --header-h: 56px;
-      --sidebar-grad-a: #4f46e5;
-      --sidebar-grad-b: #7c3aed;
     }
 
     /* Use on the modal root container */
@@ -48,108 +43,6 @@
     body.no-scroll { overflow: hidden; }
     html,body{height:100%}
     body{overflow-x:hidden;-webkit-tap-highlight-color:transparent}
-
-    /* ------- Sidebar & main sizing ------- */
-    #cslSidebar{ width:var(--rail-expanded); transition: width .25s ease, transform .25s ease; }
-    #cslMain{ transition: padding .25s ease; }
-    @media (min-width:1024px){
-      #cslMain{ padding-left: var(--rail-expanded); }
-      .csl-collapsed #cslMain{ padding-left: var(--rail-collapsed); }
-    }
-    .csl-collapsed #cslSidebar{ width: var(--rail-collapsed); }
-    .rail-header{ height: var(--header-h); }
-
-    /* ------- Background polish (match admin look) ------- */
-    #cslSidebar{
-      border-radius:0 0 12px 0;
-      background-color:#4f46e5;
-      background-image:linear-gradient(135deg, var(--sidebar-grad-a), var(--sidebar-grad-b));
-      background-size:200% 200%;
-      animation:sidebarGradient 14s ease infinite;
-      box-shadow:0 10px 30px rgba(0,0,0,.18);
-    }
-    @keyframes sidebarGradient{
-      0%{ background-position:0% 50%; }
-      50%{ background-position:100% 50%; }
-      100%{ background-position:0% 50%; }
-    }
-
-    /* ------- Collapsed (desktop) ------- */
-    @media (min-width:1024px){
-      .csl-collapsed .brand-text,
-      .csl-collapsed .nav-label,
-      .csl-collapsed .hide-when-collapsed{ display:none!important; }
-      .csl-collapsed #railClose{ display:none!important; }
-      .csl-collapsed .nav-item{ justify-content:center; }
-    }
-
-    /* ------- Hamburger visibility ------- */
-    #railOpen{ display:inline-flex; }
-    @media (min-width:1024px){
-      body:not(.csl-collapsed) #railOpen{ display:none; }
-      body.csl-collapsed #railOpen{ display:inline-flex; }
-    }
-    body.mobile-rail-open #railOpen{ display:none; }
-
-    /* ------- Nav item look ------- */
-    .nav-item{
-      display:flex; align-items:center; gap:.75rem;
-      position:relative;
-      padding:.75rem 1rem; border-radius:.9rem;
-      ring:1px solid transparent;
-      transition:background .2s, transform .12s ease;
-    }
-    .nav-item:hover{ background:rgba(255,255,255,.14); transform:translateY(-1px); }
-    .nav-item.is-active{
-      background:rgba(255,255,255,.22); border:1px solid rgba(255,255,255,.18);
-      box-shadow:0 4px 12px rgba(0,0,0,.08);
-    }
-    .nav-item.is-active::before{
-      content:""; position:absolute; left:10px; top:50%;
-      transform:translateY(-50%); width:4px; height:26px; border-radius:999px; background:rgba(255,255,255,.96);
-    }
-    .nav-item > span.inline-flex{ border-radius:.75rem; background:rgba(255,255,255,.1); }
-    .nav-item.is-active > span.inline-flex{ background:rgba(255,255,255,.2); }
-
-    /* ------- Make PNG icons white ------- */
-    #cslSidebar nav a.nav-item > span > img{
-      width:22px; height:22px; object-fit:contain;
-      -webkit-filter: invert(1) brightness(1.15); filter: invert(1) brightness(1.15);
-    }
-
-    /* ------- Sidebar inner scroll ------- */
-    #railScroll{
-      height: calc(100vh - var(--header-h));
-      overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch;
-      scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.7) transparent;
-    }
-    @supports (height: 100dvh){ #railScroll{ height: calc(100dvh - var(--header-h)); } }
-    #railScroll::-webkit-scrollbar{ width:10px; }
-    #railScroll::-webkit-scrollbar-thumb{
-      background:rgba(255,255,255,.65);
-      border-radius:9999px; border:2px solid rgba(255,255,255,.25); background-clip:padding-box;
-    }
-
-    /* ------- Tooltips for collapsed rail ------- */
-    .nav-item .rail-tip{
-      position:absolute; inset:auto auto 50% 100%;
-      transform: translateY(50%) translateX(8px);
-      padding:.35rem .6rem; font-size:.75rem; white-space:nowrap;
-      background:#0f172a; color:#fff; border-radius:.5rem;
-      box-shadow:0 10px 24px rgba(15,23,42,.35);
-      opacity:0; pointer-events:none;
-      transition:opacity .12s ease, transform .12s ease;
-    }
-    @media (min-width:1024px){
-      .csl-collapsed .nav-item:hover .rail-tip{
-        opacity:1; transform: translateY(50%) translateX(12px);
-      }
-      .nav-item .danger { color:#ef4444; }
-      .nav-item:hover .danger { color:#f87171; }
-      .nav-item.is-active .danger { color:#fecaca; }
-    }
-
-    #cslSidebar{ overflow-x:clip; }
   </style>
 
   {{-- === Notification popover z-index fix (same as student/admin) === --}}
@@ -243,235 +136,241 @@
   </style>
 </head>
 
-<body class="bg-slate-50 text-slate-800 antialiased">
+<body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+@php
+  $u = auth()->user();
+  $displayName = trim((string)($u->name ?? 'Counselor'));
+  $roleLabel = 'Counselor';
+  $initials = collect(preg_split('/\s+/', $displayName))
+                ->filter()
+                ->take(2)
+                ->map(fn($p) => mb_substr($p, 0, 1))
+                ->implode('');
+@endphp
 
-{{-- ===== SIDEBAR / RAIL (counselor) ===== --}}
-<aside id="cslSidebar" class="fixed inset-y-0 left-0 z-40 -translate-x-full lg:translate-x-0 text-white shadow-xl">
-  <div class="rail-header px-4 flex items-center justify-between border-b border-white/20">
-    <div class="flex items-center gap-2">
-      <img src="{{ asset('images/chatbot.png') }}" class="w-9 h-9 rounded-full ring-2 ring-white/30 object-cover" alt="LumiCHAT">
-      <span class="brand-text font-semibold tracking-wide">LumiChat</span>
-    </div>
-    <button id="railClose" class="p-2 rounded-md hover:bg-white/10" title="Collapse / Close" aria-label="Collapse / Close">
-      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-    </button>
-  </div>
-
-  <nav class="h-[calc(100vh-var(--header-h))] flex flex-col">
-    <div id="railScroll" class="px-3 py-3 grow">
-      <p class="px-3 text-[11px] uppercase tracking-wider/relaxed opacity-90 nav-label">Main</p>
-
-      {{-- Dashboard --}}
-      <a href="{{ route('counselor.dashboard') }}"
-         aria-current="{{ request()->routeIs('counselor.dashboard') ? 'page' : 'false' }}"
-         class="nav-item group relative mt-2 px-3 py-2.5 ring-1 ring-transparent
-                {{ request()->routeIs('counselor.dashboard') ? 'is-active' : '' }}">
-        <span class="inline-flex w-10 h-10 items-center justify-center">
-          <img src="{{ asset('images/icons/home.png') }}" alt="">
-        </span>
-        <span class="nav-label font-medium">Dashboard</span>
-        <span class="rail-tip">Dashboard</span>
-      </a>
-
-      {{-- My Availability --}}
-      <a href="{{ route('counselor.availability.index') }}"
-         aria-current="{{ request()->routeIs('counselor.availability.*') ? 'page' : 'false' }}"
-         class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
-                {{ request()->routeIs('counselor.availability.*') ? 'is-active' : '' }}">
-        <span class="inline-flex w-10 h-10 items-center justify-center">
-          <img src="{{ asset('images/icons/appointment.png') }}" alt="">
-        </span>
-        <span class="nav-label font-medium">My Availability</span>
-        <span class="rail-tip">My Availability</span>
-      </a>
-
-      {{-- My Appointments --}}
-      <a href="{{ route('counselor.appointments.index') }}"
-        aria-current="{{ request()->routeIs('counselor.appointments.*') ? 'page' : 'false' }}"
-        class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
-                {{ request()->routeIs('counselor.appointments.*') ? 'is-active' : '' }}">
-        <span class="inline-flex w-10 h-10 items-center justify-center">
-          <img src="{{ asset('images/icons/appointment.png') }}" alt="">
-        </span>
-        <span class="nav-label font-medium">Appointments</span>
-        <span class="rail-tip">Appointments</span>
-      </a>
-
-      {{-- Walk-in Session --}}
-      <a href="{{ route('counselor.walkins.create') }}"
-         aria-current="{{ request()->routeIs('counselor.walkins.*') ? 'page' : 'false' }}"
-         class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
-                {{ request()->routeIs('counselor.walkins.*') ? 'is-active' : '' }}">
-        <span class="inline-flex w-10 h-10 items-center justify-center">
-          <img src="{{ asset('images/icons/appointment.png') }}" alt="">
-        </span>
-        <span class="nav-label font-medium">Walk-in Session</span>
-        <span class="rail-tip">Walk-in Session</span>
-      </a>
-
-    </div>
-
-    <div class="px-3 py-3 border-t border-white/15 hide-when-collapsed">
-      <form method="POST" action="{{ route('logout') }}" data-lumi-logout="1">
-        @csrf
-        <button type="submit" class="lumi-logout-btn">
-          <img src="{{ asset('images/icons/logout.png') }}" alt="" class="sidebar-icon logout-icon">
-          <span class="font-medium">Logout</span>
-        </button>
-      </form>
-    </div>
-  </nav>
-</aside>
-
-{{-- Mobile scrim --}}
-<div id="sidebarScrim" class="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm hidden lg:hidden"></div>
-
-{{-- ===== MAIN ===== --}}
-<div id="cslMain" class="min-h-screen">
-  <header class="sticky top-0 z-20 h-[var(--header-h)] bg-white/80 backdrop-blur border-b border-slate-200">
-    <div class="h-full max-w-7xl mx-auto px-4 flex items-center justify-between overflow-visible">
-      {{-- LEFT cluster: hamburger + title --}}
-      <div class="flex items-center gap-3">
-        <button id="railOpen" class="p-2 rounded-md hover:bg-slate-100" title="Open sidebar" aria-label="Open sidebar">
-          <svg class="w-6 h-6 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-          </svg>
-        </button>
-        <h1 class="text-lg font-semibold">@yield('page_title','Dashboard')</h1>
+<div class="layout-wrapper">
+  <aside id="sidebar" class="sidebar-shell">
+    <div class="sidebar-hdr flex items-center justify-between px-4 flex-shrink-0" style="height: var(--app-header-h);">
+      <div class="sidebar-hdr-logo flex items-center gap-2.5 min-w-0">
+        <img src="{{ asset('images/chatbot.png') }}" alt="Logo" class="w-6 h-6 flex-shrink-0">
+        <div class="sidebar-brand-lockup min-w-0">
+          <span class="sidebar-brand truncate">
+            <span class="sidebar-brand-lumi">Lumi</span><span class="sidebar-brand-chat">CHAT</span>
+          </span>
+        </div>
       </div>
+      <button id="sidebar-close" class="sidebar-x flex-shrink-0" title="Toggle sidebar" aria-label="Toggle sidebar">
+        <svg class="icon-collapse" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+        <svg class="icon-expand" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="3" y1="6"  x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+    </div>
 
-      @php
-        $u = auth()->user();
-        $displayName = trim((string)($u->name ?? 'Counselor'));
-        $initials = collect(preg_split('/\s+/', $displayName))
-                      ->filter()
-                      ->take(2)
-                      ->map(fn($p) => mb_substr($p, 0, 1))
-                      ->implode('');
-      @endphp
+    @php
+      $mainLinks = [
+        ['label' => 'Dashboard',      'href' => route('counselor.dashboard'),            'active' => request()->routeIs('counselor.dashboard'),       'icon' => 'home.png'],
+        ['label' => 'My Availability','href' => route('counselor.availability.index'),   'active' => request()->routeIs('counselor.availability.*'),  'icon' => 'appointment.png'],
+        ['label' => 'Appointments',   'href' => route('counselor.appointments.index'),   'active' => request()->routeIs('counselor.appointments.*'),  'icon' => 'appointment.png'],
+        ['label' => 'Walk-in Session','href' => route('counselor.walkins.create'),       'active' => request()->routeIs('counselor.walkins.*'),       'icon' => 'appointment.png'],
+      ];
+    @endphp
 
-      {{-- RIGHT cluster: bell + user chip --}}
-      <div class="flex items-center gap-3">
-        @auth
-          <div data-nb-root class="relative z-[2147483641]">
-            <x-notification-bell
-              :indexRoute="route('counselor.notifications.index')"
-              :feedRoute="route('counselor.notifications.feed')"
-              :markRoute="route('counselor.notifications.mark', ['id' => ':id'])"
-              :markAllRoute="route('counselor.notifications.mark_all')"
-            />
-          </div>
-        @endauth
+    <nav class="flex-1 px-2.5 pt-3 space-y-4 overflow-y-auto" id="railScroll">
+      <div>
+        <ul class="space-y-1">
+          @foreach ($mainLinks as $item)
+            <li>
+              <a href="{{ $item['href'] }}"
+                 @class(['nav-item', 'nav-item--active' => $item['active']])
+                 data-tip="{{ $item['label'] }}">
+                <img src="{{ asset('images/icons/' . $item['icon']) }}" alt="" class="sidebar-icon icon-white">
+                <span class="nav-item-label">{{ $item['label'] }}</span>
+              </a>
+            </li>
+          @endforeach
+        </ul>
+      </div>
+    </nav>
 
-        <div class="relative">
-          <button id="cslUserBtn"
-            class="inline-flex items-center gap-2 h-10 px-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-            <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-xs font-bold">
-              {{ $initials ?: 'U' }}
-            </div>
-            <div class="hidden sm:flex flex-col text-left leading-tight mr-1">
-              <span class="text-[13px] font-semibold text-gray-800 dark:text-gray-100 truncate max-w-[8rem]">
-                {{ $displayName }}
-              </span>
-              <span class="text-[11px] text-gray-500 dark:text-gray-400">Counselor</span>
-            </div>
+    <div class="sidebar-profile-card">
+      <div class="sidebar-user-avatar">{{ $initials ?: 'U' }}<span class="sidebar-avatar-dot"></span></div>
+      <div class="sidebar-user-info">
+        <span class="sidebar-user-name">{{ $displayName }}</span>
+        <span class="sidebar-user-role">{{ $roleLabel }}</span>
+      </div>
+    </div>
+  </aside>
+
+  <div id="sidebar-scrim"></div>
+
+  <div class="main-content">
+    <header class="header-shell">
+      <div class="header-inner flex items-center justify-between overflow-visible">
+        <div class="flex items-center gap-3">
+          <button id="sidebar-open" class="hamburger-btn header-only" aria-label="Open sidebar">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="4" y1="6"  x2="20" y2="6"/>
+              <line x1="4" y1="12" x2="20" y2="12"/>
+              <line x1="4" y1="18" x2="20" y2="18"/>
+            </svg>
+          </button>
+          <h1 class="text-lg sm:text-xl font-semibold tracking-tight text-gray-900 dark:text-white">@yield('page_title','Dashboard')</h1>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button id="theme-toggle" type="button" aria-label="Toggle theme"
+                  class="inline-flex items-center justify-center h-10 w-10 rounded-xl border border-gray-200
+                         dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50
+                         dark:hover:bg-gray-800 transition">
+            <svg class="inline dark:hidden w-5 h-5 text-gray-600" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+            </svg>
+            <svg class="hidden dark:inline w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6.76 4.84l-1.8-1.79L3.18 4.84l1.79 1.79 1.79-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zm9-10v-2h-3v2h3zm-3.76 6.16l1.79 1.79 1.78-1.79-1.78-1.79-1.79 1.79zM12 7a5 5 0 100 10 5 5 0 000-10zm6.24-2.16l1.79-1.79-1.79-1.79-1.79 1.79 1.79 1.79zM4.24 17.16L2.45 18.95l1.79 1.79 1.79-1.79-1.79-1.79z"/>
+            </svg>
           </button>
 
-          {{-- Dropdown --}}
-          <div id="cslUserMenu"
-               class="hidden absolute right-0 mt-2 w-44 rounded-xl bg-white shadow-lg ring-1 ring-black/5 overflow-hidden z-30">
-            <a href="{{ route('profile.edit') }}" class="block px-3 py-2.5 text-sm hover:bg-slate-50">Profile</a>
-            @if (Route::has('settings.index'))
-              <a href="{{ route('settings.index') }}" class="block px-3 py-2.5 text-sm hover:bg-slate-50">Settings</a>
-            @endif
-            <div class="h-px bg-slate-200 my-1"></div>
-            <form method="POST" action="{{ route('logout') }}" data-lumi-logout="1">
-              @csrf
-              <button type="submit" class="w-full text-left px-3 py-2.5 text-sm text-rose-600 hover:bg-rose-50">Logout</button>
-            </form>
+          @auth
+            <div data-nb-root class="relative z-[2147483641]">
+              <x-notification-bell
+                :indexRoute="route('counselor.notifications.index')"
+                :feedRoute="route('counselor.notifications.feed')"
+                :markRoute="route('counselor.notifications.mark', ['id' => ':id'])"
+                :markAllRoute="route('counselor.notifications.mark_all')"
+              />
+            </div>
+          @endauth
+
+          <div class="relative">
+            <button id="user-btn" type="button"
+              class="inline-flex items-center gap-3 h-11 px-2.5 rounded-xl border border-gray-200
+                     dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50
+                     dark:hover:bg-gray-800 transition">
+              <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br
+                          from-indigo-500 to-violet-600 text-white text-xs font-bold">
+                {{ $initials ?: 'U' }}
+              </div>
+              <div class="hidden sm:flex flex-col text-left leading-tight min-w-0">
+                <span class="text-[11px] font-medium uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">Welcome</span>
+                <span class="text-[13px] font-semibold text-gray-800 dark:text-gray-100 truncate max-w-[11rem]">{{ $displayName }}</span>
+              </div>
+              <svg class="hidden sm:block w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+              </svg>
+            </button>
+
+            <div id="user-menu" class="dropdown hidden">
+              <form method="POST" action="{{ route('logout') }}" data-lumi-logout="1">
+                @csrf
+                <button type="submit" class="dropdown-item dropdown-item--danger">
+                  <span class="dropdown-item-icon" aria-hidden="true">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+                      <path d="M16 17l5-5-5-5" />
+                      <path d="M21 12H9" />
+                    </svg>
+                  </span>
+                  <span>Logout</span>
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </header>
+    </header>
 
-  <main class="max-w-7xl mx-auto px-4 py-6">
-    @yield('content')
-  </main>
+    <main class="panel-scroll">
+      <div class="max-w-7xl mx-auto px-4 py-6">
+        @yield('content')
+      </div>
+    </main>
+  </div>
 </div>
 
 <script>
-(function () {
-  const body      = document.body;
-  const sidebar   = document.getElementById('cslSidebar');
-  const scrim     = document.getElementById('sidebarScrim');
-  const openBtn   = document.getElementById('railOpen');
-  const closeBtn  = document.getElementById('railClose');
-  const mqDesktop = window.matchMedia('(min-width: 1024px)');
-  const LS_KEY    = 'cslSidebarCollapsed';
-  const isDesktop = () => mqDesktop.matches;
+  // Sidebar toggle (same behavior as student)
+  (function(){
+    const body = document.body;
+    const openBtn = document.getElementById('sidebar-open');
+    const closeBtn = document.getElementById('sidebar-close');
+    const sidebar = document.getElementById('sidebar');
+    const scrim = document.getElementById('sidebar-scrim');
+    const isMobile = () => window.innerWidth < 1024;
 
-  function setCollapsed(on){
-    body.classList.toggle('csl-collapsed', !!on);
-    localStorage.setItem(LS_KEY, on ? '1' : '0');
-  }
-  const getCollapsed = () => localStorage.getItem(LS_KEY) === '1';
+    const stored = localStorage.getItem('sidebarHidden') === 'true';
+    body.classList.toggle('sidebar-hidden', isMobile() ? true : stored);
 
-  function openMobile(){
-    sidebar.classList.remove('-translate-x-full');
-    scrim.classList.remove('hidden');
-    body.classList.add('no-scroll','mobile-rail-open');
-  }
-  function closeMobile(){
-    sidebar.classList.add('-translate-x-full');
-    scrim.classList.add('hidden');
-    body.classList.remove('no-scroll','mobile-rail-open');
-  }
+    const setScrim = (open) => {
+      if (!scrim) return;
+      if (open && isMobile()) {
+        scrim.classList.add('active');
+        body.style.overflow = 'hidden';
+      } else {
+        scrim.classList.remove('active');
+        body.style.overflow = '';
+      }
+    };
 
-  openBtn?.addEventListener('click', () => {
-    if (isDesktop()) { if (getCollapsed()) setCollapsed(false); }
-    else { openMobile(); }
-  });
-  closeBtn?.addEventListener('click', () => {
-    if (isDesktop()) setCollapsed(true);
-    else closeMobile();
-  });
-  scrim?.addEventListener('click', closeMobile);
-  window.addEventListener('keydown', e => { if (e.key === 'Escape' && !isDesktop()) closeMobile(); });
+    setScrim(!body.classList.contains('sidebar-hidden'));
 
-  function applyMode(){
-    if (isDesktop()){
-      body.classList.remove('mobile-rail-open');
-      sidebar.classList.remove('-translate-x-full');
-      scrim.classList.add('hidden');
-      body.classList.remove('no-scroll');
-      setCollapsed(getCollapsed());
-    } else {
-      sidebar.classList.add('-translate-x-full');
-      body.classList.remove('csl-collapsed','mobile-rail-open');
-    }
-  }
-  mqDesktop.addEventListener('change', applyMode);
-  applyMode();
-})();
+    const toggle = () => {
+      body.classList.toggle('sidebar-hidden');
+      const isHidden = body.classList.contains('sidebar-hidden');
+      if (!isMobile()) localStorage.setItem('sidebarHidden', isHidden);
+      setScrim(!isHidden);
+    };
+
+    openBtn?.addEventListener('click', toggle);
+    closeBtn?.addEventListener('click', toggle);
+    scrim?.addEventListener('click', toggle);
+
+    document.addEventListener('click', (e) => {
+      if (!isMobile()) return;
+      if (!sidebar.contains(e.target) && !openBtn?.contains(e.target)) {
+        if (!body.classList.contains('sidebar-hidden')) toggle();
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      if (!isMobile()) {
+        scrim?.classList.remove('active');
+        body.style.overflow = '';
+      }
+    });
+  })();
 </script>
 
 <script>
-/* Counselor user menu toggle */
-(function(){
-  const btn  = document.getElementById('cslUserBtn');
-  const menu = document.getElementById('cslUserMenu');
-  if (!btn || !menu) return;
+  // Theme toggle
+  (function(){
+    const btn = document.getElementById('theme-toggle');
+    btn?.addEventListener('click', () => {
+      const html = document.documentElement;
+      const isDark = html.classList.toggle('dark');
+      localStorage.setItem('lumichat_dark', isDark ? '1' : '0');
+    });
+  })();
+</script>
 
-  const close = () => menu.classList.add('hidden');
-  const toggle = () => menu.classList.toggle('hidden');
+<script>
+  // User menu toggle
+  (function(){
+    const btn = document.getElementById('user-btn');
+    const menu = document.getElementById('user-menu');
+    const close = () => menu?.classList.add('hidden');
+    const toggle = () => menu?.classList.toggle('hidden');
 
-  btn.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
-  document.addEventListener('click', (e) => {
-    if (!menu.contains(e.target) && !btn.contains(e.target)) close();
-  });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
-})();
+    btn?.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
+    document.addEventListener('click', (e) => {
+      if (!menu?.contains(e.target) && !btn?.contains(e.target)) close();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  })();
 </script>
 
 <button id="lumi-tour-fab"

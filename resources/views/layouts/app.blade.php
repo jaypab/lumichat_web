@@ -222,13 +222,40 @@
   <div class="layout-wrapper">
     {{-- ============================= SIDEBAR ============================= --}}
     <aside id="sidebar" class="sidebar-shell">
-      <div class="flex items-center justify-between h-16 px-4 border-b border-r border-white/10 relative">
-        <div class="flex items-center gap-2">
-          <img src="{{ asset('images/chatbot.png') }}" alt="Logo" class="w-7 h-7">
-          <span class="text-lg font-semibold bg-gradient-to-r from-indigo-100 to-violet-200 bg-clip-text text-transparent">LumiCHAT</span>
+      <div class="sidebar-hdr flex items-center justify-between px-4 flex-shrink-0" style="height: var(--app-header-h);">
+        <div class="sidebar-hdr-logo flex items-center gap-2.5 min-w-0">
+          <img src="{{ asset('images/chatbot.png') }}" alt="Logo" class="w-6 h-6 flex-shrink-0">
+          <div class="sidebar-brand-lockup min-w-0">
+            <span class="sidebar-brand truncate">
+              <span class="sidebar-brand-lumi">Lumi</span><span class="sidebar-brand-chat">CHAT</span>
+            </span>
+          </div>
         </div>
-        <button id="sidebar-close" class="sidebar-x" title="Close sidebar" aria-label="Close sidebar">✕</button>
+        <button id="sidebar-close" class="sidebar-x flex-shrink-0" title="Toggle sidebar" aria-label="Toggle sidebar">
+          {{-- X: shown when sidebar is open --}}
+          <svg class="icon-collapse" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+          {{-- Hamburger: shown when sidebar is collapsed --}}
+          <svg class="icon-expand" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="3" y1="6"  x2="21" y2="6"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
       </div>
+
+      @php
+        $sbInitials = '';
+        $sbName = '';
+        $sbSis = '';
+        if (Auth::check()) {
+            $parts = preg_split('/\s+/', trim(Auth::user()->name ?? ''));
+            $sbInitials = strtoupper(collect($parts)->take(2)->map(fn($s) => mb_substr($s, 0, 1))->implode(''));
+            $sbName = Auth::user()->name ?? '';
+            $sbSis = Auth::user()->sis ?? '';
+        }
+      @endphp
 
       @php
         $mainLinks = [
@@ -241,10 +268,9 @@
         ];
       @endphp
 
-      <nav class="flex-1 px-3 pt-5 space-y-5 overflow-y-auto" id="railScroll">
+      <nav class="flex-1 px-2.5 pt-3 space-y-4 overflow-y-auto" id="railScroll">
         <div>
-          <p class="section-label">MAIN</p>
-          <ul class="space-y-2">
+          <ul class="space-y-1">
             @foreach ($mainLinks as $item)
               @if ($item['label'] === 'Appointment')
                 @php
@@ -268,9 +294,10 @@
                   <li>
                     <a href="{{ $apptRoute }}"
                        @class(['nav-item', 'nav-item--active' => $apptIsActive, 'relative' => true])
-                       id="nav-appointment-link">
+                       id="nav-appointment-link"
+                       data-tip="{{ $apptLabel }}">
                       <img src="{{ asset('images/icons/appointment.png') }}" alt="" class="sidebar-icon icon-white">
-                      <span>{{ $apptLabel }}</span>
+                      <span class="nav-item-label">{{ $apptLabel }}</span>
                     </a>
                   </li>
                 @endif
@@ -297,34 +324,38 @@
                      'opacity-100' => $item['route'] && is_string($item['route']),
                      'opacity-70 cursor-not-allowed' => !$item['route'] || !is_string($item['route']),
                    ])
-                   @if($extraId) id="{{ $extraId }}" @endif>
+                   @if($extraId) id="{{ $extraId }}" @endif
+                   data-tip="{{ $item['label'] }}">
                   <img src="{{ asset('images/icons/' . $item['icon']) }}" alt="" class="sidebar-icon icon-white">
-                  <span>{{ $item['label'] }}</span>
+                  <span class="nav-item-label">{{ $item['label'] }}</span>
                 </a>
               </li>
             @endforeach
           </ul>
-        </div>
 
-        <div>
-          <p class="section-label">TOOLS</p>
-          <a href="{{ route('chat.new') }}" class="nav-pill" data-new-chat="1">
-            <img src="{{ asset('images/icons/new-chat.png') }}" alt="" class="sidebar-icon icon-white">
-            <span class="font-medium">New Chat</span>
-          </a>
+          {{-- Session CTA --}}
+          <div class="sidebar-newchat-wrap pt-3">
+            <p class="section-label mb-2">QUICK START</p>
+            <a href="{{ route('chat.new') }}" class="nav-pill w-full" data-new-chat="1" data-tip="Start a Session">
+              <img src="{{ asset('images/icons/new-chat.png') }}" alt="" class="sidebar-icon sidebar-icon--cta">
+              <span class="nav-item-label font-medium">Start New Session</span>
+            </a>
+          </div>
         </div>
       </nav>
 
-      <div class="px-3 py-4 border-t border-white/10 mt-auto">
-        <form method="POST" action="{{ route('logout') }}" data-lumi-logout="1">
-          @csrf
-          <button type="submit" class="lumi-logout-btn">
-            <img src="{{ asset('images/icons/logout.png') }}" alt="" class="sidebar-icon logout-icon">
-            <span class="font-medium">Logout</span>
-          </button>
-        </form>
+      {{-- Profile card footer --}}
+      <div class="sidebar-profile-card">
+        <div class="sidebar-user-avatar">{{ $sbInitials ?: 'U' }}<span class="sidebar-avatar-dot"></span></div>
+        <div class="sidebar-user-info">
+          <span class="sidebar-user-name">{{ $sbName }}</span>
+          <span class="sidebar-user-role">{{ $sbSis ?: 'Student' }}</span>
+        </div>
       </div>
     </aside>
+
+    {{-- Mobile scrim backdrop --}}
+    <div id="sidebar-scrim"></div>
 
 {{-- ============================ MAIN CONTENT ============================ --}}
 @php
@@ -393,32 +424,60 @@
         {{-- User chip + menu --}}
         <div class="relative">
           <button id="user-btn" type="button"
-            class="inline-flex items-center gap-2 h-10 px-2 rounded-xl border border-gray-200
+            class="inline-flex items-center gap-3 h-11 px-2.5 rounded-xl border border-gray-200
                    dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50
                    dark:hover:bg-gray-800 transition">
             <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br
                         from-indigo-500 to-violet-600 text-white text-xs font-bold">
               {{ $initials ?: 'U' }}
             </div>
-            <div class="hidden sm:flex flex-col text-left leading-tight mr-1">
-              <span class="text-[13px] font-semibold text-gray-800 dark:text-gray-100 truncate max-w-[8rem]">
+            <div class="hidden sm:flex flex-col text-left leading-tight min-w-0">
+              <span class="text-[11px] font-medium uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">
+                Welcome
+              </span>
+              <span class="text-[13px] font-semibold text-gray-800 dark:text-gray-100 truncate max-w-[11rem]">
                 @auth {{ Auth::user()->name }} @endauth
               </span>
-              <span class="text-[11px] text-gray-500 dark:text-gray-400">
-                @auth {{ Auth::user()->sis }} @endauth
-              </span>
             </div>
+            <svg class="hidden sm:block w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+            </svg>
           </button>
 
-          <div id="user-menu" class="dropdown">
-            <a href="{{ route('profile.edit') }}" class="dropdown-item">Profile</a>
+          <div id="user-menu" class="dropdown hidden">
+            <a href="{{ route('profile.edit') }}" class="dropdown-item">
+              <span class="dropdown-item-icon" aria-hidden="true">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21a8 8 0 10-16 0" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+              </span>
+              <span>Profile</span>
+            </a>
             @if(Route::has('settings.index'))
-              <a href="{{ route('settings.index') }}" class="dropdown-item">Settings</a>
+              <a href="{{ route('settings.index') }}" class="dropdown-item">
+                <span class="dropdown-item-icon" aria-hidden="true">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 005 15.4a1.65 1.65 0 00-1.51-1H3.4a2 2 0 110-4h.09A1.65 1.65 0 005 8.89a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009.11 5c.2-.81.93-1.39 1.76-1.4h.26a2 2 0 114 0h.09c.83.01 1.56.59 1.76 1.4a1.65 1.65 0 001.51 1 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019 10.11c.81.2 1.39.93 1.4 1.76v.26a2 2 0 110 4h-.09c-.83.01-1.56.59-1.76 1.4z" />
+                </svg>
+              </span>
+              <span>Settings</span>
+            </a>
             @endif
             <div class="dropdown-sep"></div>
             <form method="POST" action="{{ route('logout') }}" data-lumi-logout="1">
               @csrf
-              <button type="submit" class="dropdown-item text-rose-600">Logout</button>
+              <button type="submit" class="dropdown-item dropdown-item--danger">
+                <span class="dropdown-item-icon" aria-hidden="true">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+                    <path d="M16 17l5-5-5-5" />
+                    <path d="M21 12H9" />
+                  </svg>
+                </span>
+                <span>Logout</span>
+              </button>
             </form>
           </div>
         </div>
@@ -434,28 +493,57 @@
 
   {{-- ============================ Minimal JS ============================ --}}
   <script>
-    // Sidebar toggle (remembers state)
+    // Sidebar toggle (remembers state on desktop, always closed on mobile)
     (function(){
       const body = document.body;
       const openBtn = document.getElementById('sidebar-open');
       const closeBtn = document.getElementById('sidebar-close');
       const sidebar = document.getElementById('sidebar');
+      const scrim = document.getElementById('sidebar-scrim');
+      const isMobile = () => window.innerWidth < 1024;
 
-      const hidden = localStorage.getItem('sidebarHidden') === 'true';
-      body.classList.toggle('sidebar-hidden', hidden);
+      // On mobile always start closed; on desktop restore from localStorage
+      const stored = localStorage.getItem('sidebarHidden') === 'true';
+      body.classList.toggle('sidebar-hidden', isMobile() ? true : stored);
+
+      const setScrim = (open) => {
+        if (!scrim) return;
+        if (open && isMobile()) {
+          scrim.classList.add('active');
+          body.style.overflow = 'hidden';
+        } else {
+          scrim.classList.remove('active');
+          body.style.overflow = '';
+        }
+      };
+
+      // Sync scrim with initial state
+      setScrim(!body.classList.contains('sidebar-hidden'));
 
       const toggle = () => {
         body.classList.toggle('sidebar-hidden');
-        localStorage.setItem('sidebarHidden', body.classList.contains('sidebar-hidden'));
+        const isHidden = body.classList.contains('sidebar-hidden');
+        if (!isMobile()) localStorage.setItem('sidebarHidden', isHidden);
+        setScrim(!isHidden);
       };
 
       openBtn?.addEventListener('click', toggle);
       closeBtn?.addEventListener('click', toggle);
+      scrim?.addEventListener('click', toggle);
 
+      // Close on outside click (mobile)
       document.addEventListener('click', (e) => {
-        if (innerWidth >= 1024) return;
-        if (!sidebar.contains(e.target) && !openBtn.contains(e.target)) {
+        if (!isMobile()) return;
+        if (!sidebar.contains(e.target) && !openBtn?.contains(e.target)) {
           if (!body.classList.contains('sidebar-hidden')) toggle();
+        }
+      });
+
+      // Re-evaluate on resize
+      window.addEventListener('resize', () => {
+        if (!isMobile()) {
+          scrim?.classList.remove('active');
+          body.style.overflow = '';
         }
       });
     })();

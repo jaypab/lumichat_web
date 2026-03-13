@@ -17,87 +17,25 @@
 
   <style>
     :root{
-      --rail-expanded: 18rem;   /* 288px */
-      --rail-collapsed: 84px;   /* compact width */
-      --header-h: 56px;
+      --z-modal: 1100;
+      --z-backdrop: 1099;
     }
     html, body { height: 100%; }
     body{ -webkit-tap-highlight-color: transparent; overflow-x: hidden; }
     .no-scroll{ overflow: hidden; }
 
-    #adminSidebar{ width: var(--rail-expanded); transition: width .25s ease, transform .25s ease; }
-    #adminMain{ transition: padding .25s ease; }
-    @media (min-width: 1024px){
-      #adminMain{ padding-left: var(--rail-expanded); }
-      .admin-collapsed #adminMain{ padding-left: var(--rail-collapsed); }
+    .modal-zp{ position: fixed; inset: 0; z-index: var(--z-modal); }
+    .modal-zp .modal-backdrop{
+      position: absolute; inset: 0;
+      background: rgba(2, 6, 23, 0.60);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      z-index: var(--z-backdrop);
     }
-    .admin-collapsed #adminSidebar{ width: var(--rail-collapsed); }
-
-    .rail-header{ height: var(--header-h); }
-
-    @media (min-width:1024px){
-      .admin-collapsed .brand-text,
-      .admin-collapsed .nav-label,
-      .admin-collapsed .hide-when-collapsed{ display: none !important; }
-      .admin-collapsed #railClose{ display: none !important; }
-      .admin-collapsed .nav-item{ justify-content: center; }
-    }
-
-    #railOpen{ display:inline-flex; }
-    @media (min-width:1024px){
-      body:not(.admin-collapsed) #railOpen{ display:none; }
-      body.admin-collapsed #railOpen{ display:inline-flex; }
-    }
-    body.mobile-rail-open #railOpen{ display:none; }
-
-    .nav-item.is-active::before{
-      content:""; position:absolute; left:10px; top:50%;
-      transform:translateY(-50%); width:4px; height:22px; border-radius:999px;
-      background:rgba(255,255,255,.92);
-    }
-
-    #adminSidebar nav a.nav-item > span > img{
-      -webkit-filter: invert(1) brightness(1000%) saturate(0) contrast(100%) !important;
-              filter: invert(1) brightness(1000%) saturate(0) contrast(100%) !important;
-    }
-
-    #railScroll{
-      height: calc(100vh - var(--header-h));
-      overflow-y: auto; overflow-x: hidden;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: thin;
-      scrollbar-color: rgba(255,255,255,.7) transparent;
-    }
-    @supports (height: 100dvh){
-      #railScroll{ height: calc(100dvh - var(--header-h)); }
-    }
-    #railScroll::-webkit-scrollbar{ width: 10px; }
-    #railScroll::-webkit-scrollbar-thumb{
-      background: rgba(255,255,255,.65);
-      border-radius: 9999px;
-      border: 2px solid rgba(255,255,255,.25);
-      background-clip: padding-box;
-    }
-    #railScroll::-webkit-scrollbar-track{ background: transparent; }
-    @media (min-width:1024px){
-      .admin-collapsed #railScroll{ overflow: hidden; }
-    }
-
-    #adminSidebar{ overflow-x: clip; }
-
-    .nav-item .rail-tip{
-      position:absolute; inset:auto auto 50% 100%;
-      transform: translateY(50%) translateX(8px);
-      padding:.35rem .6rem; font-size:.75rem; white-space:nowrap;
-      background:#0f172a; color:#fff; border-radius:.5rem;
-      box-shadow:0 10px 24px rgba(15,23,42,.35);
-      opacity:0; pointer-events:none;
-      transition:opacity .12s ease, transform .12s ease;
-    }
-    @media (min-width:1024px){
-      .admin-collapsed .nav-item:hover .rail-tip{
-        opacity:1; transform: translateY(50%) translateX(12px);
-      }
+    .modal-zp .modal-panel{ position: relative; z-index: calc(var(--z-modal) + 1); }
+    .modal-zp .modal-backdrop--lg{
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
     }
   </style>
 
@@ -186,351 +124,285 @@
   </style>
 </head>
 
-<body class="bg-slate-50 text-slate-800 antialiased">
+<body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+@php
+  $adminInitials = '';
+  if (Auth::check()) {
+    $parts = preg_split('/\s+/', trim(Auth::user()->name ?? ''));
+    $adminInitials = strtoupper(collect($parts)->take(2)->map(fn($s)=>mb_substr($s,0,1))->implode(''));
+  }
+  $displayName = auth()->user()->name ?? 'Master Admin';
+@endphp
 
-{{-- ===== SIDEBAR / RAIL ===== --}}
-<aside id="adminSidebar"
-  class="fixed inset-y-0 left-0 z-40 -translate-x-full lg:translate-x-0 text-white shadow-xl">
-
-  {{-- Brand --}}
-  <div class="rail-header px-4 flex items-center justify-between border-b border-white/20">
-    <div class="flex items-center gap-2">
-      <img src="{{ asset('images/chatbot.png') }}"
-           class="w-9 h-9 rounded-full ring-2 ring-white/30 object-cover"
-           alt="LumiCHAT">
-      <span class="brand-text font-semibold tracking-wide">LumiCHAT</span>
-    </div>
-
-    {{-- X: collapse on desktop / close on mobile --}}
-    <button id="railClose"
-            class="p-2 rounded-md hover:bg-white/10 focus:outline-none"
-            aria-label="Collapse/Close sidebar"
-            title="Collapse (desktop) / Close (mobile)">
-      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M6 18L18 6M6 6l12 12"/>
-      </svg>
-    </button>
-  </div>
-
-  {{-- Nav --}}
-  <nav class="h-[calc(100vh-var(--header-h))] flex flex-col">
-    <div id="railScroll" class="px-3 py-3 grow">
-
-      <p class="px-3 text-[11px] uppercase tracking-wider/relaxed opacity-90 nav-label">Main</p>
-
-      {{-- Dashboard --}}
-      <a href="{{ route('admin.dashboard') }}"
-         aria-current="{{ request()->routeIs('admin.dashboard') ? 'page' : 'false' }}"
-         class="nav-item group relative mt-2 px-3 py-2.5 ring-1 ring-transparent
-                hover:bg-white/10 hover:ring-white/10
-                {{ request()->routeIs('admin.dashboard') ? 'is-active bg-white/15 ring-white/10' : '' }}">
-        <span class="inline-flex w-10 h-10 items-center justify-center">
-          <img src="{{ asset('images/icons/home.png') }}" class="sidebar-icon" alt="">
-        </span>
-        <span class="nav-label font-medium">Dashboard Overview</span>
-        <span class="rail-tip">Dashboard Overview</span>
-      </a>
-
-      {{-- Counselor --}}
-      <a href="{{ route('admin.counselors.index') }}"
-         aria-current="{{ request()->routeIs('admin.counselors.*') ? 'page' : 'false' }}"
-         class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
-                hover:bg-white/10 hover:ring-white/10
-                {{ request()->routeIs('admin.counselors.*') ? 'is-active bg-white/15 ring-white/10' : '' }}">
-        <span class="inline-flex w-10 h-10 items-center justify-center">
-          <img src="{{ asset('images/icons/counselor.png') }}" class="sidebar-icon" alt="">
-        </span>
-        <span class="nav-label font-medium">Counselor</span>
-        <span class="rail-tip">Counselor</span>
-      </a>
-
-      <p class="mt-4 px-3 text-[11px] uppercase tracking-wider/relaxed opacity-90 nav-label">Student Management</p>
-
-      {{-- Student Records --}}
-      <a href="{{ route('admin.students.index') }}"
-         aria-current="{{ request()->routeIs('admin.students.*') ? 'page' : 'false' }}"
-         class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
-                hover:bg-white/10 hover:ring-white/10
-                {{ request()->routeIs('admin.students.*') ? 'is-active bg-white/15 ring-white/10' : '' }}">
-        <span class="inline-flex w-10 h-10 items-center justify-center">
-          <img src="{{ asset('images/icons/user.png') }}" class="sidebar-icon" alt="">
-        </span>
-        <span class="nav-label font-medium">Student Records</span>
-        <span class="rail-tip">Student Records</span>
-      </a>
-
-      {{-- Appointments --}}
-      <a href="{{ route('admin.appointments.index') }}"
-         aria-current="{{ request()->routeIs('admin.appointments.*') ? 'page' : 'false' }}"
-         class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
-                hover:bg-white/10 hover:ring-white/10
-                {{ request()->routeIs('admin.appointments.*') ? 'is-active bg-white/15 ring-white/10' : '' }}">
-        <span class="inline-flex w-10 h-10 items-center justify-center">
-          <img src="{{ asset('images/icons/appointment.png') }}" class="sidebar-icon" alt="">
-        </span>
-        <span class="nav-label font-medium">Appointments</span>
-        <span class="rail-tip">Appointments</span>
-      </a>
-
-      <p class="mt-4 px-3 text-[11px] uppercase tracking-wider/relaxed opacity-90 nav-label">Reports</p>
-
-      {{-- Counselor Logs --}}
-      <a href="{{ route('admin.counselor-logs.index') }}"
-         aria-current="{{ request()->routeIs('admin.counselor-logs.*') ? 'page' : 'false' }}"
-         class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
-                hover:bg-white/10 hover:ring-white/10
-                {{ request()->routeIs('admin.counselor-logs.*') ? 'is-active bg-white/15 ring-white/10' : '' }}">
-        <span class="inline-flex w-10 h-10 items-center justify-center">
-          <img src="{{ asset('images/icons/logs.png') }}" class="sidebar-icon" alt="">
-        </span>
-        <span class="nav-label font-medium">Counselor Logs</span>
-        <span class="rail-tip">Counselor Logs</span>
-      </a>
-
-      {{-- Chatbot Sessions --}}
-      <a href="{{ route('admin.chatbot-sessions.index') }}"
-        aria-current="{{ request()->routeIs('admin.chatbot-sessions.*') ? 'page' : 'false' }}"
-        class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
-                hover:bg-white/10 hover:ring-white/10
-                {{ request()->routeIs('admin.chatbot-sessions.*') ? 'is-active bg-white/15 ring-white/10' : '' }}">
-        <span class="inline-flex w-10 h-10 items-center justify-center">
-          <img src="{{ asset('images/icons/chatbot-session.png') }}" class="sidebar-icon" alt="">
-        </span>
-        <span class="nav-label font-medium">Chatbot Sessions</span>
-        <span class="rail-tip">Chatbot Sessions</span>
-
-        @if(($adminHighRiskCount ?? 0) > 0)
-          <span
-            class="absolute -top-1.5 right-3 min-w-[1.45rem] px-1.5 py-[2px]
-                  rounded-full text-[11px] font-semibold
-                  bg-rose-500 text-white flex items-center justify-center
-                  shadow-sm ring-1 ring-rose-300/70">
-            +{{ $adminHighRiskCount > 9 ? '9' : $adminHighRiskCount }}
+<div class="layout-wrapper">
+  <aside id="sidebar" class="sidebar-shell">
+    <div class="sidebar-hdr flex items-center justify-between px-4 flex-shrink-0" style="height: var(--app-header-h);">
+      <div class="sidebar-hdr-logo flex items-center gap-2.5 min-w-0">
+        <img src="{{ asset('images/chatbot.png') }}" alt="Logo" class="w-6 h-6 flex-shrink-0">
+        <div class="sidebar-brand-lockup min-w-0">
+          <span class="sidebar-brand truncate">
+            <span class="sidebar-brand-lumi">Lumi</span><span class="sidebar-brand-chat">CHAT</span>
           </span>
-        @endif
-      </a>
-
-      <p class="mt-4 px-3 text-[11px] uppercase tracking-wider/relaxed opacity-90 nav-label">Analytics</p>
-
-      {{-- Case Form Summary --}}
-      <a href="{{ route('admin.case-notes.index') }}"
-        aria-current="{{ request()->routeIs('admin.case-notes.*') ? 'page' : 'false' }}"
-        class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
-                hover:bg-white/10 hover:ring-white/10
-                {{ request()->routeIs('admin.case-notes.*') ? 'is-active bg-white/15 ring-white/10' : '' }}">
-        <span class="inline-flex w-10 h-10 items-center justify-center">
-          <img src="{{ asset('images/icons/casenote.png') }}" class="sidebar-icon" alt="">
-        </span>
-        <span class="nav-label font-medium">Case Form Summary</span>
-        <span class="rail-tip">Case Form Summary</span>
-      </a>
-
-      {{-- Course Analytics --}}
-      <a href="{{ route('admin.course-analytics.index') }}"
-        aria-current="{{ request()->routeIs('admin.course-analytics.*') ? 'page' : 'false' }}"
-        class="nav-item group relative mt-1.5 px-3 py-2.5 ring-1 ring-transparent
-                hover:bg-white/10 hover:ring-white/10
-                {{ request()->routeIs('admin.course-analytics.*') ? 'is-active bg-white/15 ring-white/10' : '' }}">
-        <span class="inline-flex w-10 h-10 items-center justify-center">
-          <img src="{{ asset('images/icons/graduate.png') }}" class="sidebar-icon" alt="">
-        </span>
-        <span class="nav-label font-medium">Course Summary</span>
-        <span class="rail-tip">Course Summary</span>
-      </a>
-    </div>
-
-    {{-- Logout — visible only when rail is expanded --}}
-    <div class="px-3 py-3 border-t border-white/15 hide-when-collapsed">
-      <form method="POST" action="{{ route('logout') }}" data-lumi-logout="1">
-        @csrf
-        <button type="submit" class="lumi-logout-btn">
-            <img src="{{ asset('images/icons/logout.png') }}" alt="" class="sidebar-icon logout-icon">
-            <span class="font-medium">Logout</span>
-        </button>
-      </form>
-    </div>
-  </nav>
-</aside>
-
-{{-- Mobile scrim --}}
-<div id="sidebarScrim" class="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm hidden lg:hidden"></div>
-
-{{-- ===== MAIN ===== --}}
-<div id="adminMain" class="min-h-screen">
-  {{-- Top bar --}}
-  <header class="sticky top-0 z-20 h-[var(--header-h)] bg-white/80 backdrop-blur border-b border-slate-200">
-    <div class="h-full max-w-7xl mx-auto px-4 flex items-center justify-between">
-      {{-- LEFT cluster --}}
-      <div class="flex items-center gap-3">
-        {{-- Hamburger --}}
-        <button id="railOpen" class="p-2 rounded-md hover:bg-slate-100" aria-label="Open sidebar" title="Open sidebar">
-          <svg class="w-6 h-6 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M4 6h16M4 12h16M4 18h16"/>
-          </svg>
-        </button>
-        <h1 class="text-lg font-semibold">@yield('page_title','Dashboard')</h1>
+        </div>
       </div>
+      <button id="sidebar-close" class="sidebar-x flex-shrink-0" title="Toggle sidebar" aria-label="Toggle sidebar">
+        <svg class="icon-collapse" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+        <svg class="icon-expand" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="3" y1="6"  x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+    </div>
 
-      @php
-        $adminInitials = '';
-        if (Auth::check()) {
-          $parts = preg_split('/\s+/', trim(Auth::user()->name ?? ''));
-          $adminInitials = strtoupper(collect($parts)->take(2)->map(fn($s)=>mb_substr($s,0,1))->implode(''));
-        }
-      @endphp
+    <nav class="flex-1 px-2.5 pt-3 space-y-4 overflow-y-auto" id="railScroll">
+      <div>
+        <p class="section-label mb-2">MAIN</p>
+        <ul class="space-y-1">
+          <li>
+            <a href="{{ route('admin.dashboard') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.dashboard')]) data-tip="Dashboard Overview">
+              <img src="{{ asset('images/icons/home.png') }}" alt="" class="sidebar-icon icon-white">
+              <span class="nav-item-label">Dashboard Overview</span>
+            </a>
+          </li>
+          <li>
+            <a href="{{ route('admin.counselors.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.counselors.*')]) data-tip="Counselor">
+              <img src="{{ asset('images/icons/counselor.png') }}" alt="" class="sidebar-icon icon-white">
+              <span class="nav-item-label">Counselor</span>
+            </a>
+          </li>
+        </ul>
 
-      {{-- RIGHT cluster (bell + profile) --}}
-      <div class="flex items-center gap-3">
-        {{-- 🔔 Notification bell (ADMIN routes) --}}
-        @auth
-          <x-notification-bell
-            :indexRoute="route('admin.notifications.index')"
-            :feedRoute="route('admin.notifications.feed')"
-            :markRoute="route('admin.notifications.mark', ['id' => ':id'])"
-            :markAllRoute="route('admin.notifications.mark_all')"
-          />
-        @endauth
+        <p class="section-label mt-4 mb-2">STUDENT MANAGEMENT</p>
+        <ul class="space-y-1">
+          <li>
+            <a href="{{ route('admin.students.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.students.*')]) data-tip="Student Records">
+              <img src="{{ asset('images/icons/user.png') }}" alt="" class="sidebar-icon icon-white">
+              <span class="nav-item-label">Student Records</span>
+            </a>
+          </li>
+          <li>
+            <a href="{{ route('admin.appointments.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.appointments.*')]) data-tip="Appointments">
+              <img src="{{ asset('images/icons/appointment.png') }}" alt="" class="sidebar-icon icon-white">
+              <span class="nav-item-label">Appointments</span>
+            </a>
+          </li>
+        </ul>
 
-        {{-- Profile chip --}}
-        <div class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-2 py-1.5 shadow-sm">
-          <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-xs font-bold">
-            {{ $adminInitials ?: 'A' }}
-          </div>
-          <div class="leading-tight pr-1">
-            <div class="text-sm font-semibold text-slate-800">
-              {{ auth()->user()->name ?? 'Master Admin' }}
+        <p class="section-label mt-4 mb-2">REPORTS</p>
+        <ul class="space-y-1">
+          <li>
+            <a href="{{ route('admin.counselor-logs.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.counselor-logs.*')]) data-tip="Counselor Logs">
+              <img src="{{ asset('images/icons/logs.png') }}" alt="" class="sidebar-icon icon-white">
+              <span class="nav-item-label">Counselor Logs</span>
+            </a>
+          </li>
+          <li>
+            <a href="{{ route('admin.chatbot-sessions.index') }}" @class(['nav-item', 'nav-item--active relative' => request()->routeIs('admin.chatbot-sessions.*'), 'relative' => true]) data-tip="Chatbot Sessions">
+              <img src="{{ asset('images/icons/chatbot-session.png') }}" alt="" class="sidebar-icon icon-white">
+              <span class="nav-item-label">Chatbot Sessions</span>
+              @if(($adminHighRiskCount ?? 0) > 0)
+                <span class="absolute -top-1 -right-1 min-w-[1.15rem] px-1 py-[1px] rounded-full text-[10px] font-semibold bg-rose-500 text-white flex items-center justify-center shadow-sm">
+                  +{{ $adminHighRiskCount > 9 ? '9' : $adminHighRiskCount }}
+                </span>
+              @endif
+            </a>
+          </li>
+        </ul>
+
+        <p class="section-label mt-4 mb-2">ANALYTICS</p>
+        <ul class="space-y-1">
+          <li>
+            <a href="{{ route('admin.case-notes.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.case-notes.*')]) data-tip="Case Form Summary">
+              <img src="{{ asset('images/icons/casenote.png') }}" alt="" class="sidebar-icon icon-white">
+              <span class="nav-item-label">Case Form Summary</span>
+            </a>
+          </li>
+          <li>
+            <a href="{{ route('admin.course-analytics.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.course-analytics.*')]) data-tip="Course Summary">
+              <img src="{{ asset('images/icons/graduate.png') }}" alt="" class="sidebar-icon icon-white">
+              <span class="nav-item-label">Course Summary</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+
+    <div class="sidebar-profile-card">
+      <div class="sidebar-user-avatar">{{ $adminInitials ?: 'A' }}<span class="sidebar-avatar-dot"></span></div>
+      <div class="sidebar-user-info">
+        <span class="sidebar-user-name">{{ $displayName }}</span>
+        <span class="sidebar-user-role">Admin</span>
+      </div>
+    </div>
+  </aside>
+
+  <div id="sidebar-scrim"></div>
+
+  <div class="main-content">
+    <header class="header-shell">
+      <div class="header-inner flex items-center justify-between overflow-visible">
+        <div class="flex items-center gap-3">
+          <button id="sidebar-open" class="hamburger-btn header-only" aria-label="Open sidebar">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="4" y1="6"  x2="20" y2="6"/>
+              <line x1="4" y1="12" x2="20" y2="12"/>
+              <line x1="4" y1="18" x2="20" y2="18"/>
+            </svg>
+          </button>
+          <h1 class="text-lg sm:text-xl font-semibold tracking-tight text-gray-900 dark:text-white">@yield('page_title','Dashboard')</h1>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button id="theme-toggle" type="button" aria-label="Toggle theme"
+                  class="inline-flex items-center justify-center h-10 w-10 rounded-xl border border-gray-200
+                         dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50
+                         dark:hover:bg-gray-800 transition">
+            <svg class="inline dark:hidden w-5 h-5 text-gray-600" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+            </svg>
+            <svg class="hidden dark:inline w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6.76 4.84l-1.8-1.79L3.18 4.84l1.79 1.79 1.79-1.79zM1 13h3v-2H1v2zm10 10h2v-3h-2v3zm9-10v-2h-3v2h3zm-3.76 6.16l1.79 1.79 1.78-1.79-1.78-1.79-1.79 1.79zM12 7a5 5 0 100 10 5 5 0 000-10zm6.24-2.16l1.79-1.79-1.79-1.79-1.79 1.79 1.79 1.79zM4.24 17.16L2.45 18.95l1.79 1.79 1.79-1.79-1.79-1.79z"/>
+            </svg>
+          </button>
+
+          @auth
+            <div data-nb-root class="relative z-[2147483641]">
+              <x-notification-bell
+                :indexRoute="route('admin.notifications.index')"
+                :feedRoute="route('admin.notifications.feed')"
+                :markRoute="route('admin.notifications.mark', ['id' => ':id'])"
+                :markAllRoute="route('admin.notifications.mark_all')"
+              />
             </div>
-            <div class="text-[11px] text-slate-500">Admin</div>
+          @endauth
+
+          <div class="relative">
+            <button id="user-btn" type="button"
+              class="inline-flex items-center gap-3 h-11 px-2.5 rounded-xl border border-gray-200
+                     dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50
+                     dark:hover:bg-gray-800 transition">
+              <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br
+                          from-indigo-500 to-violet-600 text-white text-xs font-bold">
+                {{ $adminInitials ?: 'A' }}
+              </div>
+              <div class="hidden sm:flex flex-col text-left leading-tight min-w-0">
+                <span class="text-[11px] font-medium uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">Welcome</span>
+                <span class="text-[13px] font-semibold text-gray-800 dark:text-gray-100 truncate max-w-[11rem]">{{ $displayName }}</span>
+              </div>
+              <svg class="hidden sm:block w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+              </svg>
+            </button>
+
+            <div id="user-menu" class="dropdown hidden">
+              <form method="POST" action="{{ route('logout') }}" data-lumi-logout="1">
+                @csrf
+                <button type="submit" class="dropdown-item dropdown-item--danger">
+                  <span class="dropdown-item-icon" aria-hidden="true">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+                      <path d="M16 17l5-5-5-5" />
+                      <path d="M21 12H9" />
+                    </svg>
+                  </span>
+                  <span>Logout</span>
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </header>
+    </header>
 
-  <main class="max-w-7xl mx-auto px-4 py-6">
-    @yield('content')
-  </main>
+    <main class="panel-scroll">
+      <div class="max-w-7xl mx-auto px-4 py-6">
+        @yield('content')
+      </div>
+    </main>
+  </div>
 </div>
 
 <script>
-  (function () {
-    const body       = document.body;
-    const sidebar    = document.getElementById('adminSidebar');
-    const scrim      = document.getElementById('sidebarScrim');
-    const openBtn    = document.getElementById('railOpen');
-    const closeBtn   = document.getElementById('railClose');
-    const mqDesktop  = window.matchMedia('(min-width: 1024px)');
-    const LS_KEY     = 'adminSidebarCollapsed';
-    const SCROLL_KEY = 'adminSidebarScroll';
-    const railScroll = document.getElementById('railScroll');
+  // Sidebar toggle (same behavior as student)
+  (function(){
+    const body = document.body;
+    const openBtn = document.getElementById('sidebar-open');
+    const closeBtn = document.getElementById('sidebar-close');
+    const sidebar = document.getElementById('sidebar');
+    const scrim = document.getElementById('sidebar-scrim');
+    const isMobile = () => window.innerWidth < 1024;
 
-    const isDesktop = () => mqDesktop.matches;
+    const stored = localStorage.getItem('sidebarHidden') === 'true';
+    body.classList.toggle('sidebar-hidden', isMobile() ? true : stored);
 
-    function setCollapsed(on) {
-      if (on) {
-        body.classList.add('admin-collapsed');
-        localStorage.setItem(LS_KEY, '1');
+    const setScrim = (open) => {
+      if (!scrim) return;
+      if (open && isMobile()) {
+        scrim.classList.add('active');
+        body.style.overflow = 'hidden';
       } else {
-        body.classList.remove('admin-collapsed');
-        localStorage.setItem(LS_KEY, '0');
+        scrim.classList.remove('active');
+        body.style.overflow = '';
       }
-    }
-    const getCollapsed = () => localStorage.getItem(LS_KEY) === '1';
+    };
 
-    /* ========== Mobile open / close ========== */
-    function openMobile(){
-      sidebar.classList.remove('-translate-x-full');
-      scrim.classList.remove('hidden');
-      body.classList.add('no-scroll');
-      body.classList.add('mobile-rail-open');
-    }
-    function closeMobile(){
-      sidebar.classList.add('-translate-x-full');
-      scrim.classList.add('hidden');
-      body.classList.remove('no-scroll');
-      body.classList.remove('mobile-rail-open');
-    }
+    setScrim(!body.classList.contains('sidebar-hidden'));
 
-    /* Buttons */
-    openBtn?.addEventListener('click', () => {
-      if (isDesktop()) {
-        if (getCollapsed()) setCollapsed(false);   // expand on desktop
-      } else {
-        openMobile();
+    const toggle = () => {
+      body.classList.toggle('sidebar-hidden');
+      const isHidden = body.classList.contains('sidebar-hidden');
+      if (!isMobile()) localStorage.setItem('sidebarHidden', isHidden);
+      setScrim(!isHidden);
+    };
+
+    openBtn?.addEventListener('click', toggle);
+    closeBtn?.addEventListener('click', toggle);
+    scrim?.addEventListener('click', toggle);
+
+    document.addEventListener('click', (e) => {
+      if (!isMobile()) return;
+      if (!sidebar.contains(e.target) && !openBtn?.contains(e.target)) {
+        if (!body.classList.contains('sidebar-hidden')) toggle();
       }
     });
 
-    closeBtn?.addEventListener('click', () => {
-      if (isDesktop()) {
-        setCollapsed(true);                        // collapse on desktop
-      } else {
-        closeMobile();                             // close overlay on mobile
+    window.addEventListener('resize', () => {
+      if (!isMobile()) {
+        scrim?.classList.remove('active');
+        body.style.overflow = '';
       }
     });
+  })();
+</script>
 
-    scrim?.addEventListener('click', closeMobile);
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !isDesktop()) closeMobile();
+<script>
+  // Theme toggle
+  (function(){
+    const btn = document.getElementById('theme-toggle');
+    btn?.addEventListener('click', () => {
+      const html = document.documentElement;
+      const isDark = html.classList.toggle('dark');
+      localStorage.setItem('lumichat_dark', isDark ? '1' : '0');
     });
+  })();
+</script>
 
-    /* ========== Init per viewport ========== */
-    function applyMode(){
-      if (isDesktop()){
-        body.classList.remove('mobile-rail-open');
-        sidebar.classList.remove('-translate-x-full');
-        scrim.classList.add('hidden');
-        body.classList.remove('no-scroll');
-        setCollapsed(getCollapsed());              // restore saved state
-      } else {
-        sidebar.classList.add('-translate-x-full'); // hidden by default on mobile
-        body.classList.remove('admin-collapsed');   // mobile uses full rail
-        body.classList.remove('mobile-rail-open');
-      }
-    }
-    mqDesktop.addEventListener('change', applyMode);
-    applyMode();
+<script>
+  // User menu toggle
+  (function(){
+    const btn = document.getElementById('user-btn');
+    const menu = document.getElementById('user-menu');
+    const close = () => menu?.classList.add('hidden');
+    const toggle = () => menu?.classList.toggle('hidden');
 
-    /* ========== Sidebar scroll behavior ========== */
-    function setupSidebarScroll(){
-      if (!railScroll) return;
-
-      // 1) Restore last saved scroll position
-      const saved = localStorage.getItem(SCROLL_KEY);
-      if (saved !== null) {
-        const y = parseInt(saved, 10);
-        if (!isNaN(y)) {
-          railScroll.scrollTop = y;
-        }
-      }
-
-      // 2) Make sure active nav item is visible
-      const active = railScroll.querySelector('a.nav-item.is-active');
-      if (active) {
-        const cRect = railScroll.getBoundingClientRect();
-        const aRect = active.getBoundingClientRect();
-
-        if (aRect.top < cRect.top || aRect.bottom > cRect.bottom) {
-          active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-        }
-      }
-
-      // 3) Save scroll before leaving page
-      window.addEventListener('beforeunload', () => {
-        localStorage.setItem(SCROLL_KEY, String(railScroll.scrollTop));
-      });
-
-      // 4) Also save when clicking any nav item
-      const navLinks = railScroll.querySelectorAll('a.nav-item');
-      navLinks.forEach(link => {
-        link.addEventListener('click', () => {
-          localStorage.setItem(SCROLL_KEY, String(railScroll.scrollTop));
-        });
-      });
-    }
-
-    setupSidebarScroll();
+    btn?.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
+    document.addEventListener('click', (e) => {
+      if (!menu?.contains(e.target) && !btn?.contains(e.target)) close();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
   })();
 </script>
 

@@ -171,17 +171,19 @@
           .eye-btn{
             position:absolute; right:.5rem; top:50%; transform:translateY(-50%);
             padding:.35rem; border-radius:.625rem; opacity: 0.3; transition: all 0.2s;
+            z-index: 5;
+            pointer-events: auto;
           }
           .eye-btn:hover{ background:rgba(255,255,255,0.08); opacity: 0.8; }
           .eye-btn img{ display:block; width:16px; height:16px; filter: invert(1); }
 
           /* ==== Custom checkbox ==== */
-          .checkbox-wrapper-46 .cbx span:last-child{ padding-left:8px; color: rgba(255,255,255,0.3); font-size: 12.5px; }
+          .checkbox-wrapper-46 .cbx span:last-child{ padding-left:8px; color: rgba(221,214,254,0.92); font-size: 12.5px; font-weight: 600; }
           .checkbox-wrapper-46 input[type="checkbox"]{ display:none; }
           .checkbox-wrapper-46 .cbx{ cursor:pointer; display:flex; align-items:center; }
           .checkbox-wrapper-46 .cbx span:first-child{
             position:relative; width:16px; height:16px; border-radius:4px;
-            border:1px solid rgba(255,255,255,0.2); transition:all .2s ease; background:transparent;
+            border:1px solid rgba(221,214,254,0.55); transition:all .2s ease; background:transparent;
           }
           .checkbox-wrapper-46 .cbx span:first-child svg{
             position:absolute; top:3px; left:2px; fill:none; stroke:#fff; stroke-width:3;
@@ -195,6 +197,12 @@
 
           @media (max-width: 420px){
             .lumi-card { padding: 20px !important; }
+          }
+
+          /* Ensure legal footer text stays readable over dark/violet backgrounds */
+          .login-footnote{
+            color: rgba(221, 214, 254, 0.92) !important;
+            text-shadow: 0 1px 10px rgba(76, 29, 149, 0.25);
           }
         </style>
 
@@ -226,7 +234,7 @@
             />
             <label for="passwordInput" class="float-label">Secure Password</label>
             <button id="togglePassword" type="button" class="eye-btn" aria-label="Show password" aria-pressed="false">
-              <img src="{{ asset('images/icons/eye.png') }}" alt="toggle">
+              <img src="{{ asset('images/icons/eye-off.png') }}" alt="Toggle password visibility">
             </button>
           </div>
           <p id="capsNote" class="!mt-1 text-[10px] text-amber-500 font-bold hidden">⚠️ CAPS LOCK IS ON</p>
@@ -248,16 +256,17 @@
           <div class="relative group/btn pt-1">
             <div class="absolute -inset-0.5 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-lg blur opacity-15 group-hover/btn:opacity-30 transition duration-700"></div>
             <button id="loginBtn" type="submit"
-                    class="relative w-full flex items-center justify-center rounded-lg bg-white text-slate-900 py-3
+                    class="relative w-full flex items-center justify-center rounded-lg bg-gradient-to-r from-violet-500 via-indigo-500 to-fuchsia-500 text-white py-3
+                           border border-violet-300/25
                            font-bold text-sm shadow-xl transition-all duration-300
-                           hover:-translate-y-0.5 hover:shadow-violet-500/10 active:translate-y-0
+                           hover:-translate-y-0.5 hover:brightness-110 hover:shadow-violet-500/30 active:translate-y-0
                            disabled:opacity-70 disabled:cursor-not-allowed">
               Log In
             </button>
           </div>
         </form>
 
-        <p class="text-center text-[9px] text-slate-500 mt-5 font-medium leading-relaxed opacity-60">
+        <p class="login-footnote text-center text-[11px] mt-5 font-medium leading-relaxed">
           Private & Secure Mental Health Portal • TCC GCO
         </p>
       </div>
@@ -517,11 +526,20 @@ document.addEventListener('DOMContentLoaded', () => {
   if (pwd && toggleBtn && toggleImg){
     const eyeOpen   = "{{ asset('images/icons/eye.png') }}";
     const eyeClosed = "{{ asset('images/icons/eye-off.png') }}";
+
+    const syncPasswordToggleUI = () => {
+      const isVisible = pwd.type === 'text';
+      toggleImg.src = isVisible ? eyeOpen : eyeClosed;
+      toggleBtn.setAttribute('aria-pressed', isVisible ? 'true' : 'false');
+      toggleBtn.setAttribute('aria-label', isVisible ? 'Hide password' : 'Show password');
+    };
+
+    // Ensure UI matches the initial input state.
+    syncPasswordToggleUI();
+
     toggleBtn.addEventListener('click', () => {
-      const showing = pwd.type === 'text';
-      pwd.type = showing ? 'password' : 'text';
-      toggleImg.src = showing ? eyeOpen : eyeClosed;
-      toggleBtn.setAttribute('aria-pressed', showing ? 'false' : 'true');
+      pwd.type = pwd.type === 'text' ? 'password' : 'text';
+      syncPasswordToggleUI();
       // keep focus on the field, but we won't use blur/focus to toggle animation anymore
       pwd.focus({preventScroll:true});
     });
