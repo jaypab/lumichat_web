@@ -266,12 +266,25 @@
           </div>
         </form>
 
-        <p class="login-footnote text-center text-[11px] mt-5 font-medium leading-relaxed">
-          Private & Secure Mental Health Portal • TCC GCO
-        </p>
+        <div class="mt-4 text-center">
+          <p class="text-[11px] font-medium text-violet-100/75">
+            Need a student account?
+            <a
+              href="{{ route('account-request.create') }}"
+              class="ml-1 font-semibold text-violet-200 underline decoration-violet-300/70 underline-offset-4 transition hover:text-white hover:decoration-violet-200"
+            >
+              Request access
+            </a>
+          </p>
+        </div>
+
       </div>
     </div>
   </div>
+
+  <p class="login-footnote text-center text-[11px] font-medium leading-relaxed absolute bottom-4 left-1/2 -translate-x-1/2 w-full px-6 pointer-events-none">
+    Private & Secure Mental Health Portal • TCC GCO
+  </p>
 </div>
 
 {{-- Loader --}}
@@ -364,6 +377,64 @@
     border: none !important; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1) !important;
   }
   .lumi-confirm:hover { transform: translateY(-2px); box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2) !important; }
+
+  .lumi-toast-popup {
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border: none !important;
+    border-radius: 1rem !important;
+    box-shadow: none !important;
+    padding: 0.85rem 1rem !important;
+    min-width: 320px !important;
+    overflow: hidden !important;
+  }
+
+  .lumi-toast-title {
+    color: #f8fafc !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.92rem !important;
+    font-weight: 700 !important;
+    line-height: 1.4 !important;
+    margin: 0 !important;
+  }
+
+  .lumi-toast-container {
+    padding-top: 16px !important;
+    padding-right: 16px !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    pointer-events: none !important;
+  }
+
+  .swal2-container.lumi-toast-container.swal2-backdrop-show,
+  .swal2-container.lumi-toast-container.swal2-top-end,
+  .swal2-container.lumi-toast-container.swal2-top-right,
+  .swal2-container.lumi-toast-container.swal2-top {
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .swal2-container.lumi-toast-container {
+    background: transparent !important;
+  }
+
+  .swal2-container.lumi-toast-container .swal2-popup {
+    pointer-events: auto !important;
+  }
+
+  .swal2-icon.swal2-success.lumi-toast-icon,
+  .swal2-icon.swal2-info.lumi-toast-icon {
+    margin: 0 0.65rem 0 0 !important;
+    transform: scale(0.78);
+  }
+
+  .swal2-timer-progress-bar {
+    background: linear-gradient(90deg, rgba(168,85,247,0.95), rgba(244,114,182,0.9)) !important;
+    height: 3px !important;
+  }
 
   @keyframes lumi-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
@@ -458,7 +529,13 @@ document.addEventListener('DOMContentLoaded', () => {
     position: 'top-end',
     showConfirmButton: false,
     timer: 2800,
-    timerProgressBar: true
+    timerProgressBar: true,
+    customClass: {
+      container: 'lumi-toast-container',
+      popup: 'lumi-toast-popup',
+      title: 'lumi-toast-title',
+      icon: 'lumi-toast-icon'
+    }
   });
 
   // Generic success/info toasts

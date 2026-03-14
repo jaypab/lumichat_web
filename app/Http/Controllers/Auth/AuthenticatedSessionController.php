@@ -7,6 +7,7 @@ use Illuminate\Http\RedirectResponse;
 use App\Http\Requests\Auth\LoginRequest; 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -119,6 +120,13 @@ class AuthenticatedSessionController extends Controller
     public function destroy(Request $request): RedirectResponse
     {
         $request->session()->forget('admin.reauth_until');
+
+        $user = $request->user();
+        if ($user) {
+            // Keep last seen truthful to the actual logout moment.
+            $user->forceFill(['last_seen_appt_at' => now()])->saveQuietly();
+            Cache::forget('user-online-' . $user->id);
+        }
 
         Auth::guard('web')->logout();
 

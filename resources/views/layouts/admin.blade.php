@@ -184,6 +184,12 @@
             </a>
           </li>
           <li>
+            <a href="{{ route('admin.account-requests.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.account-requests.*')]) data-tip="Account Requests">
+              <img src="{{ asset('images/icons/mail.png') }}" alt="" class="sidebar-icon icon-white">
+              <span class="nav-item-label">Account Requests</span>
+            </a>
+          </li>
+          <li>
             <a href="{{ route('admin.appointments.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.appointments.*')]) data-tip="Appointments">
               <img src="{{ asset('images/icons/appointment.png') }}" alt="" class="sidebar-icon icon-white">
               <span class="nav-item-label">Appointments</span>

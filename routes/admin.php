@@ -7,6 +7,7 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 
 // Admin controllers
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\AccountRequestController;
 use App\Http\Controllers\Admin\CounselorController;
 use App\Http\Controllers\Admin\StudentController;
 use App\Http\Controllers\Admin\ChatbotSessionController;
@@ -44,6 +45,13 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
     Route::get('/students/export/pdf', [StudentController::class, 'exportPdf'])->name('students.export.pdf');
     Route::get('/students/{student}/export/pdf', [StudentController::class, 'exportShowPdf'])
         ->whereNumber('student')->name('students.show.export.pdf');
+
+    // ACCOUNT REQUESTS
+    Route::get('/account-requests', [AccountRequestController::class, 'index'])->name('account-requests.index');
+    Route::get('/account-requests/live-status', [AccountRequestController::class, 'liveStatus'])->name('account-requests.live-status');
+    Route::get('/account-requests/{accountRequest}', [AccountRequestController::class, 'show'])->name('account-requests.show');
+    Route::post('/account-requests/{accountRequest}/approve', [AccountRequestController::class, 'approve'])->name('account-requests.approve');
+    Route::post('/account-requests/{accountRequest}/reject', [AccountRequestController::class, 'reject'])->name('account-requests.reject');
 
     // RE-AUTH / SENSITIVE
     Route::post('reauth/confirm', [ChatbotSessionController::class, 'confirmPasswordAjax'])->name('reauth.confirm');

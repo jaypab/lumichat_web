@@ -1593,3 +1593,95 @@ html {
     animation: none !important;
   }
 }
+/* =========================================================
+   LUMI PREMIUM SWEETALERT THEME (COMPACT)
+   ========================================================= */
+.swal2-container.swal2-backdrop-show {
+    background: rgba(4, 7, 18, 0.45) !important;
+    backdrop-filter: blur(12px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(12px) saturate(180%) !important;
+}
+
+.swal2-popup:not(.swal2-toast) {
+    background: rgba(23, 23, 37, 0.95) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 20px !important;
+    padding: 1.5rem !important;
+    max-width: 420px !important;
+    box-shadow: 
+        0 20px 40px -12px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(255, 255, 255, 0.05),
+        0 0 30px rgba(124, 58, 237, 0.1) !important;
+    color: #f8fafc !important;
+}
+
+.swal2-title {
+    font-family: "Poppins", sans-serif !important;
+    font-weight: 700 !important;
+    font-size: 1.35rem !important;
+    color: #ffffff !important;
+    letter-spacing: -0.02em !important;
+    margin-bottom: 0.5rem !important;
+}
+
+.swal2-html-container {
+    font-family: "Inter", sans-serif !important;
+    color: rgba(248, 250, 252, 0.7) !important;
+    font-size: 0.925rem !important;
+    line-height: 1.5 !important;
+    margin: 0 !important;
+}
+
+.swal2-actions {
+    margin-top: 1.5rem !important;
+    gap: 10px !important;
+}
+
+.swal2-styled {
+    border-radius: 10px !important;
+    padding: 0.6rem 1.25rem !important;
+    font-weight: 600 !important;
+    font-size: 0.875rem !important;
+    transition: all 0.2s ease !important;
+}
+
+.swal2-confirm {
+    background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%) !important;
+    box-shadow: 0 8px 16px -4px rgba(124, 58, 237, 0.4) !important;
+}
+
+.swal2-confirm:hover {
+    transform: translateY(-1px) !important;
+    filter: brightness(1.1) !important;
+}
+
+.swal2-cancel {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    color: #e2e8f0 !important;
+}
+
+.swal2-cancel:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: #ffffff !important;
+}
+
+.swal2-icon {
+    border-width: 2px !important;
+    margin: 1rem auto 1.25rem !important;
+    transform: scale(0.8) !important;
+}
+
+.swal2-icon.swal2-question {
+    border-color: #818cf8 !important;
+    color: #818cf8 !important;
+}
+
+html:not(.dark) .swal2-popup.light-swal {
+    background: #ffffff !important;
+    color: #1e293b !important;
+    border-color: rgba(0, 0, 0, 0.05) !important;
+}
+
