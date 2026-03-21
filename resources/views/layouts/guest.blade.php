@@ -13,6 +13,17 @@
 
     <!-- Scripts -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <script>
+      try{
+        let pref = localStorage.getItem('lumichat_dark');
+        if (pref === null) { localStorage.setItem('lumichat_dark','0'); pref = '0'; }
+        if (pref === 'true') { localStorage.setItem('lumichat_dark','1'); pref = '1'; }
+        if (pref === 'false'){ localStorage.setItem('lumichat_dark','0'); pref = '0'; }
+        const wantsDark = pref === '1';
+        document.documentElement.classList.toggle('dark', wantsDark);
+        document.documentElement.classList.toggle('dark-theme', wantsDark);
+      }catch(_){}
+    </script>
 </head>
 @php
     // Props for overriding the logo when needed
@@ -20,6 +31,11 @@
     $logoAlt  = $attributes->get('logo-alt', 'Logo');
 @endphp
 <body class="font-sans text-gray-900 antialiased">
+  <script>
+    if (localStorage.getItem('lumichat_dark') === '1') {
+      document.body.classList.add('dark-theme');
+    }
+  </script>
     <div class="min-h-screen flex flex-col sm:justify-center items-center pt-6 sm:pt-0 bg-gray-100 dark:bg-gray-900">
         <div>
             <a href="{{ route('login') }}">

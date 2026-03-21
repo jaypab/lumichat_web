@@ -11,7 +11,7 @@
 
 <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-3">
   {{-- Greeting / hero --}}
-  <header class="rounded-2xl border border-gray-200/70 dark:border-gray-700
+  <header class="profile-hero rounded-2xl border border-gray-200/70 dark:border-gray-700
                  bg-gradient-to-r from-indigo-50/80 via-violet-50/70 to-fuchsia-50/60
                  dark:from-gray-800 dark:via-gray-800 dark:to-gray-800/70
                  shadow-sm p-6 md:p-8 text-center animate-card">
@@ -72,6 +72,12 @@
 
   .btn-press{ transition: transform .12s ease, box-shadow .12s ease; }
   .btn-press:active{ transform: translateY(1px) scale(.985); }
+
+  /* Ensure the profile hero border always darkens in dark mode. */
+  .dark .profile-hero,
+  html.dark-theme .profile-hero{
+    border-color: rgb(55 65 81 / .9) !important;
+  }
 </style>
 @endpush
 

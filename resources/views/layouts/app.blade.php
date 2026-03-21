@@ -87,6 +87,7 @@
 
         const wantsDark = dark === '1';
         root.classList.toggle('dark', wantsDark);
+        root.classList.toggle('dark-theme', wantsDark);
 
         root.classList.toggle('reduce-motion', get('lumichat_reduce_motion') === '1');
 
@@ -106,6 +107,9 @@
       if (pref === 'false'){ localStorage.setItem('lumichat_dark','0'); pref = '0'; }
       const wantsDark = pref === '1';
       document.documentElement.classList.toggle('dark', wantsDark);
+      document.documentElement.classList.toggle('dark-theme', wantsDark);
+      document.documentElement.setAttribute('data-coreui-theme', wantsDark ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-bs-theme', wantsDark ? 'dark' : 'light');
     }catch(_){}
   </script>
   @endif
@@ -171,6 +175,11 @@
 </head>
 
 <body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+  <script>
+    if (localStorage.getItem('lumichat_dark') === '1') {
+      document.body.classList.add('dark-theme');
+    }
+  </script>
   <div class="layout-wrapper">
     {{-- ============================= SIDEBAR ============================= --}}
     <aside id="sidebar" class="sidebar-shell">
@@ -505,7 +514,12 @@
       const btn = document.getElementById('theme-toggle');
       btn?.addEventListener('click', () => {
         const html = document.documentElement;
+        const body = document.body;
         const isDark = html.classList.toggle('dark');
+        html.classList.toggle('dark-theme', isDark);
+        body.classList.toggle('dark-theme', isDark);
+        html.setAttribute('data-coreui-theme', isDark ? 'dark' : 'light');
+        html.setAttribute('data-bs-theme', isDark ? 'dark' : 'light');
         localStorage.setItem('lumichat_dark', isDark ? '1' : '0');
       });
     })();

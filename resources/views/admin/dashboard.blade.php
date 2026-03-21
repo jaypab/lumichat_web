@@ -602,13 +602,25 @@ details > summary::-webkit-details-marker { display: none; }
       inflight = new AbortController();
 
       const res = await fetch(`${endpoint}?t=${Date.now()}`, {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        headers: { 
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json'
+        },
         credentials: 'same-origin',
         cache: 'no-store',
         signal: inflight.signal
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+
+      // Check for theme change and refresh charts if needed
+      const isDarkNow = document.documentElement.classList.contains('dark');
+      if (typeof initCharts === 'function' && window.currentThemeIsDark !== isDarkNow) {
+        if (appointmentsChart) appointmentsChart.destroy();
+        if (sessionsChart) sessionsChart.destroy();
+        initCharts();
+        window.currentThemeIsDark = isDarkNow;
+      }
 
       const k = data.kpis || {};
       
@@ -660,9 +672,23 @@ details > summary::-webkit-details-marker { display: none; }
 
   // Initialize on load
   document.addEventListener('DOMContentLoaded', () => {
+    window.currentThemeIsDark = document.documentElement.classList.contains('dark');
     initCharts();
     setTimeout(refresh, 600);
     setInterval(refresh, 5000);
+    
+    // Listen for theme toggle button clicks to refresh charts immediately
+    document.getElementById('theme-toggle')?.addEventListener('click', () => {
+      setTimeout(() => {
+        const isDarkNow = document.documentElement.classList.contains('dark');
+        if (window.currentThemeIsDark !== isDarkNow) {
+          if (appointmentsChart) appointmentsChart.destroy();
+          if (sessionsChart) sessionsChart.destroy();
+          initCharts();
+          window.currentThemeIsDark = isDarkNow;
+        }
+      }, 50); // small delay to wait for class toggle
+    });
   });
 })();
 </script>

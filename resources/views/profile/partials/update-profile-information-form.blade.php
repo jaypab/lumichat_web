@@ -24,19 +24,38 @@
 
   {{-- ================= READ VIEW ================= --}}
   <section data-edit-profile-view>
-    <div class="form-head">
-      <div>
+    {{-- Top: Picture + Header --}}
+    <div class="flex gap-6 items-start mb-6 relative">
+      {{-- Profile Picture (Red Area) - Rectangular --}}
+      <div class="flex-shrink-0">
+        @if($user->profile_picture)
+          <img src="{{ asset('storage/' . $user->profile_picture) }}" alt="{{ $user->name }}'s profile picture" class="w-28 h-44 rounded-lg object-cover border border-gray-200 dark:border-gray-600">
+        @else
+          <div class="w-28 h-44 rounded-lg bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-400 border border-gray-200 dark:border-gray-600">
+            <svg class="w-10 h-10" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
+            </svg>
+          </div>
+        @endif
+      </div>
+
+      {{-- Header Text (Green Area) --}}
+      <div class="flex-1">
         <h3 class="title-dynamic text-lg font-semibold">Profile Information</h3>
-        <p class="muted-dynamic text-sm">
-          {{ __("Update your account’s profile information and email address.") }}
+        <p class="muted-dynamic text-sm mt-1">
+          {{ __("Update your account's profile information and email address.") }}
         </p>
       </div>
 
-      <button type="button" data-edit-profile-btn class="btn-primary btn-size btn-press">
-        Edit profile
-      </button>
+      {{-- Button Area (Yellow Area) - Bottom Right --}}
+      <div class="absolute bottom-0 right-0">
+        <button type="button" data-edit-profile-btn class="btn-primary btn-size btn-press">
+          Edit profile
+        </button>
+      </div>
     </div>
 
+    {{-- Info Grid --}}
     <dl class="meta-grid">
       <div class="row">
         <dt>Name</dt>
@@ -80,10 +99,49 @@
       <span class="btn-size invisible" aria-hidden="true"></span>
     </div>
 
-    <form method="POST" action="{{ route('profile.update') }}" class="space-y-6" novalidate>
+    <form method="POST" action="{{ route('profile.update') }}" class="space-y-6" enctype="multipart/form-data" novalidate>
       @csrf
       @method('PUT')
       <div class="grid gap-5 sm:grid-cols-2">
+        {{-- Profile Picture --}}
+        <div class="sm:col-span-2">
+          <label for="edit-profile-picture" class="block text-sm font-medium title-dynamic">Profile Picture</label>
+          <div class="mt-2 flex items-center gap-4">
+            <div class="relative w-16 h-16 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden flex-shrink-0 flex items-center justify-center">
+              @if($user->profile_picture)
+                <img id="profile-preview" src="{{ asset('storage/' . $user->profile_picture) }}" alt="Profile preview" class="w-full h-full object-cover">
+              @else
+                <svg id="profile-placeholder" class="w-8 h-8 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
+                </svg>
+              @endif
+            </div>
+            <div class="flex-1">
+              <input
+                id="edit-profile-picture"
+                name="profile_picture"
+                type="file"
+                accept="image/*"
+                class="block w-full text-sm text-gray-500
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded-md file:border-0
+                  file:text-sm file:font-semibold
+                  file:bg-indigo-50 dark:file:bg-indigo-900
+                  file:text-indigo-700 dark:file:text-indigo-200
+                  hover:file:bg-indigo-100 dark:hover:file:bg-indigo-800 input-dynamic"
+                aria-describedby="picture-help"
+                aria-invalid="{{ $errors->has('profile_picture') ? 'true' : 'false' }}"
+              >
+              <p id="picture-help" class="muted-dynamic text-xs mt-1">
+                JPG, PNG or GIF (max. 5MB)
+              </p>
+            </div>
+          </div>
+          @error('profile_picture')
+            <p class="text-sm text-rose-500 mt-1 server-error" data-error-for="profile_picture">{{ $message }}</p>
+          @enderror
+        </div>
+
        {{-- Name (read-only) --}}
         <div>
           <label for="edit-name" class="block text-sm font-medium title-dynamic">Name</label>
@@ -91,7 +149,7 @@
             id="edit-name"
             name="name"
             type="text"
-            class="mt-1 w-full input-dynamic bg-gray-50 text-gray-600 cursor-not-allowed"
+            class="mt-1 w-full input-dynamic bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300 cursor-not-allowed"
             value="{{ $user->name }}"
             disabled
             readonly
@@ -125,7 +183,7 @@
           <input
             id="edit-sis"
             type="text"
-            class="mt-1 w-full input-dynamic bg-gray-50 text-gray-600 cursor-not-allowed"
+            class="mt-1 w-full input-dynamic bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300 cursor-not-allowed"
             value="{{ $user->sis ?? 'Not set' }}"
             disabled
             readonly
@@ -266,6 +324,7 @@
     row-gap:.125rem; padding:.75rem 0;
     border-top: 1px solid rgb(229 231 235 / .7);
   }
+  .dark .meta-grid .row{ border-top-color: rgb(55 65 81 / .9); }
   .meta-grid .row:first-child{ border-top: 0; }
   .meta-grid dt{
     font-size:.72rem; letter-spacing:.04em; text-transform:uppercase;
@@ -401,6 +460,45 @@ document.addEventListener('DOMContentLoaded', () => {
     input.addEventListener('keydown', hide);
     input.addEventListener('blur', hide);
   });
+
+  // Profile picture preview functionality
+  const profilePictureInput = document.getElementById('edit-profile-picture');
+  if (profilePictureInput) {
+    profilePictureInput.addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const preview = document.getElementById('profile-preview');
+          const placeholder = document.getElementById('profile-placeholder');
+          const previewContainer = profilePictureInput.closest('.flex-shrink-0')?.previousElementSibling;
+          
+          if (previewContainer) {
+            if (preview) {
+              preview.src = e.target.result;
+            } else {
+              // No existing preview, need to remove placeholder and add preview
+              if (placeholder) placeholder.remove();
+              const img = document.createElement('img');
+              img.id = 'profile-preview';
+              img.src = e.target.result;
+              img.alt = 'Profile preview';
+              img.className = 'w-full h-full object-cover';
+              previewContainer.appendChild(img);
+            }
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+  }
+
+  // Hide profile_picture server error as needed
+  const profilePictureErrEl = document.querySelector('[data-error-for="profile_picture"]');
+  if (profilePictureInput && profilePictureErrEl) {
+    const hide = () => profilePictureErrEl.classList.add('hidden');
+    profilePictureInput.addEventListener('change', hide);
+  }
 });
 </script>
 @endpush

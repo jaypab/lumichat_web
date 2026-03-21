@@ -1,3 +1,5 @@
+@import "@coreui/coreui/dist/css/coreui.min.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -96,6 +98,566 @@ body {
 
 .dark body {
   @apply bg-gray-900 text-gray-100;
+}
+
+/* =========================================================
+   Universal Dark Mode Fallbacks (Auto-fix for missing dark: variants)
+   ========================================================= */
+html.dark .bg-white, 
+html.dark-theme .bg-white,
+html.dark .bg-indigo-50,
+html.dark-theme .bg-indigo-50,
+html.dark .bg-violet-50,
+html.dark-theme .bg-violet-50,
+html.dark .bg-emerald-50,
+html.dark-theme .bg-emerald-50,
+html.dark .bg-rose-50,
+html.dark-theme .bg-rose-50 {
+  background-color: rgb(31 41 55 / 1) !important; /* bg-gray-800 */
+}
+
+html.dark .bg-slate-50, 
+html.dark-theme .bg-slate-50,
+html.dark .bg-slate-100, 
+html.dark-theme .bg-slate-100,
+html.dark .bg-gray-50, 
+html.dark-theme .bg-gray-50 {
+  background-color: rgb(17 24 39 / 1) !important; /* bg-gray-900 */
+}
+
+html.dark .text-slate-900,
+html.dark-theme .text-white,
+html.dark .text-gray-900,
+html.dark-theme .text-gray-900 {
+  color: rgb(248 250 252 / 1) !important; /* text-slate-50 */
+}
+
+html.dark .text-slate-700,
+html.dark-theme .text-slate-700,
+html.dark .text-gray-700,
+html.dark-theme .text-gray-700 {
+  color: rgb(209 213 219 / 1) !important; /* text-gray-300 */
+}
+
+html.dark .text-slate-600,
+html.dark-theme .text-slate-600,
+html.dark .text-gray-600,
+html.dark-theme .text-gray-600 {
+  color: rgb(156 163 175 / 1) !important; /* text-gray-400 */
+}
+
+/* =========================================================
+   Comprehensive Dark Mode Border Styling (Universal)
+   ========================================================= */
+
+/* Primary border color remapping - Light grays to dark grays */
+html.dark .border-slate-50, html.dark-theme .border-slate-50,
+html.dark .border-gray-50, html.dark-theme .border-gray-50 {
+  border-color: rgb(75 85 99 / 1) !important; /* border-gray-800 equivalent */
+}
+
+html.dark .border-slate-100, html.dark-theme .border-slate-100,
+html.dark .border-gray-100, html.dark-theme .border-gray-100 {
+  border-color: rgb(63 72 84 / 1) !important; /* border-gray-750 */
+}
+
+html.dark .border-slate-200, html.dark-theme .border-slate-200,
+html.dark .border-gray-200, html.dark-theme .border-gray-200 {
+  border-color: rgb(55 65 81 / 1) !important; /* border-gray-700 */
+}
+
+html.dark .border-slate-300, html.dark-theme .border-slate-300,
+html.dark .border-gray-300, html.dark-theme .border-gray-300 {
+  border-color: rgb(51 65 85 / 1) !important; /* border-gray-700-darker */
+}
+
+html.dark .border-slate-400, html.dark-theme .border-slate-400,
+html.dark .border-gray-400, html.dark-theme .border-gray-400 {
+  border-color: rgb(51 65 85 / 0.8) !important; /* border-gray-700 with opacity */
+}
+
+html.dark .border-slate-500, html.dark-theme .border-slate-500,
+html.dark .border-gray-500, html.dark-theme .border-gray-500 {
+  border-color: rgb(107 114 128 / 1) !important; /* border-gray-500 */
+}
+
+html.dark .border-slate-600, html.dark-theme .border-slate-600,
+html.dark .border-gray-600, html.dark-theme .border-gray-600 {
+  border-color: rgb(107 114 128 / 1) !important; /* border-gray-500 */
+}
+
+html.dark .border-slate-700, html.dark-theme .border-slate-700,
+html.dark .border-gray-700, html.dark-theme .border-gray-700 {
+  border-color: rgb(107 114 128 / 1) !important; /* border-gray-500 */
+}
+
+html.dark .border-slate-800, html.dark-theme .border-slate-800,
+html.dark .border-gray-800, html.dark-theme .border-gray-800 {
+  border-color: rgb(148 163 175 / 0.5) !important; /* lighter for dark backgrounds */
+}
+
+html.dark .border-slate-900, html.dark-theme .border-slate-900,
+html.dark .border-gray-900, html.dark-theme .border-gray-900 {
+  border-color: rgb(100 116 139 / 0.8) !important; /* slate-500 with opacity */
+}
+
+/* Status/Semantic border colors for dark mode */
+html.dark .border-blue-50, html.dark-theme .border-blue-50,
+html.dark .border-blue-100, html.dark-theme .border-blue-100,
+html.dark .border-blue-200, html.dark-theme .border-blue-200,
+html.dark .border-blue-300, html.dark-theme .border-blue-300 {
+  border-color: rgb(37 99 235 / 0.5) !important; /* blue-600 with opacity */
+}
+
+html.dark .border-blue-400, html.dark-theme .border-blue-400,
+html.dark .border-blue-500, html.dark-theme .border-blue-500,
+html.dark .border-blue-600, html.dark-theme .border-blue-600 {
+  border-color: rgb(59 130 246 / 1) !important; /* blue-500 */
+}
+
+html.dark .border-indigo-50, html.dark-theme .border-indigo-50,
+html.dark .border-indigo-100, html.dark-theme .border-indigo-100,
+html.dark .border-indigo-200, html.dark-theme .border-indigo-200,
+html.dark .border-indigo-300, html.dark-theme .border-indigo-300 {
+  border-color: rgb(79 70 229 / 0.5) !important; /* indigo-600 with opacity */
+}
+
+html.dark .border-indigo-400, html.dark-theme .border-indigo-400,
+html.dark .border-indigo-500, html.dark-theme .border-indigo-500,
+html.dark .border-indigo-600, html.dark-theme .border-indigo-600 {
+  border-color: rgb(99 102 241 / 1) !important; /* indigo-500 */
+}
+
+html.dark .border-violet-50, html.dark-theme .border-violet-50,
+html.dark .border-violet-100, html.dark-theme .border-violet-100,
+html.dark .border-violet-200, html.dark-theme .border-violet-200,
+html.dark .border-violet-300, html.dark-theme .border-violet-300,
+html.dark .border-violet-400, html.dark-theme .border-violet-400 {
+  border-color: rgb(139 92 246 / 0.5) !important; /* violet-600 with opacity */
+}
+
+html.dark .border-violet-500, html.dark-theme .border-violet-500,
+html.dark .border-violet-600, html.dark-theme .border-violet-600 {
+  border-color: rgb(139 92 246 / 1) !important; /* violet-600 */
+}
+
+html.dark .border-emerald-50, html.dark-theme .border-emerald-50,
+html.dark .border-emerald-100, html.dark-theme .border-emerald-100,
+html.dark .border-emerald-200, html.dark-theme .border-emerald-200,
+html.dark .border-emerald-300, html.dark-theme .border-emerald-300 {
+  border-color: rgb(16 185 129 / 0.4) !important; /* emerald-500 with low opacity */
+}
+
+html.dark .border-emerald-400, html.dark-theme .border-emerald-400,
+html.dark .border-emerald-500, html.dark-theme .border-emerald-500,
+html.dark .border-emerald-600, html.dark-theme .border-emerald-600 {
+  border-color: rgb(16 185 129 / 1) !important; /* emerald-500 */
+}
+
+html.dark .border-green-50, html.dark-theme .border-green-50,
+html.dark .border-green-100, html.dark-theme .border-green-100,
+html.dark .border-green-200, html.dark-theme .border-green-200,
+html.dark .border-green-300, html.dark-theme .border-green-300 {
+  border-color: rgb(34 197 94 / 0.4) !important; /* green-500 with low opacity */
+}
+
+html.dark .border-green-400, html.dark-theme .border-green-400,
+html.dark .border-green-500, html.dark-theme .border-green-500,
+html.dark .border-green-600, html.dark-theme .border-green-600 {
+  border-color: rgb(34 197 94 / 1) !important; /* green-500 */
+}
+
+html.dark .border-teal-50, html.dark-theme .border-teal-50,
+html.dark .border-teal-100, html.dark-theme .border-teal-100,
+html.dark .border-teal-200, html.dark-theme .border-teal-200,
+html.dark .border-teal-300, html.dark-theme .border-teal-300 {
+  border-color: rgb(20 184 166 / 0.4) !important; /* teal-500 with low opacity */
+}
+
+html.dark .border-teal-400, html.dark-theme .border-teal-400,
+html.dark .border-teal-500, html.dark-theme .border-teal-500,
+html.dark .border-teal-600, html.dark-theme .border-teal-600 {
+  border-color: rgb(20 184 166 / 1) !important; /* teal-500 */
+}
+
+html.dark .border-cyan-50, html.dark-theme .border-cyan-50,
+html.dark .border-cyan-100, html.dark-theme .border-cyan-100,
+html.dark .border-cyan-200, html.dark-theme .border-cyan-200,
+html.dark .border-cyan-300, html.dark-theme .border-cyan-300 {
+  border-color: rgb(34 211 238 / 0.3) !important; /* cyan-400 with low opacity */
+}
+
+html.dark .border-cyan-400, html.dark-theme .border-cyan-400,
+html.dark .border-cyan-500, html.dark-theme .border-cyan-500 {
+  border-color: rgb(34 211 238 / 1) !important; /* cyan-400 */
+}
+
+html.dark .border-sky-50, html.dark-theme .border-sky-50,
+html.dark .border-sky-100, html.dark-theme .border-sky-100,
+html.dark .border-sky-200, html.dark-theme .border-sky-200,
+html.dark .border-sky-300, html.dark-theme .border-sky-300 {
+  border-color: rgb(56 189 248 / 0.3) !important; /* sky-400 with low opacity */
+}
+
+html.dark .border-sky-400, html.dark-theme .border-sky-400,
+html.dark .border-sky-500, html.dark-theme .border-sky-500 {
+  border-color: rgb(56 189 248 / 1) !important; /* sky-400 */
+}
+
+html.dark .border-yellow-50, html.dark-theme .border-yellow-50,
+html.dark .border-yellow-100, html.dark-theme .border-yellow-100,
+html.dark .border-yellow-200, html.dark-theme .border-yellow-200,
+html.dark .border-yellow-300, html.dark-theme .border-yellow-300 {
+  border-color: rgb(234 179 8 / 0.4) !important; /* yellow-500 with low opacity */
+}
+
+html.dark .border-yellow-400, html.dark-theme .border-yellow-400,
+html.dark .border-yellow-500, html.dark-theme .border-yellow-500,
+html.dark .border-yellow-600, html.dark-theme .border-yellow-600 {
+  border-color: rgb(234 179 8 / 1) !important; /* yellow-500 */
+}
+
+html.dark .border-amber-50, html.dark-theme .border-amber-50,
+html.dark .border-amber-100, html.dark-theme .border-amber-100,
+html.dark .border-amber-200, html.dark-theme .border-amber-200,
+html.dark .border-amber-300, html.dark-theme .border-amber-300 {
+  border-color: rgb(217 119 6 / 0.4) !important; /* amber-600 with low opacity */
+}
+
+html.dark .border-amber-400, html.dark-theme .border-amber-400,
+html.dark .border-amber-500, html.dark-theme .border-amber-500,
+html.dark .border-amber-600, html.dark-theme .border-amber-600 {
+  border-color: rgb(217 119 6 / 1) !important; /* amber-600 */
+}
+
+html.dark .border-orange-50, html.dark-theme .border-orange-50,
+html.dark .border-orange-100, html.dark-theme .border-orange-100,
+html.dark .border-orange-200, html.dark-theme .border-orange-200,
+html.dark .border-orange-300, html.dark-theme .border-orange-300 {
+  border-color: rgb(249 115 22 / 0.4) !important; /* orange-500 with low opacity */
+}
+
+html.dark .border-orange-400, html.dark-theme .border-orange-400,
+html.dark .border-orange-500, html.dark-theme .border-orange-500,
+html.dark .border-orange-600, html.dark-theme .border-orange-600 {
+  border-color: rgb(249 115 22 / 1) !important; /* orange-500 */
+}
+
+html.dark .border-red-50, html.dark-theme .border-red-50,
+html.dark .border-red-100, html.dark-theme .border-red-100,
+html.dark .border-red-200, html.dark-theme .border-red-200,
+html.dark .border-red-300, html.dark-theme .border-red-300 {
+  border-color: rgb(239 68 68 / 0.4) !important; /* red-500 with low opacity */
+}
+
+html.dark .border-red-400, html.dark-theme .border-red-400,
+html.dark .border-red-500, html.dark-theme .border-red-500,
+html.dark .border-red-600, html.dark-theme .border-red-600 {
+  border-color: rgb(239 68 68 / 1) !important; /* red-500 */
+}
+
+html.dark .border-rose-50, html.dark-theme .border-rose-50,
+html.dark .border-rose-100, html.dark-theme .border-rose-100,
+html.dark .border-rose-200, html.dark-theme .border-rose-200,
+html.dark .border-rose-300, html.dark-theme .border-rose-300 {
+  border-color: rgb(244 63 94 / 0.4) !important; /* rose-500 with low opacity */
+}
+
+html.dark .border-rose-400, html.dark-theme .border-rose-400,
+html.dark .border-rose-500, html.dark-theme .border-rose-500,
+html.dark .border-rose-600, html.dark-theme .border-rose-600 {
+  border-color: rgb(244 63 94 / 1) !important; /* rose-500 */
+}
+
+html.dark .border-pink-50, html.dark-theme .border-pink-50,
+html.dark .border-pink-100, html.dark-theme .border-pink-100,
+html.dark .border-pink-200, html.dark-theme .border-pink-200,
+html.dark .border-pink-300, html.dark-theme .border-pink-300 {
+  border-color: rgb(236 72 153 / 0.4) !important; /* pink-500 with low opacity */
+}
+
+html.dark .border-pink-400, html.dark-theme .border-pink-400,
+html.dark .border-pink-500, html.dark-theme .border-pink-500,
+html.dark .border-pink-600, html.dark-theme .border-pink-600 {
+  border-color: rgb(236 72 153 / 1) !important; /* pink-500 */
+}
+
+html.dark .border-fuchsia-50, html.dark-theme .border-fuchsia-50,
+html.dark .border-fuchsia-100, html.dark-theme .border-fuchsia-100,
+html.dark .border-fuchsia-200, html.dark-theme .border-fuchsia-200,
+html.dark .border-fuchsia-300, html.dark-theme .border-fuchsia-300 {
+  border-color: rgb(217 70 239 / 0.4) !important; /* fuchsia-500 with low opacity */
+}
+
+html.dark .border-fuchsia-400, html.dark-theme .border-fuchsia-400,
+html.dark .border-fuchsia-500, html.dark-theme .border-fuchsia-500,
+html.dark .border-fuchsia-600, html.dark-theme .border-fuchsia-600 {
+  border-color: rgb(217 70 239 / 1) !important; /* fuchsia-500 */
+}
+
+html.dark .border-purple-50, html.dark-theme .border-purple-50,
+html.dark .border-purple-100, html.dark-theme .border-purple-100,
+html.dark .border-purple-200, html.dark-theme .border-purple-200,
+html.dark .border-purple-300, html.dark-theme .border-purple-300 {
+  border-color: rgb(168 85 247 / 0.4) !important; /* purple-500 with low opacity */
+}
+
+html.dark .border-purple-400, html.dark-theme .border-purple-400,
+html.dark .border-purple-500, html.dark-theme .border-purple-500,
+html.dark .border-purple-600, html.dark-theme .border-purple-600 {
+  border-color: rgb(168 85 247 / 1) !important; /* purple-500 */
+}
+
+/* Border opacity variants (e.g. border-gray-200/70) */
+html.dark [class*="border-gray-"][class*="/"],
+html.dark-theme [class*="border-gray-"][class*="/"],
+html.dark [class*="border-slate-"][class*="/"],
+html.dark-theme [class*="border-slate-"][class*="/"] {
+  border-color: rgb(55 65 81 / 0.72) !important;
+}
+
+/* Catch-all for any border class not explicitly defined above */
+html.dark [class*="border-"],
+html.dark-theme [class*="border-"] {
+  --tw-border-opacity: 1;
+  border-color: rgb(75 85 99 / var(--tw-border-opacity)) !important;
+}
+
+/* Divider lines for common elements */
+html.dark .divide-slate-200 > * + *, html.dark-theme .divide-slate-200 > * + *,
+html.dark .divide-gray-200 > * + *, html.dark-theme .divide-gray-200 > * + *,
+html.dark .divide-gray-100 > * + *, html.dark-theme .divide-gray-100 > * + * {
+  border-color: rgb(55 65 81 / 1) !important;
+}
+
+html.dark .divide-slate-100 > * + *, html.dark-theme .divide-slate-100 > * + * {
+  border-color: rgb(63 72 84 / 1) !important;
+}
+
+html.dark .divide-slate-300 > * + *, html.dark-theme .divide-slate-300 > * + * {
+  border-color: rgb(51 65 85 / 1) !important;
+}
+
+/* =========================================================
+   Inline & Hardcoded Border Color Overrides (Dark Mode)
+   ========================================================= */
+
+/* Handle common hardcoded light gray borders: #e5e7eb, rgb(229 231 235) */
+html.dark [style*="border"], html.dark-theme [style*="border"] {
+  /* This will be enhanced with more specific rules below */
+}
+
+/* Target inline styles with hardcoded #e5e7eb (gray-200) */
+html.dark hr[style*="border-top"], html.dark-theme hr[style*="border-top"] {
+  border-top-color: rgb(55 65 81 / 1) !important;
+}
+
+html.dark [style*="border-top: 1px solid #e5e7eb"], 
+html.dark-theme [style*="border-top: 1px solid #e5e7eb"],
+html.dark [style*="border-bottom: 1px solid #e5e7eb"],
+html.dark-theme [style*="border-bottom: 1px solid #e5e7eb"],
+html.dark [style*="border-left: 1px solid #e5e7eb"],
+html.dark-theme [style*="border-left: 1px solid #e5e7eb"],
+html.dark [style*="border-right: 1px solid #e5e7eb"],
+html.dark-theme [style*="border-right: 1px solid #e5e7eb"],
+html.dark [style*="border: 1px solid #e5e7eb"],
+html.dark-theme [style*="border: 1px solid #e5e7eb"] {
+  border-color: rgb(55 65 81 / 1) !important;
+  border-top-color: rgb(55 65 81 / 1) !important;
+  border-bottom-color: rgb(55 65 81 / 1) !important;
+  border-left-color: rgb(55 65 81 / 1) !important;
+  border-right-color: rgb(55 65 81 / 1) !important;
+}
+
+/* Target inline styles with rgb(229 231 235) equivalents */
+html.dark [style*="rgb(229 231 235)"],
+html.dark-theme [style*="rgb(229 231 235)"],
+html.dark [style*="229, 231, 235"],
+html.dark-theme [style*="229, 231, 235"] {
+  border-color: rgb(55 65 81 / 1) !important;
+  border-top-color: rgb(55 65 81 / 1) !important;
+  border-bottom-color: rgb(55 65 81 / 1) !important;
+  border-left-color: rgb(55 65 81 / 1) !important;
+  border-right-color: rgb(55 65 81 / 1) !important;
+}
+
+/* Handle PDF table borders */
+html.dark table th,
+html.dark table td,
+html.dark-theme table th,
+html.dark-theme table td {
+  border-bottom-color: rgb(55 65 81 / 1) !important;
+  border-top-color: rgb(55 65 81 / 1) !important;
+  border-left-color: rgb(55 65 81 / 1) !important;
+  border-right-color: rgb(55 65 81 / 1) !important;
+}
+
+/* Handle dark slate borders (like in chatbot_sessions) */
+html.dark [style*="rgba(15,23,42"], 
+html.dark-theme [style*="rgba(15,23,42"] {
+  border-color: rgba(75, 85, 99, 0.2) !important;
+  border-right-color: rgba(75, 85, 99, 0.2) !important;
+  border-left-color: rgba(75, 85, 99, 0.2) !important;
+  border-top-color: rgba(75, 85, 99, 0.2) !important;
+  border-bottom-color: rgba(75, 85, 99, 0.2) !important;
+}
+
+/* Handle already gray borders that are okay in dark mode */
+html.dark [style*="rgba(55, 65, 81"], 
+html.dark-theme [style*="rgba(55, 65, 81"] {
+  border-color: rgb(107 114 128 / 1) !important;
+  border-right-color: rgb(107 114 128 / 1) !important;
+  border-left-color: rgb(107 114 128 / 1) !important;
+  border-top-color: rgb(107 114 128 / 1) !important;
+  border-bottom-color: rgb(107 114 128 / 1) !important;
+}
+
+/* Status Labels & Tint Overrides (Grand Sweep: Blue, Sky, Cyan, Teal, Emerald, Green, Lime, Yellow, Amber, Orange, Red, Rose, Pink, Fuchsia, Purple, Violet, Indigo, Slate, Gray) */
+html.dark [class*="bg-blue-"], html.dark-theme [class*="bg-blue-"],
+html.dark [class*="bg-sky-"], html.dark-theme [class*="bg-sky-"],
+html.dark [class*="bg-cyan-"], html.dark-theme [class*="bg-cyan-"] {
+  --tw-bg-opacity: 0.25 !important;
+  color: rgb(96 165 250 / 1) !important;
+}
+html.dark .bg-blue-50, html.dark .bg-blue-100, html.dark-theme .bg-blue-50, html.dark-theme .bg-blue-100 {
+  background-color: rgb(30 58 138 / 0.3) !important;
+}
+html.dark .bg-emerald-50, html.dark-theme .bg-emerald-50,
+html.dark .bg-emerald-100, html.dark-theme .bg-emerald-100,
+html.dark [class*="bg-green-"], html.dark-theme [class*="bg-green-"],
+html.dark [class*="bg-teal-"], html.dark-theme [class*="bg-teal-"] {
+  background-color: rgb(6 78 59 / 0.3) !important; 
+  color: rgb(52 211 153 / 1) !important;
+}
+html.dark .bg-rose-50, html.dark-theme .bg-rose-50,
+html.dark .bg-rose-100, html.dark-theme .bg-rose-100,
+html.dark [class*="bg-red-"], html.dark-theme [class*="bg-red-"] {
+  background-color: rgb(159 18 57 / 0.3) !important;
+  color: rgb(248 113 113 / 1) !important;
+}
+html.dark .bg-amber-50, html.dark-theme .bg-amber-50,
+html.dark .bg-amber-100, html.dark-theme .bg-amber-100,
+html.dark [class*="bg-yellow-"], html.dark-theme [class*="bg-yellow-"],
+html.dark [class*="bg-orange-"], html.dark-theme [class*="bg-orange-"] {
+  background-color: rgb(120 53 15 / 0.3) !important;
+  color: rgb(251 191 36 / 1) !important;
+}
+html.dark .bg-indigo-50, html.dark-theme .bg-indigo-50,
+html.dark .bg-indigo-100, html.dark-theme .bg-indigo-100,
+html.dark [class*="bg-violet-"], html.dark-theme [class*="bg-violet-"],
+html.dark [class*="bg-purple-"], html.dark-theme [class*="bg-purple-"],
+html.dark [class*="bg-fuchsia-"], html.dark-theme [class*="bg-fuchsia-"] {
+  background-color: rgb(49 46 129 / 0.3) !important;
+  color: rgb(165 180 252 / 1) !important;
+}
+html.dark .bg-slate-100, html.dark-theme .bg-slate-100,
+html.dark .bg-gray-100, html.dark-theme .bg-gray-100,
+html.dark .bg-slate-200, html.dark-theme .bg-slate-200,
+html.dark .bg-gray-200, html.dark-theme .bg-gray-200 {
+  background-color: rgb(31 41 55 / 1) !important;
+  color: rgb(209 213 219 / 1) !important;
+}
+
+/* Specialized Text Overrides for Status Labels & Indicators */
+html.dark [class*="text-blue-"], html.dark-theme [class*="text-blue-"] { color: rgb(96 165 250 / 1) !important; }
+html.dark [class*="text-emerald-"], html.dark-theme [class*="text-emerald-"],
+html.dark [class*="text-green-"], html.dark-theme [class*="text-green-"] { color: rgb(52 211 153 / 1) !important; }
+html.dark [class*="text-rose-"], html.dark-theme [class*="text-rose-"],
+html.dark [class*="text-red-"], html.dark-theme [class*="text-red-"] { color: rgb(248 113 113 / 1) !important; }
+html.dark [class*="text-amber-"], html.dark-theme [class*="text-amber-"],
+html.dark [class*="text-yellow-"], html.dark-theme [class*="text-yellow-"] { color: rgb(251 191 36 / 1) !important; }
+html.dark [class*="text-indigo-"], html.dark-theme [class*="text-indigo-"],
+html.dark [class*="text-violet-"], html.dark-theme [class*="text-violet-"] { color: rgb(165 180 252 / 1) !important; }
+
+/* Specialized Rings for status labels and inputs */
+html.dark [class*="ring-"]:not(.ring-white):not(.ring-indigo-500):not(.ring-offset-2),
+html.dark [class*="ring-"][class*="-200"] {
+  --tw-ring-color: rgb(75 85 99 / 0.5) !important;
+  border-color: transparent !important;
+}
+
+/* Hovers - capturing all common Tailwind hover variants used in Admin UI */
+html.dark [class*="hover:bg-"]:hover, 
+html.dark-theme [class*="hover:bg-"]:hover {
+  background-color: rgb(55 65 81 / 0.7) !important; 
+}
+
+/* Links & Indigo Text */
+html.dark .text-indigo-600, html.dark-theme .text-indigo-600,
+html.dark .text-indigo-700, html.dark-theme .text-indigo-700 {
+  color: rgb(129 140 248 / 1) !important; /* indigo-400 */
+}
+html.dark .hover\:text-indigo-700:hover, html.dark-theme .hover\:text-indigo-700:hover,
+html.dark .hover\:text-indigo-600:hover, html.dark-theme .hover\:text-indigo-600:hover {
+  color: rgb(165 180 252 / 1) !important; /* indigo-300 */
+}
+
+/* Shadows - remove white glow in dark mode */
+html.dark .shadow-sm, html.dark-theme .shadow-sm { box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.5) !important; }
+html.dark .shadow, html.dark-theme .shadow { box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.4) !important; }
+html.dark .shadow-md, html.dark-theme .shadow-md { box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.5) !important; }
+html.dark .shadow-lg, html.dark-theme .shadow-lg { box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.5) !important; }
+
+/* Gradient stops override - for Admin stat cards */
+html.dark .from-white,
+html.dark-theme .from-white {
+  --tw-gradient-from: #0f172a !important; /* bg-slate-900 */
+  --tw-gradient-to: rgb(15 23 42 / 0) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+
+html.dark .via-white,
+html.dark-theme .via-white {
+  --tw-gradient-to: rgb(15 23 42 / 0) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), #0f172a, var(--tw-gradient-to) !important;
+}
+
+html.dark .to-white,
+html.dark-theme .to-white {
+  --tw-gradient-to: #0f172a !important;
+}
+
+/* Extra for tints used in gradients */
+html.dark .to-amber-50\/30, html.dark-theme .to-amber-50\/30,
+html.dark .to-sky-50\/30, html.dark-theme .to-sky-50\/30,
+html.dark .to-rose-50\/30, html.dark-theme .to-rose-50\/30,
+html.dark .to-indigo-50\/30, html.dark-theme .to-indigo-50\/30 {
+  --tw-gradient-to: rgb(15 23 42 / 0.3) !important;
+}
+
+/* Fix for light background text colors */
+html.dark .text-slate-800, html.dark-theme .text-slate-800,
+html.dark .text-gray-800, html.dark-theme .text-gray-800 {
+  color: rgb(241 245 249 / 1) !important; 
+}
+
+html.dark .text-slate-500, html.dark-theme .text-slate-500,
+html.dark .text-gray-500, html.dark-theme .text-gray-500 {
+  color: rgb(148 163 184 / 1) !important; 
+}
+
+/* Fix for details tooltip backgrounds */
+html.dark details[data-kpi] .ring-1,
+html.dark-theme details[data-kpi] .ring-1 {
+  --tw-ring-color: rgb(75 85 99 / 0.5) !important;
+}
+
+/* Fix for table rows even backgrounds */
+html.dark .even\:bg-slate-50:nth-child(even),
+html.dark-theme .even\:bg-slate-50:nth-child(even),
+html.dark .even\:bg-gray-50:nth-child(even),
+html.dark-theme .even\:bg-gray-50:nth-child(even) {
+  background-color: rgb(17 24 39 / 0.5) !important; 
+}
+
+/* Fix for sticky table headers in Admin */
+html.dark thead.sticky, html.dark-theme thead.sticky {
+  background-color: rgb(31 41 55 / 1) !important; /* bg-gray-800 */
+}
+
+/* Fix for Chart.js text rendering adjustments */
+html.dark canvas {
+  filter: brightness(0.9) contrast(1.1) saturate(1.2);
 }
 
 /* =========================================================

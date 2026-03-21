@@ -134,9 +134,28 @@
       border-color:#334155!important;
     }
   </style>
+
+  <script>
+    try{
+      let pref = localStorage.getItem('lumichat_dark');
+      if (pref === null) { localStorage.setItem('lumichat_dark','0'); pref = '0'; }
+      if (pref === 'true') { localStorage.setItem('lumichat_dark','1'); pref = '1'; }
+      if (pref === 'false'){ localStorage.setItem('lumichat_dark','0'); pref = '0'; }
+      const wantsDark = pref === '1';
+      document.documentElement.classList.toggle('dark', wantsDark);
+      document.documentElement.classList.toggle('dark-theme', wantsDark);
+      document.documentElement.setAttribute('data-coreui-theme', wantsDark ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-bs-theme', wantsDark ? 'dark' : 'light');
+    }catch(_){}
+  </script>
 </head>
 
 <body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+  <script>
+    if (localStorage.getItem('lumichat_dark') === '1') {
+      document.body.classList.add('dark-theme');
+    }
+  </script>
 @php
   $u = auth()->user();
   $displayName = trim((string)($u->name ?? 'Counselor'));
@@ -351,7 +370,12 @@
     const btn = document.getElementById('theme-toggle');
     btn?.addEventListener('click', () => {
       const html = document.documentElement;
+      const body = document.body;
       const isDark = html.classList.toggle('dark');
+      html.classList.toggle('dark-theme', isDark);
+      body.classList.toggle('dark-theme', isDark);
+      html.setAttribute('data-coreui-theme', isDark ? 'dark' : 'light');
+      html.setAttribute('data-bs-theme', isDark ? 'dark' : 'light');
       localStorage.setItem('lumichat_dark', isDark ? '1' : '0');
     });
   })();
