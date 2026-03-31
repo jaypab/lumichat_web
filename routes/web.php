@@ -16,6 +16,7 @@ use App\Http\Controllers\AboutController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\LegalController;
 use App\Http\Controllers\CounselorChangeRequestController;
+use App\Http\Controllers\StudentAnnouncementController;
 
 // ✅ NEW: admin controller alias for signed links
 use App\Http\Controllers\Admin\AppointmentController as AdminAppointmentController;
@@ -92,7 +93,7 @@ Route::get('/appointments/{id}/decline', [AdminAppointmentController::class, 'st
 | Authenticated user area
 |--------------------------------------------------------------------------
 */
-Route::middleware('auth' , 'tos')->group(function () {
+Route::middleware(['auth', 'tos'])->group(function () {
 
     /* ----------------------------- Chat ------------------------------ */
     Route::get('/chat',                 [ChatController::class, 'index'])->name('chat.index');
@@ -173,6 +174,9 @@ Route::middleware('auth' , 'tos')->group(function () {
     Route::post('/notifications/mark-all', [NotificationController::class, 'markAll'])
         ->name('notifications.mark_all')
         ->middleware('auth');
+
+    // ANNOUNCEMENTS
+    Route::get('/announcements', [StudentAnnouncementController::class, 'index'])->name('student.announcements');
 });
 
 /*

@@ -17,6 +17,7 @@ use App\Http\Controllers\Admin\CounselorLogController;
 use App\Http\Controllers\Admin\CourseAnalyticsController;
 use App\Http\Controllers\Admin\CaseNoteController;
 use App\Http\Controllers\Admin\AdminNotificationController;
+use App\Http\Controllers\Admin\AnnouncementController;
 
 // ---------------------- Public (guest) admin auth routes ----------------------
 Route::prefix('admin')->name('admin.')->middleware('guest')->group(function () {
@@ -125,4 +126,9 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
     Route::get('/notifications/feed',       [AdminNotificationController::class, 'feed'])->name('notifications.feed');
     Route::post('/notifications/{id}/mark', [AdminNotificationController::class, 'mark'])->name('notifications.mark');
     Route::post('/notifications/mark-all',  [AdminNotificationController::class, 'markAll'])->name('notifications.mark_all');
+
+    // ANNOUNCEMENTS
+    Route::post('announcements/bulk-delete', [AnnouncementController::class, 'bulkDelete'])->name('announcements.bulk-delete');
+    Route::resource('announcements', AnnouncementController::class)
+        ->parameters(['announcements' => 'announcement']);
 });

@@ -220,8 +220,9 @@
 
       @php
         $mainLinks = [
-          ['label' => 'Home',        'route' => 'chat.index',                 'icon' => 'home.png'],
-          ['label' => 'Profile',     'route' => 'profile.edit',               'icon' => 'user.png'],
+          ['label' => 'Home',          'route' => 'chat.index',                 'icon' => 'home.png'],
+          ['label' => 'Announcements', 'route' => 'student.announcements',       'icon' => 'alert.png'],
+          ['label' => 'Profile',       'route' => 'profile.edit',               'icon' => 'user.png'],
           ['label' => 'Appointment', 'route' => 'appointment.index',          'icon' => 'appointment.png'],
           ['label' => 'Chat History','route' => Route::has('chat.history') ? 'chat.history' : null, 'icon' => 'chat-history.png'],
           ['label' => 'Settings',    'route' => Route::has('settings.index') ? 'settings.index' : null, 'icon' => 'settings.png'],
@@ -289,6 +290,15 @@
                    data-tip="{{ $item['label'] }}">
                   <img src="{{ asset('images/icons/' . $item['icon']) }}" alt="" class="sidebar-icon icon-white">
                   <span class="nav-item-label">{{ $item['label'] }}</span>
+                  @if($item['label'] === 'Announcements' && Auth::check())
+                    @php
+                      $lastSeen = Auth::user()->last_seen_announcement_at ?? \Carbon\Carbon::createFromTimestamp(0);
+                      $newCount = \App\Models\Announcement::active()->where('created_at', '>', $lastSeen)->count();
+                    @endphp
+                    @if($newCount > 0)
+                      <span class="ml-auto w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.6)]"></span>
+                    @endif
+                  @endif
                 </a>
               </li>
             @endforeach
@@ -676,6 +686,14 @@
   </script>
 
   @include('profile.partials.alerts')
+
+  {{-- Fixed Credit Footer --}}
+  <footer class="fixed bottom-4 right-[72px] pointer-events-none z-[100] hidden lg:block">
+    <div class="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500/60 dark:text-slate-400/40 select-none">
+      Developed by <span class="text-indigo-600/60 dark:text-indigo-400/50">Team Negatron</span> <span class="mx-1 opacity-40">&bull;</span> TCC 2026
+    </div>
+  </footer>
+
   @stack('scripts')
 
   @if (session('swal'))

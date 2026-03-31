@@ -136,6 +136,7 @@
       document.documentElement.setAttribute('data-bs-theme', wantsDark ? 'dark' : 'light');
     }catch(_){}
   </script>
+  @stack('styles')
 </head>
 
 <body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
@@ -249,6 +250,16 @@
             <a href="{{ route('admin.course-analytics.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.course-analytics.*')]) data-tip="Course Summary">
               <img src="{{ asset('images/icons/graduate.png') }}" alt="" class="sidebar-icon icon-white">
               <span class="nav-item-label">Course Summary</span>
+            </a>
+          </li>
+        </ul>
+
+        <p class="section-label mt-4 mb-2">CONTENT</p>
+        <ul class="space-y-1">
+          <li>
+            <a href="{{ route('admin.announcements.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.announcements.*')]) data-tip="Announcements">
+              <img src="{{ asset('images/icons/alert.png') }}" alt="" class="sidebar-icon icon-white">
+              <span class="nav-item-label">Announcements</span>
             </a>
           </li>
         </ul>
