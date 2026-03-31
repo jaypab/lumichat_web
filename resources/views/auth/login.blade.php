@@ -64,21 +64,21 @@
     {{-- RIGHT: Login card (Sleeker & Spread) --}}
     <div class="relative w-full max-w-[400px] login-panel rounded-[2rem] overflow-hidden group shadow-2xl">
       <div class="absolute inset-0 bg-gradient-to-br from-violet-500/5 via-transparent to-fuchsia-500/5 opacity-30"></div>
-      <div class="relative lumi-card bg-white/5 backdrop-blur-3xl ring-1 ring-white/10 p-8 border border-white/5">
+      <div class="relative lumi-card bg-white/5 backdrop-blur-3xl p-8">
 
         {{-- Header --}}   
         <div class="flex flex-col items-center text-center">
           <div class="relative mb-4">
             <span class="absolute inset-0 -top-4 -left-4 -right-4 -bottom-4 rounded-full blur-2xl opacity-10"
                   style="background: radial-gradient(circle at 50% 50%, #a855f7 0%, rgba(168,85,247,0) 70%);"></span>
-            <div class="w-14 h-14 rounded-2xl bg-white/5 p-3 ring-1 ring-white/20 backdrop-blur-md rotate-2 group-hover:rotate-0 transition-transform duration-700">
+            <div class="w-14 h-14 rounded-2xl bg-white/5 p-3 backdrop-blur-md rotate-2 group-hover:rotate-0 transition-transform duration-700">
                <img src="{{ asset('images/chatbot.png') }}" alt="LumiChat Logo" class="w-full h-full object-contain">
             </div>
           </div>
           <h1 class="text-2xl font-black tracking-tight text-white mb-0.5 font-poppins">LumiChat</h1>
           <p class="text-[12px] text-slate-400 font-medium italic mb-4">Mental health support companion</p>
 
-          <div class="inline-flex items-center gap-2 rounded-full bg-white/5 border border-white/10 px-4 py-1.5 text-[8px] font-bold text-violet-300 uppercase tracking-widest">
+          <div class="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-1.5 text-[8px] font-bold text-violet-300 uppercase tracking-widest">
             <span class="inline-block h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse"></span>
             School Core Access
           </div>
@@ -111,7 +111,7 @@
           /* The actual border line */
           #loginForm .field::before {
             content: ''; position: absolute; inset: 0;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.05);
             border-radius: inherit;
             pointer-events: none;
             transition: all 0.3s ease;
@@ -147,6 +147,7 @@
             font-size:13.5px; color:#fff; line-height:48px;
             padding:0 2rem 0 .25rem; font-weight: 500;
             position: relative; z-index: 1;
+            border-radius: inherit; /* Critical fix for rounded autofill corners */
           }
           #loginForm input::placeholder { color: rgba(255,255,255,0.15); font-weight: 400; }
 
@@ -160,6 +161,8 @@
           }
           #loginForm .peer:focus ~ .float-label,
           #loginForm .peer[data-filled="true"] ~ .float-label,
+          #loginForm .peer:-webkit-autofill ~ .float-label,
+          #loginForm .peer:autofill ~ .float-label,
           #loginForm .peer:not(:placeholder-shown) ~ .float-label{
             color:#a78bfa; font-size:10px; transform:translateY(-220%);
             font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em;
@@ -203,6 +206,16 @@
           .login-footnote{
             color: rgba(221, 214, 254, 0.92) !important;
             text-shadow: 0 1px 10px rgba(76, 29, 149, 0.25);
+          }
+
+          /* ===== Autofill Culprit Fix ===== */
+          #loginForm input:-webkit-autofill,
+          #loginForm input:-webkit-autofill:hover, 
+          #loginForm input:-webkit-autofill:focus, 
+          #loginForm input:-webkit-autofill:active {
+            -webkit-box-shadow: 0 0 0 1000px #1a1631 inset !important;
+            -webkit-text-fill-color: #ffffff !important;
+            transition: background-color 5000s ease-in-out 0s;
           }
         </style>
 
@@ -257,7 +270,6 @@
             <div class="absolute -inset-0.5 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-lg blur opacity-15 group-hover/btn:opacity-30 transition duration-700"></div>
             <button id="loginBtn" type="submit"
                     class="relative w-full flex items-center justify-center rounded-lg bg-gradient-to-r from-violet-500 via-indigo-500 to-fuchsia-500 text-white py-3
-                           border border-violet-300/25
                            font-bold text-sm shadow-xl transition-all duration-300
                            hover:-translate-y-0.5 hover:brightness-110 hover:shadow-violet-500/30 active:translate-y-0
                            disabled:opacity-70 disabled:cursor-not-allowed">

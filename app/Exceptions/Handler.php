@@ -23,6 +23,14 @@ class Handler extends ExceptionHandler
      */
     public function register(): void
     {
+        $this->renderable(function (\Illuminate\Http\Exceptions\PostTooLargeException $e, $request) {
+            return redirect()->back()->withInput()->with('error', 'The file you uploaded is too large. Please select a file smaller than 5MB.');
+        });
+
+        $this->renderable(function (\Illuminate\Session\TokenMismatchException $e, $request) {
+            return redirect()->back()->withInput()->with('error', 'Your session has expired for security reasons. Please try submitting the form again.');
+        });
+
         $this->reportable(function (Throwable $e) {
             //
         });
