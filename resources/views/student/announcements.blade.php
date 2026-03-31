@@ -49,7 +49,7 @@
                         </h4>
                         <div class="pinned-expansion-wrapper transition-all duration-300">
                             <p 
-                                class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed announcement-content-container max-h-[60px] overflow-hidden transition-all duration-500 break-all max-w-full"
+                                class="text-sm text-slate-600 dark:text-slate-200 leading-relaxed announcement-content-container max-h-[60px] overflow-hidden transition-all duration-500 break-all max-w-full"
                             >
                                 {{ $pinned->content }}
                             </p>
@@ -218,13 +218,16 @@
                         
                         <div class="relative overflow-hidden transition-all duration-500 announcement-content-container max-h-[140px] break-all max-w-full">
                              <div 
-                                class="text-left text-[17px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium whitespace-normal break-all"
+                                class="text-left text-[17px] text-slate-600 dark:text-slate-100 leading-relaxed font-medium whitespace-normal break-all"
                             >
                                 {!! nl2br(e(trim($announcement->content))) !!}
                             </div>
                             
+                            
                             {{-- Fade effect when collapsed --}}
-                            <div class="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-white dark:from-slate-900 to-transparent pointer-events-none truncation-fade"></div>
+                            @if(strlen($announcement->content) > 200)
+                                <div class="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-white dark:from-slate-900 to-transparent pointer-events-none truncation-fade"></div>
+                            @endif
                         </div>
                         
                         @if(strlen($announcement->content) > 200)

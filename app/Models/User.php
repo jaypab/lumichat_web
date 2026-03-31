@@ -28,6 +28,7 @@ class User extends Authenticatable
         'password',
         'role',
         'appointments_enabled',
+        'last_seen_announcement_at',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -37,6 +38,7 @@ class User extends Authenticatable
         'password'             => 'hashed',
         'appointments_enabled' => 'boolean',
         'last_seen_appt_at'    => 'datetime',
+        'last_seen_announcement_at' => 'datetime',
     ];
 
     // ── Roles ────────────────────────────────────────────────────────────────

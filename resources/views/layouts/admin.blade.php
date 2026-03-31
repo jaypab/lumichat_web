@@ -177,19 +177,19 @@
       </button>
     </div>
 
-    <nav class="flex-1 px-2.5 pt-3 space-y-4 overflow-y-auto" id="railScroll">
+    <nav class="flex-1 px-2.5 pt-3 pb-4 space-y-4 overflow-y-auto" id="railScroll">
       <div>
         <p class="section-label mb-2">MAIN</p>
         <ul class="space-y-1">
           <li>
             <a href="{{ route('admin.dashboard') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.dashboard')]) data-tip="Dashboard Overview">
-              <img src="{{ asset('images/icons/home.png') }}" alt="" class="sidebar-icon icon-white">
+              <img src="{{ asset('images/icons/home.png') }}" alt="" class="sidebar-icon icon-white opacity-55 group-hover:opacity-100 transition-opacity">
               <span class="nav-item-label">Dashboard Overview</span>
             </a>
           </li>
           <li>
             <a href="{{ route('admin.counselors.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.counselors.*')]) data-tip="Counselor">
-              <img src="{{ asset('images/icons/counselor.png') }}" alt="" class="sidebar-icon icon-white">
+              <img src="{{ asset('images/icons/counselor.png') }}" alt="" class="sidebar-icon icon-white opacity-55 group-hover:opacity-100 transition-opacity">
               <span class="nav-item-label">Counselor</span>
             </a>
           </li>
@@ -199,19 +199,19 @@
         <ul class="space-y-1">
           <li>
             <a href="{{ route('admin.students.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.students.*')]) data-tip="Student Records">
-              <img src="{{ asset('images/icons/user.png') }}" alt="" class="sidebar-icon icon-white">
+              <img src="{{ asset('images/icons/user.png') }}" alt="" class="sidebar-icon icon-white opacity-55 group-hover:opacity-100 transition-opacity">
               <span class="nav-item-label">Student Records</span>
             </a>
           </li>
           <li>
             <a href="{{ route('admin.account-requests.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.account-requests.*')]) data-tip="Account Requests">
-              <img src="{{ asset('images/icons/mail.png') }}" alt="" class="sidebar-icon icon-white">
+              <img src="{{ asset('images/icons/mail.png') }}" alt="" class="sidebar-icon icon-white opacity-55 group-hover:opacity-100 transition-opacity">
               <span class="nav-item-label">Account Requests</span>
             </a>
           </li>
           <li>
             <a href="{{ route('admin.appointments.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.appointments.*')]) data-tip="Appointments">
-              <img src="{{ asset('images/icons/appointment.png') }}" alt="" class="sidebar-icon icon-white">
+              <img src="{{ asset('images/icons/appointment.png') }}" alt="" class="sidebar-icon icon-white opacity-55 group-hover:opacity-100 transition-opacity">
               <span class="nav-item-label">Appointments</span>
             </a>
           </li>
@@ -221,13 +221,13 @@
         <ul class="space-y-1">
           <li>
             <a href="{{ route('admin.counselor-logs.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.counselor-logs.*')]) data-tip="Counselor Logs">
-              <img src="{{ asset('images/icons/logs.png') }}" alt="" class="sidebar-icon icon-white">
+              <img src="{{ asset('images/icons/logs.png') }}" alt="" class="sidebar-icon icon-white opacity-55 group-hover:opacity-100 transition-opacity">
               <span class="nav-item-label">Counselor Logs</span>
             </a>
           </li>
           <li>
             <a href="{{ route('admin.chatbot-sessions.index') }}" @class(['nav-item', 'nav-item--active relative' => request()->routeIs('admin.chatbot-sessions.*'), 'relative' => true]) data-tip="Chatbot Sessions">
-              <img src="{{ asset('images/icons/chatbot-session.png') }}" alt="" class="sidebar-icon icon-white">
+              <img src="{{ asset('images/icons/chatbot-session.png') }}" alt="" class="sidebar-icon icon-white opacity-55 group-hover:opacity-100 transition-opacity">
               <span class="nav-item-label">Chatbot Sessions</span>
               @if(($adminHighRiskCount ?? 0) > 0)
                 <span class="absolute -top-1 -right-1 min-w-[1.15rem] px-1 py-[1px] rounded-full text-[10px] font-semibold bg-rose-500 text-white flex items-center justify-center shadow-sm">
@@ -242,13 +242,13 @@
         <ul class="space-y-1">
           <li>
             <a href="{{ route('admin.case-notes.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.case-notes.*')]) data-tip="Case Form Summary">
-              <img src="{{ asset('images/icons/casenote.png') }}" alt="" class="sidebar-icon icon-white">
+              <img src="{{ asset('images/icons/casenote.png') }}" alt="" class="sidebar-icon icon-white opacity-55 group-hover:opacity-100 transition-opacity">
               <span class="nav-item-label">Case Form Summary</span>
             </a>
           </li>
           <li>
             <a href="{{ route('admin.course-analytics.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.course-analytics.*')]) data-tip="Course Summary">
-              <img src="{{ asset('images/icons/graduate.png') }}" alt="" class="sidebar-icon icon-white">
+              <img src="{{ asset('images/icons/graduate.png') }}" alt="" class="sidebar-icon icon-white opacity-55 group-hover:opacity-100 transition-opacity">
               <span class="nav-item-label">Course Summary</span>
             </a>
           </li>
@@ -258,7 +258,7 @@
         <ul class="space-y-1">
           <li>
             <a href="{{ route('admin.announcements.index') }}" @class(['nav-item', 'nav-item--active' => request()->routeIs('admin.announcements.*')]) data-tip="Announcements">
-              <img src="{{ asset('images/icons/alert.png') }}" alt="" class="sidebar-icon icon-white">
+              <img src="{{ asset('images/icons/megaphone.png') }}" alt="" class="sidebar-icon icon-white opacity-55 group-hover:opacity-100 transition-opacity">
               <span class="nav-item-label">Announcements</span>
             </a>
           </li>
@@ -409,6 +409,22 @@
       if (!isMobile()) {
         scrim?.classList.remove('active');
         body.style.overflow = '';
+      }
+    });
+  })();
+</script>
+
+<script>
+  // Auto-scroll sidebar to the active menu item (Dashboard/Announcements/etc.)
+  (function() {
+    window.addEventListener('DOMContentLoaded', () => {
+      const rail = document.getElementById('railScroll');
+      const activeItem = document.querySelector('.nav-item--active');
+      if (rail && activeItem) {
+        setTimeout(() => {
+          // Scroll container to position active item near the top
+          rail.scrollTop = activeItem.offsetTop - 16;
+        }, 80);
       }
     });
   })();
