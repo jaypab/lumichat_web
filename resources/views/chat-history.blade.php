@@ -12,7 +12,7 @@
   $totalSessions = method_exists($sessions, 'total') ? $sessions->total() : (is_countable($sessions) ? count($sessions) : 0);
 @endphp
 
-<section class="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm animate-fadeup">
+<section class="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm shadow-indigo-200/50">
   <div class="p-5 sm:p-6">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
@@ -31,8 +31,11 @@
 
         {{-- Manage toggle --}}
         <button id="manageToggle"
-                class="inline-flex items-center gap-2 rounded-xl bg-white text-slate-900 px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
-          Manage
+                class="inline-flex items-center gap-2 rounded-xl bg-white text-slate-900 px-4 py-2 text-sm font-semibold shadow-sm hover:bg-slate-50 active:scale-[.99] transition ring-1 ring-slate-200">
+          <svg class="h-4 w-4 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/>
+          </svg>
+          Manage & Bulk Delete
         </button>
       </div>
     </div>
@@ -95,9 +98,16 @@
   {{-- Sessions list --}}
   @forelse ($sessions as $session)
     @php
-      $title   = $session->topic_summary ?: 'Untitled conversation';
+      $latestChat = $session->chats->first();
+      $latestMsg  = $latestChat ? $latestChat->message : '';
+      
+      // Fallback hierarchy: Summary -> Latest Message Snippet -> Placeholder
+      $title = $session->topic_summary;
+      if (!$title || $title === 'Starting conversation...') {
+          $title = $latestMsg ? \Illuminate\Support\Str::limit($latestMsg, 50, '...') : 'Empty conversation';
+      }
+      
       $last    = optional($session->updated_at)->diffForHumans() ?? 'just now';
-
       $risk    = $session->risk_level ?? 'low';          // 'low' | 'moderate' | 'high'
       $isAnon  = (int) ($session->is_anonymous ?? 0);
 
@@ -247,7 +257,24 @@
       if (!managing && box) { box.checked = false; highlight(card, false); }
     });
 
-    manageToggle.textContent = managing ? 'Managing…' : 'Manage';
+    if (managing) {
+      manageToggle.innerHTML = `
+        <svg class="h-4 w-4 text-rose-500 animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M15 9l-6 6M9 9l6 6" stroke-linecap="round"/>
+        </svg>
+        Cancel Selection
+      `;
+      manageToggle.classList.replace('text-slate-900', 'text-rose-600');
+    } else {
+      manageToggle.innerHTML = `
+        <svg class="h-4 w-4 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/>
+        </svg>
+        Manage & Bulk Delete
+      `;
+      manageToggle.classList.replace('text-rose-600', 'text-slate-900');
+    }
     updateSelectedUI();
   }
 

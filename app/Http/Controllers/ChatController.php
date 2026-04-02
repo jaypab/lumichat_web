@@ -149,7 +149,7 @@ class ChatController extends Controller
         
         $newSession = ChatSession::create([
             'user_id' => $userId,
-            'title' => 'Starting conversation...',
+            'topic_summary' => 'Starting conversation...',
             'risk_level' => 'low',
         ]);
         
@@ -314,29 +314,29 @@ public function store(Request $request)
         if (!$userMsg) throw $e;
     }
 
-        // ===== 3.b) Topic summary / emotion counts (only for mental-health content) =====
+    // ===== 3.b) Topic summary / emotion counts =====
+    // how many user messages are in this session so far
+    $sessionUserMsgCount = Chat::where('chat_session_id', $sessionId)
+        ->where('sender', 'user')
+        ->count();
+
+    // build a ChatGPT-style title from the latest message + heuristics
+    $newTitle = $this->buildSessionTitle(
+        $norm,
+        $analysisText,
+        $labels,
+        $intents['flags'] ?? [],
+        $riskStruct,
+        $sessionUserMsgCount,
+        $session->topic_summary ?? null,
+    );
+
+    if ($newTitle !== '' && $newTitle !== $session->topic_summary) {
+        $session->topic_summary = $newTitle;
+        $session->save();
+    }
+
     if (!$nonMental) {
-        // how many user messages are in this session so far
-        $sessionUserMsgCount = Chat::where('chat_session_id', $sessionId)
-            ->where('sender', 'user')
-            ->count();
-
-        // build a ChatGPT-style title from the latest message + heuristics
-        $newTitle = $this->buildSessionTitle(
-            $norm,
-            $analysisText,
-            $labels,
-            $intents['flags'] ?? [],
-            $riskStruct,
-            $sessionUserMsgCount,
-            $session->topic_summary ?? null,
-        );
-
-        if ($newTitle !== '' && $newTitle !== $session->topic_summary) {
-            $session->topic_summary = $newTitle;
-            $session->save();
-        }
-
         // emotion counters (unchanged logic, just kept under same if)
         try {
             if (!empty($labels)) {
@@ -2074,7 +2074,8 @@ private function buildSessionTitle(
     } elseif ($flags['is_question'] ?? false) {
         $title = 'Question';
     } else {
-        $title = 'Conversation';
+        // Fallback: use a snippet of the actual message instead of just "Conversation"
+        $title = \Illuminate\Support\Str::limit($analysisText, 40, '…');
     }
 
     // 3) Topic / domain detection (what is this *about*?)
@@ -2147,8 +2148,8 @@ private function buildSessionTitle(
         $title   = 'Question: '.$snippet;
     }
 
-    // 5) Fallback: if still too generic, just use a clean snippet.
-    if ($title === '' || mb_strlen($title) < 4 || $title === 'Conversation') {
+    // 5) Final clean up: if it's still "Starting conversation..." but we have a message, override it.
+    if (str_starts_with($title, 'Starting conversation') && mb_strlen($analysisText) > 0) {
         $title = \Illuminate\Support\Str::limit($analysisText, 40, '…');
     }
 

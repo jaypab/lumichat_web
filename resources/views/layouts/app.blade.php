@@ -516,8 +516,18 @@
       </header>
 
       {{-- The actual page content goes here --}}
-      <main class="panel-scroll">
-        @yield('content')
+      <main class="panel-scroll flex flex-col min-h-full">
+        <div class="flex-grow">
+          @yield('content')
+        </div>
+
+        {{-- Scrollable Credit Footer --}}
+        <footer class="mt-auto py-8 text-center pointer-events-none hidden lg:block">
+          <div class="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500/60 dark:text-slate-400/40 select-none">
+            Developed by <span class="text-indigo-600/60 dark:text-indigo-400/50">Team Negatron</span> <span
+              class="mx-1 opacity-40">&bull;</span> TCC 2026
+          </div>
+        </footer>
       </main>
     </div>
 
@@ -749,13 +759,7 @@
     @include('profile.partials.alerts')
 
     {{-- Fixed Credit Footer --}}
-    <footer class="fixed bottom-4 right-[72px] pointer-events-none z-[100] hidden lg:block">
-      <div
-        class="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500/60 dark:text-slate-400/40 select-none">
-        Developed by <span class="text-indigo-600/60 dark:text-indigo-400/50">Team Negatron</span> <span
-          class="mx-1 opacity-40">&bull;</span> TCC 2026
-      </div>
-    </footer>
+
 
     @stack('scripts')
 
