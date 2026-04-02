@@ -1,5 +1,8 @@
 #!/bin/bash
 
+set -e
+export PATH=$PATH:/usr/local/bin:/usr/bin:/bin
+
 cd ~/domains/lumichat.site/public_html/staging || exit
 
 git fetch
@@ -22,5 +25,3 @@ if [ "$LOCAL" != "$REMOTE" ]; then
 else
     echo "No changes."
 fi
-
-
