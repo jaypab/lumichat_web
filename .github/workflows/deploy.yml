@@ -16,8 +16,9 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 65002
           script: |
-            cd /var/www/lumichat_web
+            cd ~/domains/lumichat.site/public_html/staging
 
             git pull origin staging
 
