@@ -54,30 +54,32 @@
                         </a>
                     @endif
 
-                    {{-- Pagination Elements --}}
-                    @foreach ($elements as $element)
-                        {{-- "Three Dots" Separator --}}
-                        @if (is_string($element))
-                            <span aria-disabled="true">
-                                <span class="relative inline-flex items-center px-4 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 cursor-default rounded-lg">{{ $element }}</span>
-                            </span>
-                        @endif
+                    {{-- Pagination Elements (Strict 4-Page Sliding Window) --}}
+                    @php
+                        $currentPage = $paginator->currentPage();
+                        $lastPage = $paginator->lastPage();
+                        $maxPagesToShow = 4;
+                        
+                        $startPage = max(1, $currentPage - floor($maxPagesToShow / 2));
+                        $endPage = $startPage + $maxPagesToShow - 1;
+                        
+                        if ($endPage > $lastPage) {
+                            $endPage = $lastPage;
+                            $startPage = max(1, $endPage - $maxPagesToShow + 1);
+                        }
+                    @endphp
 
-                        {{-- Array Of Links --}}
-                        @if (is_array($element))
-                            @foreach ($element as $page => $url)
-                                @if ($page == $paginator->currentPage())
-                                    <span aria-current="page">
-                                        <span class="relative inline-flex items-center px-4 py-2 text-sm font-bold text-white bg-gradient-to-r from-indigo-600 to-purple-600 border border-transparent cursor-default rounded-lg shadow-md">{{ $page }}</span>
-                                    </span>
-                                @else
-                                    <a href="{{ $url }}" class="relative inline-flex items-center px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-300 dark:hover:border-indigo-600 hover:text-indigo-600 dark:hover:text-indigo-400 focus:z-10 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-150 ease-in-out" aria-label="Go to page {{ $page }}">
-                                        {{ $page }}
-                                    </a>
-                                @endif
-                            @endforeach
+                    @for ($page = $startPage; $page <= $endPage; $page++)
+                        @if ($page == $currentPage)
+                            <span aria-current="page">
+                                <span class="relative inline-flex items-center px-4 py-2 text-sm font-bold text-white bg-gradient-to-r from-indigo-600 to-purple-600 border border-transparent cursor-default rounded-lg shadow-md">{{ $page }}</span>
+                            </span>
+                        @else
+                            <a href="{{ $paginator->url($page) }}" class="relative inline-flex items-center px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-300 dark:hover:border-indigo-600 hover:text-indigo-600 dark:hover:text-indigo-400 focus:z-10 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-150 ease-in-out" aria-label="Go to page {{ $page }}">
+                                {{ $page }}
+                            </a>
                         @endif
-                    @endforeach
+                    @endfor
 
                     {{-- Next Page Link --}}
                     @if ($paginator->hasMorePages())
