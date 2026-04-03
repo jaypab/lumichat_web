@@ -52,21 +52,55 @@
   .section-anchor{ scroll-margin-top: 92px; }
 
   .toc-link{
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
     color: rgb(75,85,99);
-    border-radius: 12px;
-    transition: background-color .15s ease, color .15s ease;
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-weight: 500;
+    transition: all .2s ease;
   }
-  .toc-link:hover{ background: rgba(79,70,229,.06); }
+  .toc-link:hover{ 
+    background: rgba(79,70,229,.05);
+    color: rgb(79,70,229);
+  }
   .toc-link.active{
-    background: rgba(79,70,229,.10);
+    background: rgba(79,70,229,.08);
     color: rgb(79,70,229);
     font-weight: 600;
   }
-  .dark .toc-link{ color: rgb(203,213,225); }
-  .dark .toc-link:hover{ background: rgba(79,70,229,.16); }
-  .dark .toc-link.active{
-    background: rgba(79,70,229,.20);
+  /* Left indicator bar for active state */
+  .toc-link::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 20%;
+    bottom: 20%;
+    width: 2px;
+    background: rgb(79,70,229);
+    border-radius: 99px;
+    opacity: 0;
+    transform: scaleY(0);
+    transition: all .2s ease;
+  }
+  .toc-link.active::before {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+
+  .dark .toc-link{ color: rgb(148,163,184); }
+  .dark .toc-link:hover{ 
+    background: rgba(129,140,248,.1); 
     color: rgb(165,180,252);
+  }
+  .dark .toc-link.active{
+    background: rgba(129,140,248,.15);
+    color: rgb(165,180,252);
+  }
+  .dark .toc-link::before {
+    background: rgb(129,140,248);
   }
 
   /* =========================
@@ -197,13 +231,13 @@
   <div class="grid lg:grid-cols-[220px,1fr] gap-4 sm:gap-6">
     @php
       $anchors = [
-        ['id'=>'build','label'=>'How we built it'],
-        ['id'=>'flow','label'=>'How it works'],
-        ['id'=>'responses','label'=>'Response sources'],
-        ['id'=>'rasa','label'=>'Rasa integration'],
-        ['id'=>'privacy','label'=>'Privacy & Safety'],
-        ['id'=>'faq','label'=>'FAQ'],
-        ['id'=>'credits','label'=>'Acknowledgments'],
+        ['id'=>'build','label'=>'How we built it', 'icon' => '<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-5c1.62-2.2 5-3 5-3"/><path d="M12 15v5s3.03-.55 5-2c2.2-1.62 3-5 3-5"/>'],
+        ['id'=>'flow','label'=>'How it works', 'icon' => '<path d="M11 11H5a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h6"/><path d="M7 15l4 4"/><path d="M7 19l4-4"/><path d="M13 13h6a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-6"/><path d="M17 8l-4-4"/><path d="M17 4l-4 4"/>'],
+        ['id'=>'responses','label'=>'Response sources', 'icon' => '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'],
+        ['id'=>'rasa','label'=>'Rasa integration', 'icon' => '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>'],
+        ['id'=>'privacy','label'=>'Privacy & Safety', 'icon' => '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/>'],
+        ['id'=>'faq','label'=>'FAQ', 'icon' => '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'],
+        ['id'=>'credits','label'=>'Acknowledgments', 'icon' => '<path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526"/><circle cx="12" cy="8" r="6"/>'],
       ];
     @endphp
 
@@ -212,8 +246,11 @@
       <ul id="about-toc" class="space-y-1 text-[14px]">
         @foreach ($anchors as $a)
           <li>
-            <a href="#{{ $a['id'] }}" class="toc-link kb-focus block px-3 py-2 transition" data-target="{{ $a['id'] }}">
-              {{ $a['label'] }}
+            <a href="#{{ $a['id'] }}" class="toc-link kb-focus block pl-4 pr-3 py-2.5 transition" data-target="{{ $a['id'] }}">
+              <svg class="w-4 h-4 shrink-0 opacity-70 group-hover:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                {!! $a['icon'] !!}
+              </svg>
+              <span>{{ $a['label'] }}</span>
             </a>
           </li>
         @endforeach
@@ -224,14 +261,22 @@
     <div class="space-y-8">
 
       {{-- Mobile "On this page" dropdown --}}
-      <div class="lg:hidden -mt-2 mb-2">
+      <div class="lg:hidden -mt-2 mb-4 relative z-20">
         <label for="about-toc-mobile" class="sr-only">On this page</label>
-        <select id="about-toc-mobile" class="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/70 p-2">
-          @foreach ($anchors as $a)
-            <option value="{{ $a['id'] }}">{{ $a['label'] }}</option>
-          @endforeach
-        </select>
+        <div class="relative">
+          <select id="about-toc-mobile" class="w-full appearance-none rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/90 py-2.5 pl-4 pr-10 text-sm font-medium text-gray-700 dark:text-gray-200 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-shadow">
+            @foreach ($anchors as $a)
+              <option value="{{ $a['id'] }}">{{ $a['label'] }}</option>
+            @endforeach
+          </select>
+          <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+            <svg class="h-4 w-4 text-gray-400 dark:text-gray-500" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+            </svg>
+          </div>
+        </div>
       </div>
+
 
       {{-- Build / Stack - Mobile Fixed --}}
       <section id="build" class="section-anchor space-y-4 reveal">
@@ -430,41 +475,13 @@
   els.forEach(el => io.observe(el));
 })();
 
-/* Smooth-scroll + Scroll-spy + Mobile TOC
-   —— works inside .panel-scroll (your layout's scroll container) */
+/* Smooth-scroll + Scroll-spy + Mobile TOC */
 (function(){
   const html = document.documentElement;
-  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const headerOffset = 92; // keep in sync with .section-anchor scroll-margin-top
-
-  // Use the page scroller (layout) if present, else fallback to window
-  const scroller = document.querySelector('.panel-scroll') || window;
+  const headerOffset = 92; 
+  const scroller = document.querySelector('.panel-scroll') || document.querySelector('.main-content') || window;
   const isWindow = scroller === window;
 
-  // Helper to get current scrollTop
-  const getScrollTop = () => isWindow ? window.scrollY : scroller.scrollTop;
-
-  // Helper to scroll
-  function smoothScrollTo(y) {
-    if (isWindow) {
-      window.scrollTo({ top: y, behavior: reduced || html.classList.contains('reduce-motion') ? 'auto' : 'smooth' });
-    } else {
-      scroller.scrollTo({ top: y, behavior: reduced || html.classList.contains('reduce-motion') ? 'auto' : 'smooth' });
-    }
-  }
-
-  // Compute target Y relative to scroller
-  function targetY(el) {
-    const elRect = el.getBoundingClientRect();
-    if (isWindow) {
-      return elRect.top + window.scrollY - headerOffset;
-    } else {
-      const scRect = scroller.getBoundingClientRect();
-      return elRect.top - scRect.top + scroller.scrollTop - headerOffset;
-    }
-  }
-
-  // Collect links/sections
   const links = Array.from(document.querySelectorAll('.toc-link[data-target], .toc-link[href^="#"]'))
     .map(a => { if (!a.dataset.target) a.dataset.target = a.getAttribute('href').slice(1); return a; });
 
@@ -472,37 +489,42 @@
     .map(a => document.getElementById(a.dataset.target))
     .filter(Boolean);
 
-  // Active state
   function setActiveLink(id){
     links.forEach(l => l.classList.toggle('active', l.dataset.target === id));
   }
 
-  // Clicks (desktop TOC)
+  // Desktop Clicks
   links.forEach(a => {
     a.addEventListener('click', (e) => {
       e.preventDefault();
       const id = a.dataset.target;
       const el = document.getElementById(id);
       if (!el) return;
-      smoothScrollTo( targetY(el) );
+      
+      const behavior = html.classList.contains('reduce-motion') ? 'auto' : 'smooth';
+      el.scrollIntoView({ behavior: behavior, block: 'start' });
+      
       el.setAttribute('tabindex','-1');
       el.focus({ preventScroll: true });
       setActiveLink(id);
     });
   });
 
-  // Mobile dropdown
+  // Mobile Dropdown
   const mobileSel = document.getElementById('about-toc-mobile');
   mobileSel?.addEventListener('change', () => {
     const id = mobileSel.value;
     const el = document.getElementById(id);
     if (!el) return;
-    smoothScrollTo( targetY(el) );
+    
+    const behavior = html.classList.contains('reduce-motion') ? 'auto' : 'smooth';
+    el.scrollIntoView({ behavior: behavior, block: 'start' });
+    
     el.setAttribute('tabindex','-1');
     el.focus({ preventScroll: true });
   });
 
-  // Scroll-spy using the scroller as root
+  // Scroll Spy
   const spy = new IntersectionObserver((entries) => {
     const visible = entries
       .filter(e => e.isIntersecting)

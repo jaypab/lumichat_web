@@ -28,23 +28,23 @@
     @if($pinnedAnnouncements->count() > 0)
         <section class="mb-8">
             <div class="flex items-center gap-3 mb-6">
-                <div class="h-px flex-1 bg-rose-100 dark:bg-rose-900/30"></div>
-                <h3 class="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.2em] text-rose-500 dark:text-rose-400">
-                    <span class="animate-pulse">🔔</span> Important Announcements
+                <div class="h-px flex-1 bg-indigo-100 dark:bg-indigo-900/30"></div>
+                <h3 class="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.2em] text-indigo-500 dark:text-indigo-400">
+                    📌 Pinned Announcements
                 </h3>
-                <div class="h-px flex-1 bg-rose-100 dark:bg-rose-900/30"></div>
+                <div class="h-px flex-1 bg-indigo-100 dark:bg-indigo-900/30"></div>
             </div>
             
             <div class="grid gap-4 sm:grid-cols-{{ $pinnedAnnouncements->count() > 1 ? '2' : '1' }}">
                 @foreach($pinnedAnnouncements as $pinned)
-                    <article class="relative group bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200/50 dark:border-rose-900/50 rounded-3xl sm:rounded-[1.5rem] p-5 sm:p-6 hover:shadow-xl hover:shadow-rose-500/10 transition-all duration-300">
-                        <div class="absolute -top-3 -right-3 flex h-8 w-8 items-center justify-center rounded-full bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-500/40">
+                    <article class="relative group bg-indigo-50/30 dark:bg-indigo-950/20 border border-indigo-100/50 dark:border-indigo-900/50 rounded-3xl sm:rounded-[1.5rem] p-5 sm:p-6 hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-300">
+                        <div class="absolute -top-3 -right-3 flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-white text-xs font-bold shadow-lg shadow-indigo-600/40">
                              📌
                         </div>
-                        <time class="text-[10px] font-black text-rose-400 dark:text-rose-500 uppercase tracking-widest mb-3 block">
+                        <time class="text-[10px] font-black text-indigo-400 dark:text-indigo-500 uppercase tracking-widest mb-3 block">
                             {{ $pinned->created_at->diffForHumans() }}
                         </time>
-                        <h4 class="text-xl font-black text-slate-900 dark:text-white leading-tight mb-2 group-hover:text-rose-600 transition-colors break-all max-w-full">
+                        <h4 class="text-xl font-black text-slate-900 dark:text-white leading-tight mb-2 group-hover:text-indigo-600 transition-colors break-all max-w-full">
                             {{ $pinned->title }}
                         </h4>
                         <div class="pinned-expansion-wrapper transition-all duration-300">
@@ -56,7 +56,7 @@
                             @if(strlen($pinned->content) > 120)
                                 <button 
                                     onclick="lumiToggleAnnouncement(this)" 
-                                    class="mt-2 text-[10px] font-black text-rose-500 uppercase tracking-widest hover:text-rose-600 transition-colors focus:outline-none ring-0 outline-none"
+                                    class="mt-2 text-[10px] font-black text-indigo-500 uppercase tracking-widest hover:text-indigo-600 transition-colors focus:outline-none ring-0 outline-none"
                                 >
                                     <div class="flex items-center gap-1">
                                         <span class="button-text">Read More</span>
@@ -67,7 +67,7 @@
                         </div>
                         <div class="mt-4 flex items-center justify-between">
                             <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">By {{ $pinned->author->name ?? 'Admin' }}</span>
-                             <a href="#feed-{{ $pinned->id }}" class="text-[11px] font-black text-rose-500 hover:text-rose-600 uppercase tracking-widest">View Details →</a>
+                             <a href="#feed-{{ $pinned->id }}" class="text-[11px] font-black text-indigo-500 hover:text-indigo-600 uppercase tracking-widest">View Details →</a>
                         </div>
                     </article>
                 @endforeach
@@ -106,16 +106,8 @@
             >
                 All
             </button>
-            <button 
-                onclick="lumiSetFilter('high', this)"
-                id="filterBtnHigh"
-                class="relative z-10 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all min-w-[90px] text-slate-500 outline-none focus:outline-none ring-0 focus:ring-0 hover:bg-white/50 dark:hover:bg-slate-800/50"
-            >
-                Priority
-            </button>
 
             {{-- Vertical Divider --}}
-            <div class="h-4 w-px bg-slate-200 dark:border-slate-800 mx-1"></div>
 
             {{-- Sort Order Toggle --}}
             <button 
@@ -148,7 +140,7 @@
                 $isNewGroup = !$lastDate || !$currentDate->equalTo($lastDate);
                 $lastDate = $currentDate;
                 
-                $groupLabel = 'Earlier';
+                $groupLabel = $currentDate->format('M d, Y');
                 if ($currentDate->isToday()) $groupLabel = 'Today';
                 elseif ($currentDate->isYesterday()) $groupLabel = 'Yesterday';
             @endphp
@@ -170,37 +162,17 @@
             <article 
                 id="feed-{{ $announcement->id }}"
                 data-date="{{ $announcement->created_at->toIso8601String() }}"
-                data-priority="{{ $announcement->priority }}"
                 @class([
                     "group relative bg-white dark:bg-slate-900 rounded-3xl sm:rounded-[2.5rem] border transition-all duration-500 announcement-card",
-                    "border-slate-200 dark:border-slate-800 hover:border-indigo-500/50 hover:shadow-2xl hover:shadow-indigo-500/5",
-                    "ring-2 ring-rose-500/10 dark:ring-rose-500/20 border-rose-100" => $announcement->priority === 'high'
+                    "border-slate-200 dark:border-slate-800 hover:border-indigo-500/50 hover:shadow-2xl hover:shadow-indigo-500/5"
                 ])
             >
                 <div class="p-5 sm:p-7 space-y-4">
                     {{-- Priority & Meta --}}
                     <div class="flex flex-wrap items-center justify-between gap-4">
-                        <div class="flex items-center gap-3">
-                            @php $pColor = $announcement->priority_color; @endphp
-                            <div @class([
-                                "px-3.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5",
-                                "bg-{$pColor}-100 text-{$pColor}-700 dark:bg-{$pColor}-900/30 dark:text-{$pColor}-300 border border-{$pColor}-200/50 dark:border-{$pColor}-700/50"
-                            ])>
-                                @if($announcement->priority === 'high')
-                                    <span class="relative flex h-2 w-2">
-                                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                                        <span class="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-                                    </span>
-                                @endif
-                                {{ $announcement->priority }} Priority
-                            </div>
-                            
-                            <div class="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-700"></div>
-                            
-                            <time class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tight">
-                                {{ $announcement->created_at->format('M d, g:i A') }}
-                            </time>
-                        </div>
+                        <time class="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tight">
+                            {{ $announcement->created_at->format('M d, g:i A') }}
+                        </time>
 
                         @auth
                             @if($announcement->created_at > (Auth::user()->last_seen_announcement_at ?? \Carbon\Carbon::createFromTimestamp(0)))
@@ -376,13 +348,6 @@
         if (filter === 'all') {
             btnAll.classList.add('text-indigo-600');
             btnAll.classList.remove('text-slate-500');
-            btnHigh.classList.add('text-slate-500');
-            btnHigh.classList.remove('text-rose-600');
-        } else {
-            btnHigh.classList.add('text-rose-600');
-            btnHigh.classList.remove('text-slate-500');
-            btnAll.classList.add('text-slate-500');
-            btnAll.classList.remove('text-indigo-600');
         }
 
         lumiApplyFilters();
@@ -433,7 +398,7 @@
             const priority = card.getAttribute('data-priority');
             
             const matchesSearch = title.includes(searchTerm) || content.includes(searchTerm);
-            const matchesFilter = currentFilter === 'all' || priority === currentFilter;
+            const matchesFilter = true;
             
             if (matchesSearch && matchesFilter) {
                 card.style.display = 'block';

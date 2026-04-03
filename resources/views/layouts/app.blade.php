@@ -47,16 +47,11 @@
       position: sticky;
       top: 0;
       z-index: 2147483000;
-      /* below notif & modals, above content */
-      background: rgba(255, 255, 255, .66);
-      border-bottom: 1px solid rgba(148, 163, 184, .28);
-      backdrop-filter: blur(10px) saturate(140%);
-      -webkit-backdrop-filter: blur(10px) saturate(140%);
-    }
-
-    html.dark .header-shell {
-      background: rgba(17, 24, 39, .58);
-      border-bottom-color: rgba(148, 163, 184, .18);
+      background: var(--glass-bg);
+      border-bottom: 1px solid var(--sidebar-border);
+      backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+      -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+      transition: all 0.3s ease;
     }
 
     /* Consistent height + horizontal padding */
@@ -138,50 +133,57 @@
   {{-- =========================================================
   3) Vite bundles (Tailwind, app JS, chat helpers)
   ========================================================= --}}
+  @vite(['resources/css/app.css', 'resources/js/app.js'])
   <style id="critical-chat-lock">
-    :root {
-      --bubble-w: 620px;
-    }
-
-    #chat-messages .bubble:not(.lb2) {
+    html body #chat-messages .bubble:not(.lb2) {
       box-sizing: border-box !important;
-      width: auto !important;
-      max-width: min(var(--bubble-w), 86%) !important;
-      min-height: 0 !important;
-      padding: 8px 12px !important;
-      margin: 0 !important;
-      white-space: pre-wrap !important;
-      word-break: normal !important;
-      overflow-wrap: anywhere !important;
-    }
-
-    #chat-messages .bubble.bubble-tight {
-      font-size: 15px !important;
-      line-height: 22px !important;
-      padding: 8px 12px !important;
-    }
-
-    #lb-scope .lb2 {
       width: fit-content !important;
-      max-width: min(520px, 46ch) !important;
-      text-align: left !important;
-      padding: 6px 10px !important;
-      display: inline-block !important;
-      box-sizing: border-box !important;
+      max-width: 80% !important;
       min-height: 0 !important;
+      padding: 8px 14px !important;
       margin: 0 !important;
       white-space: pre-wrap !important;
       word-break: normal !important;
       overflow-wrap: anywhere !important;
-      align-self: flex-start !important;
+      text-align: left !important;
+      border-radius: 18px !important;
+      line-height: 1.4 !important;
     }
 
-    #lb-scope .msg-row.items-end .lb2,
-    #lb-scope .msg-row.text-right .lb2 {
+    /* Bot bubbles: left aligned by default, with light background */
+    html body #chat-messages .bubble-ai:not(.lb2) {
+      background: #f1f5f9 !important;
+      /* light gray/slate-100 */
+      color: #1e293b !important;
+      border-bottom-left-radius: 4px !important;
+      text-align: left !important;
+    }
+
+    /* User bubbles: manually aligned to right via items-end row */
+    html body #chat-messages .msg-row.items-end .bubble-user:not(.lb2) {
       align-self: flex-end !important;
+      background: #4f46e5 !important;
+      /* vibrant blue */
+      color: #ffffff !important;
+      border-bottom-right-radius: 4px !important;
+      text-align: left !important;
+    }
+
+    html body #chat-messages .bubble.is-typing:not(.lb2) {
+      padding: 4px 10px !important;
+      width: fit-content !important;
+      min-width: 0 !important;
+      min-height: 20px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      height: 24px !important;
+    }
+
+    #chat-messages .msg-row {
+      margin-bottom: 2px !important;
     }
   </style>
-  @vite(['resources/css/app.css', 'resources/js/app.js'])
 
   {{-- =========================================================
   4) Other styles (SweetAlert theme, page-level pushes)
@@ -315,7 +317,7 @@
               {{-- Separator before Account section --}}
               @if ($item['label'] === 'Profile')
                 <li class="my-3 px-3">
-                  <div class="h-px bg-slate-200 dark:bg-slate-800 opacity-60"></div>
+                  <div class="h-px bg-slate-300 dark:bg-slate-600"></div>
                 </li>
               @endif
 
@@ -372,7 +374,14 @@
 
       {{-- Profile card footer --}}
       <div class="sidebar-profile-card">
-        <div class="sidebar-user-avatar">{{ $sbInitials ?: 'U' }}<span class="sidebar-avatar-dot"></span></div>
+        <div class="sidebar-user-avatar overflow-hidden">
+          @if(Auth::check() && Auth::user()->profile_picture)
+            <img src="{{ asset('storage/' . Auth::user()->profile_picture) }}" alt="" class="w-full h-full object-cover">
+          @else
+            {{ $sbInitials ?: 'U' }}
+          @endif
+          <span class="sidebar-avatar-dot"></span>
+        </div>
         <div class="sidebar-user-info">
           <span class="sidebar-user-name">{{ $sbName }}</span>
           <span class="sidebar-user-role">{{ $sbSis ?: 'Student' }}</span>
@@ -402,7 +411,7 @@
       }
     @endphp
 
-    <div class="main-content">
+    <div class="main-content flex flex-col min-h-screen">
       <header class="header-shell">
         <div class="header-inner flex items-center justify-between overflow-visible">
           {{-- LEFT --}}
@@ -453,9 +462,13 @@
               <button id="user-btn" type="button" class="inline-flex items-center gap-3 h-11 px-2.5 rounded-xl border border-gray-200
                    dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 hover:bg-gray-50
                    dark:hover:bg-gray-800 transition">
-                <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br
+                <div class="flex items-center justify-center w-8 h-8 rounded-lg overflow-hidden bg-gradient-to-br
                         from-indigo-500 to-violet-600 text-white text-xs font-bold">
-                  {{ $initials ?: 'U' }}
+                  @if(Auth::check() && Auth::user()->profile_picture)
+                    <img src="{{ asset('storage/' . Auth::user()->profile_picture) }}" alt="" class="w-full h-full object-cover">
+                  @else
+                    {{ $initials ?: 'U' }}
+                  @endif
                 </div>
                 <div class="hidden sm:flex flex-col text-left leading-tight min-w-0">
                   <span class="text-[11px] font-medium uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">
@@ -516,260 +529,229 @@
       </header>
 
       {{-- The actual page content goes here --}}
-      <main class="panel-scroll flex flex-col min-h-full">
-        <div class="flex-grow">
+      <main class="flex-grow flex flex-col">
+        <div class="flex-grow flex flex-col">
           @yield('content')
         </div>
-
-        {{-- Scrollable Credit Footer --}}
-        <footer class="mt-auto py-8 text-center pointer-events-none hidden lg:block">
-          <div class="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500/60 dark:text-slate-400/40 select-none">
-            Developed by <span class="text-indigo-600/60 dark:text-indigo-400/50">Team Negatron</span> <span
-              class="mx-1 opacity-40">&bull;</span> TCC 2026
-          </div>
-        </footer>
       </main>
-    </div>
 
-    {{-- ============================ Minimal JS ============================ --}}
-    <script>
-      // Sidebar toggle (remembers state on desktop, always closed on mobile)
-      (function () {
+      {{-- Global Premium Footer (Negative @ TCC) --}}
+      <footer
+        class="mt-auto w-full border-t border-slate-200/60 dark:border-slate-700/50 bg-white/60 dark:bg-gray-900/60 backdrop-blur">
+        <div class="flex items-center justify-center h-16 px-4">
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+            Developed by the
+            <span class="text-indigo-600 dark:text-indigo-400">Team Negatron</span> @TCC
+          </p>
+        </div>
+      </footer>
+    </div> {{-- end .main-content --}}
+  </div> {{-- end .layout-wrapper --}}
+
+  {{-- ============================ Minimal JS ============================ --}}
+  <script>
+    // Sidebar toggle (remembers state on desktop, always closed on mobile)
+    (function () {
+      const body = document.body;
+      const openBtn = document.getElementById('sidebar-open');
+      const closeBtn = document.getElementById('sidebar-close');
+      const sidebar = document.getElementById('sidebar');
+      const scrim = document.getElementById('sidebar-scrim');
+      const isMobile = () => window.innerWidth < 1024;
+
+      // On mobile always start closed; on desktop restore from localStorage
+      const stored = localStorage.getItem('sidebarHidden') === 'true';
+      body.classList.toggle('sidebar-hidden', isMobile() ? true : stored);
+
+      const setScrim = (open) => {
+        if (!scrim) return;
+        if (open && isMobile()) {
+          scrim.classList.add('active');
+          body.style.overflow = 'hidden';
+        } else {
+          scrim.classList.remove('active');
+          body.style.overflow = '';
+        }
+      };
+
+      // Sync scrim with initial state
+      setScrim(!body.classList.contains('sidebar-hidden'));
+
+      const toggle = () => {
+        body.classList.toggle('sidebar-hidden');
+        const isHidden = body.classList.contains('sidebar-hidden');
+        if (!isMobile()) localStorage.setItem('sidebarHidden', isHidden);
+        setScrim(!isHidden);
+      };
+
+      openBtn?.addEventListener('click', toggle);
+      closeBtn?.addEventListener('click', toggle);
+      scrim?.addEventListener('click', toggle);
+
+      // Close on outside click (mobile)
+      document.addEventListener('click', (e) => {
+        if (!isMobile()) return;
+        if (!sidebar?.contains(e.target) && !openBtn?.contains(e.target)) {
+          if (!body.classList.contains('sidebar-hidden')) toggle();
+        }
+      });
+
+      // Re-evaluate on resize
+      window.addEventListener('resize', () => {
+        if (!isMobile()) {
+          scrim?.classList.remove('active');
+          body.style.overflow = '';
+        }
+      });
+    })();
+
+    // Theme toggle
+    (function () {
+      const btn = document.getElementById('theme-toggle');
+      btn?.addEventListener('click', () => {
+        const html = document.documentElement;
         const body = document.body;
-        const openBtn = document.getElementById('sidebar-open');
-        const closeBtn = document.getElementById('sidebar-close');
-        const sidebar = document.getElementById('sidebar');
-        const scrim = document.getElementById('sidebar-scrim');
-        const isMobile = () => window.innerWidth < 1024;
+        const isDark = html.classList.toggle('dark');
+        html.classList.toggle('dark-theme', isDark);
+        body.classList.toggle('dark-theme', isDark);
+        html.setAttribute('data-coreui-theme', isDark ? 'dark' : 'light');
+        html.setAttribute('data-bs-theme', isDark ? 'dark' : 'light');
+        localStorage.setItem('lumichat_dark', isDark ? '1' : '0');
+      });
+    })();
 
-        // On mobile always start closed; on desktop restore from localStorage
-        const stored = localStorage.getItem('sidebarHidden') === 'true';
-        body.classList.toggle('sidebar-hidden', isMobile() ? true : stored);
+    // User menu
+    (function () {
+      const btn = document.getElementById('user-btn');
+      const menu = document.getElementById('user-menu');
+      const close = () => menu?.classList.add('hidden');
+      const toggle = () => menu?.classList.toggle('hidden');
 
-        const setScrim = (open) => {
-          if (!scrim) return;
-          if (open && isMobile()) {
-            scrim.classList.add('active');
-            body.style.overflow = 'hidden';
-          } else {
-            scrim.classList.remove('active');
-            body.style.overflow = '';
-          }
-        };
+      btn?.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
+      document.addEventListener('click', (e) => {
+        if (!menu?.contains(e.target) && !btn?.contains(e.target)) close();
+      });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    })();
 
-        // Sync scrim with initial state
-        setScrim(!body.classList.contains('sidebar-hidden'));
-
-        const toggle = () => {
-          body.classList.toggle('sidebar-hidden');
-          const isHidden = body.classList.contains('sidebar-hidden');
-          if (!isMobile()) localStorage.setItem('sidebarHidden', isHidden);
-          setScrim(!isHidden);
-        };
-
-        openBtn?.addEventListener('click', toggle);
-        closeBtn?.addEventListener('click', toggle);
-        scrim?.addEventListener('click', toggle);
-
-        // Close on outside click (mobile)
-        document.addEventListener('click', (e) => {
-          if (!isMobile()) return;
-          if (!sidebar.contains(e.target) && !openBtn?.contains(e.target)) {
-            if (!body.classList.contains('sidebar-hidden')) toggle();
-          }
+    // Clear auto-welcome on "New Chat"
+    (function () {
+      function clearWelcomeOnNewChat() {
+        try {
+          const wrap = document.querySelector('#chat-wrapper');
+          const threadId = (wrap && wrap.dataset.threadId) || location.pathname;
+          sessionStorage.removeItem(`lumi_welcome_${threadId}`);
+          sessionStorage.removeItem('lumi_welcome');
+        } catch (_) { }
+      }
+      document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('[data-new-chat="1"]').forEach(el => {
+          el.addEventListener('click', clearWelcomeOnNewChat, { capture: true });
         });
+      });
+    })();
 
-        // Re-evaluate on resize
-        window.addEventListener('resize', () => {
-          if (!isMobile()) {
-            scrim?.classList.remove('active');
-            body.style.overflow = '';
-          }
-        });
-      })();
+    // Calendar .ics utility + booked modal
+    (function () {
+      function downloadICS({ title, description = '', location = '', startISO, endISO }) {
+        const pad = s => s.replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+        const dtStart = pad(new Date(startISO).toISOString());
+        const dtEnd = pad(new Date(endISO).toISOString());
+        const body = [
+          'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//LumiCHAT//Appointments//EN', 'BEGIN:VEVENT',
+          `UID:${(crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now())}@lumichat.local`,
+          `DTSTAMP:${pad(new Date().toISOString())}`,
+          `DTSTART:${dtStart}`, `DTEND:${dtEnd}`,
+          `SUMMARY:${title}`,
+          `DESCRIPTION:${(description || '').replace(/\n/g, '\\n')}`,
+          `LOCATION:${location || ''}`,
+          'END:VEVENT', 'END:VCALENDAR'
+        ].join('\r\n');
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([body], { type: 'text/calendar;charset=utf-8' }));
+        a.download = 'LumiCHAT-appointment.ics';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      }
 
-      // Theme toggle
-      (function () {
-        const btn = document.getElementById('theme-toggle');
-        btn?.addEventListener('click', () => {
-          console.log('Student Theme Toggle Clicked');
-          debugger;
-          const html = document.documentElement;
-          const body = document.body;
-          const isDark = html.classList.toggle('dark');
-          html.classList.toggle('dark-theme', isDark);
-          body.classList.toggle('dark-theme', isDark);
-          html.setAttribute('data-coreui-theme', isDark ? 'dark' : 'light');
-          html.setAttribute('data-bs-theme', isDark ? 'dark' : 'light');
-          localStorage.setItem('lumichat_dark', isDark ? '1' : '0');
-        });
-      })();
-
-      // User menu
-      (function () {
-        const btn = document.getElementById('user-btn');
-        const menu = document.getElementById('user-menu');
-        const close = () => menu?.classList.add('hidden');
-        const toggle = () => menu?.classList.toggle('hidden');
-
-        btn?.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
-        document.addEventListener('click', (e) => {
-          if (!menu?.contains(e.target) && !btn?.contains(e.target)) close();
-        });
-        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
-      })();
-
-      // Clear auto-welcome on "New Chat"
-      (function () {
-        function clearWelcomeOnNewChat() {
-          try {
-            const wrap = document.querySelector('#chat-wrapper');
-            const threadId = (wrap && wrap.dataset.threadId) || location.pathname;
-            sessionStorage.removeItem(`lumi_welcome_${threadId}`);
-            sessionStorage.removeItem('lumi_welcome');
-          } catch (_) { }
-        }
-        document.addEventListener('DOMContentLoaded', () => {
-          document.querySelectorAll('[data-new-chat="1"]').forEach(el => {
-            el.addEventListener('click', clearWelcomeOnNewChat, { capture: true });
-          });
-        });
-      })();
-
-      // Calendar .ics utility + booked modal
-      (function () {
-        function downloadICS({ title, description = '', location = '', startISO, endISO }) {
-          const pad = s => s.replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
-          const dtStart = pad(new Date(startISO).toISOString());
-          const dtEnd = pad(new Date(endISO).toISOString());
-          const body = [
-            'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//LumiCHAT//Appointments//EN', 'BEGIN:VEVENT',
-            `UID:${(crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now())}@lumichat.local`,
-            `DTSTAMP:${pad(new Date().toISOString())}`,
-            `DTSTART:${dtStart}`, `DTEND:${dtEnd}`,
-            `SUMMARY:${title}`,
-            `DESCRIPTION:${(description || '').replace(/\n/g, '\\n')}`,
-            `LOCATION:${location || ''}`,
-            'END:VEVENT', 'END:VCALENDAR'
-          ].join('\r\n');
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(new Blob([body], { type: 'text/calendar;charset=utf-8' }));
-          a.download = 'LumiCHAT-appointment.ics';
-          a.click();
-          setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-        }
-
-        window.showBookedModal = function ({ counselor, dateLabel, timeLabel, startISO, endISO, historyUrl }) {
-          const check = `
-          <div class="lumi-check-lg">
-            <svg viewBox="0 0 24 24" width="48" height="48" aria-hidden="true">
-              <circle cx="12" cy="12" r="10" fill="none" stroke="rgba(16,185,129,.4)" stroke-width="2"></circle>
-              <path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="rgb(16,185,129)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
-            </svg>
-          </div>`;
-          Swal.fire({
-            width: 640,
-            title: 'Appointment booked!',
-            html: `
-            ${check}
-            <div class="lumi-divider"></div>
-            <div class="lumi-meta">
-              <div><b>Counselor:</b> ${counselor}</div>
-              <div><b>Date:</b> ${dateLabel}</div>
-              <div><b>Time:</b> ${timeLabel}</div>
-            </div>`,
-            showConfirmButton: true,
-            confirmButtonText: 'OK',
-            showDenyButton: true,
-            denyButtonText: 'Add to calendar',
-            showCancelButton: true,
-            cancelButtonText: 'View history',
-            reverseButtons: true
-          }).then(res => {
-            if (res.isDenied) {
-              downloadICS({
-                title: `Counseling with ${counselor}`,
-                description: `LumiCHAT counseling appointment with ${counselor}.`,
-                location: 'Counseling Office · LumiCHAT',
-                startISO, endISO
-              });
-            } else if (res.dismiss === Swal.DismissReason.cancel && historyUrl) {
-              location.href = historyUrl;
-            }
-          });
-        };
-      })();
-
-      // Premium logout confirmation (sidebar + user menu)
-      (function () {
-        const forms = document.querySelectorAll('form[data-lumi-logout="1"]');
-        if (!forms.length) return;
-
-        forms.forEach(form => {
-          form.addEventListener('submit', function (e) {
-            e.preventDefault();
-
-            if (typeof Swal === 'undefined') {
-              form.submit();
-              return;
-            }
-
-            Swal.fire({
-              title: 'Sign out of LumiCHAT?',
-              html: `
-              <p class="mt-2 text-[14px] text-slate-600 dark:text-slate-300">
-                You’ll be logged out from this device. Your conversations and appointments will stay saved in your account.
-              </p>
-            `,
-              focusConfirm: false,
-              showCancelButton: true,
-              showCloseButton: true,
-              confirmButtonText: 'Logout',
-              cancelButtonText: 'Stay signed in',
-              reverseButtons: true,
-              customClass: {
-                popup: 'swal2-logout-popup',
-                confirmButton: 'swal2-logout-confirm',
-                cancelButton: 'swal2-logout-cancel'
-              }
-            }).then(result => {
-              if (result.isConfirmed) {
-                form.submit();
-              }
+      window.showBookedModal = function ({ counselor, dateLabel, timeLabel, startISO, endISO, historyUrl }) {
+        const check = `
+        <div class="lumi-check-lg">
+          <svg viewBox="0 0 24 24" width="48" height="48" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" fill="none" stroke="rgba(16,185,129,.4)" stroke-width="2"></circle>
+            <path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="rgb(16,185,129)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+        </div>`;
+        Swal.fire({
+          width: 640,
+          title: 'Appointment booked!',
+          html: `
+          ${check}
+          <div class="lumi-divider"></div>
+          <div class="lumi-meta">
+            <div><b>Counselor:</b> ${counselor}</div>
+            <div><b>Date:</b> ${dateLabel}</div>
+            <div><b>Time:</b> ${timeLabel}</div>
+          </div>`,
+          showConfirmButton: true,
+          confirmButtonText: 'OK',
+          showDenyButton: true,
+          denyButtonText: 'Add to calendar',
+          showCancelButton: true,
+          cancelButtonText: 'View history',
+          reverseButtons: true
+        }).then(res => {
+          if (res.isDenied) {
+            downloadICS({
+              title: `Counseling with ${counselor}`,
+              description: `LumiCHAT counseling appointment with ${counselor}.`,
+              location: 'Counseling Office · LumiCHAT',
+              startISO, endISO
             });
-          });
-        });
-      })();
-
-      // Auto-scroll sidebar to the active menu item (Home/Announcements/etc.)
-      (function () {
-        window.addEventListener('DOMContentLoaded', () => {
-          const rail = document.getElementById('railScroll');
-          const activeItem = document.querySelector('.nav-item--active');
-          if (rail && activeItem) {
-            setTimeout(() => {
-              // Scroll container so the active item is positioned near the top
-              rail.scrollTop = activeItem.offsetTop - 16;
-            }, 100);
+          } else if (res.dismiss === Swal.DismissReason.cancel && historyUrl) {
+            location.href = historyUrl;
           }
         });
-      })();
-    </script>
+      };
+    })();
 
-    @include('profile.partials.alerts')
-
-    {{-- Fixed Credit Footer --}}
-
-
-    @stack('scripts')
-
-    @if (session('swal'))
-      <script>
-        window.addEventListener('DOMContentLoaded', () => {
-          Swal.fire(@json(session('swal')));
+    // Premium logout confirmation
+    (function () {
+      const forms = document.querySelectorAll('form[data-lumi-logout="1"]');
+      if (!forms.length) return;
+      forms.forEach(form => {
+        form.addEventListener('submit', function (e) {
+          e.preventDefault();
+          if (typeof Swal === 'undefined') { form.submit(); return; }
+          Swal.fire({
+            title: 'Sign out of LumiCHAT?',
+            html: `<p class="mt-2 text-[14px] text-slate-600 dark:text-slate-300">You will be logged out from this device.</p>`,
+            showCancelButton: true,
+            confirmButtonText: 'Logout',
+            reverseButtons: true
+          }).then(result => { if (result.isConfirmed) form.submit(); });
         });
-      </script>
-    @endif
+      });
+    })();
+
+    // Auto-scroll sidebar
+    (function () {
+      window.addEventListener('DOMContentLoaded', () => {
+        const rail = document.getElementById('railScroll');
+        const activeItem = document.querySelector('.nav-item--active');
+        if (rail && activeItem) { setTimeout(() => { rail.scrollTop = activeItem.offsetTop - 16; }, 100); }
+      });
+    })();
+  </script>
+
+  @include('profile.partials.alerts')
+  @stack('scripts')
+
+  @if (session('swal'))
+    <script>
+      window.addEventListener('DOMContentLoaded', () => { Swal.fire(@json(session('swal'))); });
+    </script>
+  @endif
 </body>
 
 </html>

@@ -8,8 +8,8 @@ use Illuminate\Support\Str;
 
 class ProfileUpdateRequest extends FormRequest
 {
-    public const COURSES = ['BSIT','EDUC','CAS','CRIM','BLIS','MIDWIFERY','BSHM','BSBA'];
-    public const YEARS   = ['1st year','2nd year','3rd year','4th year'];
+    public const COURSES = ['BSIT', 'EDUC', 'CAS', 'CRIM', 'BLIS', 'MIDWIFERY', 'BSHM', 'BSBA'];
+    public const YEARS = ['1st year', '2nd year', '3rd year', '4th year'];
 
     public function authorize(): bool
     {
@@ -48,10 +48,10 @@ class ProfileUpdateRequest extends FormRequest
             $digits = substr($digits, 0, 15);
         }
 
-       $this->merge([
-            'email'          => $email,
-            'course'         => $course,
-            'year_level'     => $year,
+        $this->merge([
+            'email' => $email,
+            'course' => $course,
+            'year_level' => $year,
             'contact_number' => $digits,
         ]);
     }
@@ -62,38 +62,48 @@ class ProfileUpdateRequest extends FormRequest
 
         return [
             'email' => [
-                'bail','required','string','max:255','lowercase',
+                'bail',
+                'required',
+                'string',
+                'max:255',
+                'lowercase',
                 'email:rfc,dns',
-                Rule::unique('tbl_users','email')->ignore($userId, 'id'),
+                Rule::unique('tbl_users', 'email')->ignore($userId, 'id'),
             ],
-            'course'         => ['nullable','in:'.implode(',', self::COURSES)],
-            'year_level'     => ['nullable','in:'.implode(',', self::YEARS)],
+            'course' => ['nullable', 'in:' . implode(',', self::COURSES)],
+            'year_level' => ['nullable', 'in:' . implode(',', self::YEARS)],
 
             // REQUIRED so it never becomes NULL in DB
             // Accept: 09XXXXXXXXX, 639XXXXXXXXX, or straight 10–15 digits
             'contact_number' => [
-                'bail','required','string','min:10','max:15',
+                'bail',
+                'required',
+                'string',
+                'min:10',
+                'max:15',
                 'regex:/^(09\d{9}|639\d{9}|\d{10,15})$/',
             ],
+            'profile_picture' => ['nullable', 'image', 'mimes:jpg,jpeg,png,gif', 'max:5120'],
+            'remove_profile_picture' => ['nullable', 'boolean'],
         ];
     }
 
     public function messages(): array
     {
         return [
-            'name.regex'              => 'The name may contain letters, spaces, dots, apostrophes, and hyphens only, and must start with a letter.',
-            'email.unique'            => 'This email is already in use.',
+            'name.regex' => 'The name may contain letters, spaces, dots, apostrophes, and hyphens only, and must start with a letter.',
+            'email.unique' => 'This email is already in use.',
             'contact_number.required' => 'Please enter your contact number.',
-            'contact_number.regex'    => 'Use PH format 09XXXXXXXXX or 639XXXXXXXXX (digits only).',
-            'contact_number.min'      => 'Contact number is too short.',
-            'contact_number.max'      => 'Contact number is too long.',
+            'contact_number.regex' => 'Use PH format 09XXXXXXXXX or 639XXXXXXXXX (digits only).',
+            'contact_number.min' => 'Contact number is too short.',
+            'contact_number.max' => 'Contact number is too long.',
         ];
     }
 
     public function attributes(): array
     {
         return [
-            'year_level'     => 'year level',
+            'year_level' => 'year level',
             'contact_number' => 'contact number',
         ];
     }
