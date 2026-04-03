@@ -91,4 +91,24 @@ class User extends Authenticatable
     {
         $this->notify(new \App\Notifications\ResetPasswordQueued($token));
     }
+
+    /**
+     * Get the user's initials for the placeholder avatar.
+     */
+    public function getInitialsAttribute(): string
+    {
+        $words = explode(' ', (string) $this->name);
+        if (count($words) >= 2) {
+            return mb_strtoupper(mb_substr($words[0], 0, 1) . mb_substr($words[1], 0, 1));
+        }
+        return mb_strtoupper(mb_substr((string) $this->name, 0, 2));
+    }
+
+    /**
+     * Get the full URL for the profile picture, if it exists.
+     */
+    public function getAvatarUrlAttribute(): ?string
+    {
+        return $this->profile_picture ? asset('storage/' . $this->profile_picture) : null;
+    }
 }

@@ -13,4 +13,4 @@ const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('c
 axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 if (token) axios.defaults.headers.common['X-CSRF-TOKEN'] = token;
 
-import './login-bg';
+// login-bg removed from global entrypoint to prevent React preamble crashes.

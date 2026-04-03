@@ -10,6 +10,8 @@
 @endphp
 
 {{-- ===== Outer layout: center, then animate to split ===== --}}
+@viteReactRefresh
+@vite('resources/js/login-bg.jsx')
 <div id="beams-root" class="fixed inset-0 z-0 pointer-events-none overflow-hidden"></div>
 
 <div class="h-screen w-full flex items-center justify-center overflow-hidden p-6 md:p-12">

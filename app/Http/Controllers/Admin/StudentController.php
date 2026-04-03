@@ -51,6 +51,7 @@ class StudentController extends Controller
                     'course',
                     'year_level',
                     'contact_number',
+                    'profile_picture',  // ✅ added
                     'email_verified_at',
                     'created_at',
                 ])
