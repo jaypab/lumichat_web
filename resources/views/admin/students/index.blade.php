@@ -265,7 +265,7 @@
 
       @if($students->hasPages())
         <div class="px-6 py-4 bg-slate-50 border-t border-slate-200/70 not-print">
-          {{ $students->appends(['q'=>request('q')])->links() }}
+          {{ $students->appends(['q'=>request('q')])->onEachSide(1)->links() }}
         </div>
       @endif
     </div>
