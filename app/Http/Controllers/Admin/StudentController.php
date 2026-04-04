@@ -275,6 +275,8 @@ public function show(Request $request, User $student): View
      */
 public function exportPdf(Request $request)
 {
+    ini_set('memory_limit', '512M'); // 🔹 Fix: Allow Dompdf to allocate enough memory to parse complex Tailwind grids
+    
     $q    = trim((string) $request->input('q', ''));
     $year = $request->input('year');
 

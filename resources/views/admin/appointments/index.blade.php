@@ -36,130 +36,120 @@
      class="max-w-7xl mx-auto p-6 space-y-6"
      data-last-updated="{{ $lastUpdatedAt ?? '' }}">
 
-  {{-- ========= Header band (gradient) ========= --}}
+  {{-- ========= Header band (Clean SaaS Layout) ========= --}}
   @php $totalAppointments = $appointments->total(); @endphp
-  <section class="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm screen-only">
-    <div class="p-5 sm:p-6">
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 class="text-xl sm:text-2xl font-bold tracking-tight">Appointments</h2>
-          <p class="text-white/80 text-sm mt-0.5">View and manage booked counseling sessions.</p>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <span class="inline-flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm ring-1 ring-white/20">
-            <span class="inline-block size-2 rounded-full bg-emerald-300"></span>
-            <strong class="font-semibold">{{ $totalAppointments }}</strong>
-            <span class="opacity-90">{{ \Illuminate\Support\Str::plural('appointment', $totalAppointments) }}</span>
-          </span>
-
-          <a href="{{ route('admin.appointments.export.pdf', request()->only('status','period','q')) }}"
-             target="_blank" rel="noopener"
-             class="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
-            </svg>
-            Download PDF
-          </a>
+  <header class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 screen-only mb-2">
+    <div class="flex flex-col gap-1.5">
+      <div class="flex items-center gap-3">
+        <h1 class="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">Appointments</h1>
+        <div class="hidden sm:flex items-center justify-center px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-[11px] font-bold ring-1 ring-inset ring-indigo-500/20">
+          {{ number_format($totalAppointments) }} Total
         </div>
       </div>
+      <p class="text-slate-500 text-sm font-medium">View and manage booked counseling sessions.</p>
     </div>
-  </section>
 
-  {{-- ========= Filters (carded) ========= --}}
+    <div class="flex items-center gap-3">
+      <a href="{{ route('admin.appointments.export.pdf', request()->only('status','period','q')) }}"
+         target="_blank" rel="noopener"
+         class="group inline-flex items-center justify-center gap-2 rounded-xl bg-white text-slate-700 border border-slate-200 px-4 py-2.5 text-sm font-bold shadow-sm hover:bg-slate-50 hover:text-slate-900 active:scale-[.98] transition-all duration-200">
+        <svg class="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+        </svg>
+        Export PDF
+      </a>
+    </div>
+  </header>
+
+  {{-- ========= Filters (Modern Search) ========= --}}
   <form id="apptSearchForm" method="GET" action="{{ route('admin.appointments.index') }}" class="screen-only">
-    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3 mt-2">
-      <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-        {{-- Status --}}
-        <div class="md:col-span-3 min-w-0">
-          <label class="block text-xs font-medium text-slate-600 mb-1">Status</label>
-          <select
-            name="status"
-            title="Filter by appointment status. Choose “Re-assigned only” to see appointments that were moved from a previous counselor."
-            class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-            @foreach ($statusOptions as $value => $label)
-              <option value="{{ $value }}" @selected($status === $value)>{{ $label }}</option>
-            @endforeach
-          </select>
-        </div>
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center">
+      <div class="relative flex-1 group min-w-[200px]">
+        <input
+          id="appt-q"
+          type="text"
+          name="q"
+          value="{{ $q }}"
+          placeholder="Search counselor or student..."
+          autocomplete="off"
+          class="h-12 w-full rounded-2xl border-none bg-white px-11 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 transition-all duration-200 group-hover:ring-slate-300"
+          @if($q !== '') autofocus @endif
+        />
+        <svg class="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 group-hover:text-indigo-500 transition-colors duration-200"
+             viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <circle cx="11" cy="11" r="7" stroke-width="2.5"></circle>
+          <path d="M21 21l-4.3-4.3" stroke-width="2.5" stroke-linecap="round"></path>
+        </svg>
 
-        {{-- Date Range --}}
-        <div class="md:col-span-3 min-w-0">
-          <label class="block text-xs font-medium text-slate-600 mb-1">Date Range</label>
-          <select name="period"
-                  class="w-full h-10 bg-white border border-slate-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-            @foreach ($periodOptions as $value => $label)
-              <option value="{{ $value }}" @selected($period === $value)>{{ $label }}</option>
-            @endforeach
-          </select>
-        </div>
-
-        {{-- Search --}}
-        <div class="md:col-span-3 min-w-0">
-          <label class="block text-xs font-medium text-slate-600 mb-1">Search</label>
-          <div class="relative">
-            <input
-                id="appt-q"
-                type="text"
-                name="q"
-                value="{{ $q }}"
-                placeholder="Search counselor or student"
-                @if($q !== '') autofocus @endif
-                class="w-full h-10 bg-white border border-slate-200 rounded-xl pl-10 pr-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-            />
-            <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <circle cx="11" cy="11" r="7" stroke-width="2"/>
-              <path d="M21 21l-4.3-4.3" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-          </div>
-        </div>
-
-        <div class="md:col-span-3 flex items-end justify-end gap-2">
-          <a href="{{ route('admin.appointments.index') }}"
-            class="h-10 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 hover:ring-slate-300 active:scale-[.99] transition">
+        @if($q)
+          <button type="button"
+                  onclick="let p = document.createElement('input'); p.type='hidden'; p.name='page'; p.value=''; this.form.appendChild(p); document.getElementById('appt-q').value=''; this.form.submit();"
+                  class="absolute right-3 top-1/2 -translate-y-1/2 rounded-xl p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-all"
+                  aria-label="Clear search">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h7M4 10h16M4 16h10"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
             </svg>
-            Reset
-          </a>
-        </div>
+          </button>
+        @endif
       </div>
 
-      {{-- Small legend under filters (only when "Re-assigned only" is selected) --}}
-      @if ($status === 'reassigned')
-        <div class="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
-          <span class="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2 py-0.5 ring-1 ring-violet-200">
-            <svg class="w-3.5 h-3.5 text-violet-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M7 7h10l-3-3m3 3l-3 3M17 17H7l3 3m-3-3l3-3" />
-            </svg>
-            <span class="font-semibold text-violet-700">Re-assigned from …</span>
-          </span>
-          <span>means this appointment was moved from a previous counselor.</span>
-        </div>
-      @endif
+      <div class="flex items-center gap-3">
+        <select name="status" class="h-12 rounded-2xl border-none bg-white px-4 py-0 pl-4 pr-10 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500 transition-all duration-200 hover:ring-slate-300">
+          @foreach ($statusOptions as $value => $label)
+            <option value="{{ $value }}" @selected($status === $value)>{{ $label }}</option>
+          @endforeach
+        </select>
+        
+        <select name="period" class="h-12 rounded-2xl border-none bg-white px-4 py-0 pl-4 pr-10 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500 transition-all duration-200 hover:ring-slate-300">
+          @foreach ($periodOptions as $value => $label)
+            <option value="{{ $value }}" @selected($period === $value)>{{ $label }}</option>
+          @endforeach
+        </select>
+
+        <a href="{{ route('admin.appointments.index') }}"
+           class="h-12 inline-flex items-center gap-2 rounded-2xl bg-white px-5 text-sm font-bold text-slate-600 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 group transition-all duration-200">
+          <svg class="h-4 w-4 text-slate-400 group-hover:rotate-180 transition-transform duration-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+            <path d="M12 8v8M8 12h8" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>
+          Reset
+        </a>
+      </div>
     </div>
+    
+    {{-- Small legend under filters (only when "Re-assigned only" is selected) --}}
+    @if ($status === 'reassigned')
+      <div class="mt-3 flex items-center gap-2 text-[11px] text-slate-500 ml-2">
+        <span class="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2 py-0.5 ring-1 ring-inset ring-violet-500/20">
+          <svg class="w-3.5 h-3.5 text-violet-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M7 7h10l-3-3m3 3l-3 3M17 17H7l3 3m-3-3l3-3" />
+          </svg>
+          <span class="font-bold text-violet-700">Re-assigned from …</span>
+        </span>
+        <span class="font-medium">means this appointment was moved from a previous counselor.</span>
+      </div>
+    @endif
   </form>
 
   {{-- ========= Mobile Print ========= --}}
-  <div class="mt-3 md:hidden">
+  <div class="mt-3 md:hidden screen-only">
     <button type="button" onclick="printAppointments()"
-            class="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl shadow-sm hover:bg-emerald-700 active:scale-[.99] transition w-full sm:w-auto">
+            class="inline-flex items-center justify-center gap-2 bg-slate-800 text-white px-4 py-2.5 rounded-xl shadow-sm hover:bg-slate-700 active:scale-[.99] transition w-full font-bold text-sm">
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9V4h12v5M6 18h12a2 2 0 002-2v-5H4v5a2 2 0 002 2z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 9V4h12v5M6 18h12a2 2 0 002-2v-5H4v5a2 2 0 002 2z"/>
       </svg>
       Print
     </button>
   </div>
 
   {{-- ========= Table ========= --}}
-  <div id="appt-print-root" class="space-y-2">
+  <div id="appt-print-root" class="space-y-4">
     <h1 class="appt-print-title hidden">Appointments</h1>
 
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
-      <div class="relative overflow-x-auto">
-        <table class="min-w-full text-sm leading-6 table-auto">
+    <div class="bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-200/60 transition-all duration-300 flex flex-col">
+      <div class="relative overflow-visible rounded-t-3xl border-b border-transparent">
+        <table class="min-w-full text-sm leading-relaxed table-auto">
           <colgroup>
             <col style="width:6%">
             <col style="width:18%">
@@ -167,18 +157,22 @@
             <col style="width:19%">
             <col style="width:19%">
             <col style="width:12%">
-            <col class="col-action" style="width:8%">
+            <col class="col-action text-right w-px">
           </colgroup>
 
-          <thead class="bg-slate-100 border-b border-slate-200 text-slate-700 sticky top-0 z-10">
-            <tr class="align-middle">
-              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">ID</th>
-              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Student</th>
-              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Counselor</th>
-              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Date &amp; Time</th>
-              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Booked On</th>
-              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Status</th>
-              <th class="px-6 py-3 text-right font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap col-action">Actions</th>
+          <thead x-data="{ scrolled: false }" 
+                 x-init="const s = document.querySelector('.panel-scroll'); if(s){ s.addEventListener('scroll', () => scrolled = s.scrollTop > 10) }"
+                 class="text-slate-700 sticky top-0 z-20">
+            <tr>
+              <th class="bg-indigo-50 border-b-2 border-indigo-100 px-6 py-4 text-left font-black uppercase tracking-wider text-[11px] text-indigo-900/80 transition-all duration-300 whitespace-nowrap"
+                  :class="scrolled ? 'rounded-none' : 'rounded-tl-[1.4rem]'">ID</th>
+              <th class="bg-indigo-50 border-b-2 border-indigo-100 px-6 py-4 text-left font-black uppercase tracking-wider text-[11px] text-indigo-900/80 whitespace-nowrap">Student</th>
+              <th class="bg-indigo-50 border-b-2 border-indigo-100 px-6 py-4 text-left font-black uppercase tracking-wider text-[11px] text-indigo-900/80 whitespace-nowrap">Counselor</th>
+              <th class="bg-indigo-50 border-b-2 border-indigo-100 px-6 py-4 text-left font-black uppercase tracking-wider text-[11px] text-indigo-900/80 whitespace-nowrap">Date &amp; Time</th>
+              <th class="bg-indigo-50 border-b-2 border-indigo-100 px-6 py-4 text-left font-black uppercase tracking-wider text-[11px] text-indigo-900/80 whitespace-nowrap">Booked On</th>
+              <th class="bg-indigo-50 border-b-2 border-indigo-100 px-6 py-4 text-left font-black uppercase tracking-wider text-[11px] text-indigo-900/80 whitespace-nowrap">Status</th>
+              <th class="bg-indigo-50 border-b-2 border-indigo-100 px-6 py-4 text-right font-black uppercase tracking-wider text-[11px] text-indigo-900/80 transition-all duration-300 col-action whitespace-nowrap"
+                  :class="scrolled ? 'rounded-none' : 'rounded-tr-[1.4rem]'">Action</th>
             </tr>
           </thead>
 
@@ -198,14 +192,14 @@
                 ][$row->status] ?? ucfirst($row->status ?? '—');
 
                 $statusMap = [
-                  'pending'   => ['bg'=>'bg-amber-50','text'=>'text-amber-700','ring'=>'ring-amber-200','dot'=>'bg-amber-500'],
-                  'confirmed' => ['bg'=>'bg-blue-50','text'=>'text-blue-700','ring'=>'ring-blue-200','dot'=>'bg-blue-500'],
-                  'completed' => ['bg'=>'bg-emerald-50','text'=>'text-emerald-700','ring'=>'ring-emerald-200','dot'=>'bg-emerald-500'],
-                  'canceled'  => ['bg'=>'bg-slate-200','text'=>'text-slate-800','ring'=>'ring-slate-300','dot'=>'bg-slate-500'],
-                  'no_show'   => ['bg'=>'bg-rose-50','text'=>'text-rose-700','ring'=>'ring-rose-200','dot'=>'bg-rose-500'],
+                  'pending'   => ['bg'=>'bg-amber-50','text'=>'text-amber-800','ring'=>'ring-amber-500/30','dot'=>'bg-amber-500'],
+                  'confirmed' => ['bg'=>'bg-blue-50','text'=>'text-blue-800','ring'=>'ring-blue-500/30','dot'=>'bg-blue-500'],
+                  'completed' => ['bg'=>'bg-emerald-50','text'=>'text-emerald-800','ring'=>'ring-emerald-500/30','dot'=>'bg-emerald-500'],
+                  'canceled'  => ['bg'=>'bg-slate-100','text'=>'text-slate-800','ring'=>'ring-slate-500/30','dot'=>'bg-slate-500'],
+                  'no_show'   => ['bg'=>'bg-rose-50','text'=>'text-rose-800','ring'=>'ring-rose-500/30','dot'=>'bg-rose-500'],
                 ];
-                $s   = $statusMap[$row->status] ?? ['bg'=>'bg-slate-50','text'=>'text-slate-700','ring'=>'ring-slate-200','dot'=>'bg-slate-400'];
-                $cls = $s['bg'].' '.$s['text'].' ring-1 '.$s['ring'];
+                $s   = $statusMap[$row->status] ?? ['bg'=>'bg-slate-100','text'=>'text-slate-800','ring'=>'ring-slate-500/30','dot'=>'bg-slate-400'];
+                $cls = $s['bg'].' '.$s['text'].' ring-1 ring-inset '.$s['ring'];
                 $dot = $s['dot'];
 
                 $crPending = isset($row->cr_status) && $row->cr_status === 'requested';
@@ -217,8 +211,8 @@
                 $isWalkIn = ($row->appointment_source ?? null) === 'walk_in';
               @endphp
 
-              <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition">
-                <td class="px-6 py-4 font-semibold text-slate-900">{{ $row->id }}</td>
+              <tr class="align-middle group hover:bg-indigo-50/30 transition-colors duration-200">
+                <td class="px-6 py-4 font-bold text-slate-800">{{ $row->id }}</td>
 
                 {{-- Student --}}
                 <td class="px-6 py-4 whitespace-nowrap text-slate-700">
@@ -227,12 +221,11 @@
 
                     {{-- Walk-in chip --}}
                     @if($isWalkIn)
-                  <span class="inline-flex w-max items-center px-2 py-0.5 rounded-full text-[10px] font-medium
-                              bg-amber-50 text-slate-800 ring-1 ring-amber-200">
-                      <span class="inline-block size-1.5 rounded-full bg-amber-400 mr-1"></span>
-                      Walk-in
+                  <span class="mt-1 inline-flex w-max items-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide
+                               bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-500/20 shadow-sm leading-none">
+                      <span class="inline-block size-1.5 rounded-full bg-amber-500 mr-1.5"></span>
+                      WALK-IN
                   </span>
-
                     @endif
                   </div>
                 </td>
@@ -286,20 +279,20 @@
 
                     @if (($cname === '' || $cname === '—') && $row->status === 'pending')
                       <a href="{{ route('admin.appointments.assign.form', $row->id) }}"
-                         class="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1 text-[13px] text-indigo-700 ring-1 ring-slate-200 hover:bg-indigo-50 hover:ring-indigo-200"
+                         class="inline-flex items-center gap-2 rounded-lg bg-indigo-50 px-2.5 py-1 text-[13px] font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-500/20 hover:bg-indigo-600 hover:text-white transition-colors"
                          title="Assign counselor">
                         <span class="inline-block size-1.5 rounded-full bg-indigo-500"></span>
                         Assign counselor
                       </a>
                     @elseif ($cname === '' || $cname === '—')
-                      <span class="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1 text-[13px] text-slate-700 ring-1 ring-slate-200">
+                      <span class="inline-flex items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-1 text-[13px] text-slate-600 ring-1 ring-inset ring-slate-500/20 font-medium">
                         <span class="inline-block size-1.5 rounded-full bg-slate-400"></span>
                         To be assigned
                       </span>
                     @else
                       <div class="flex flex-col">
                         {{-- Current counselor --}}
-                        <span class="text-slate-700">{{ $cname }}</span>
+                        <span class="text-slate-800 font-bold">{{ $cname }}</span>
 
                         {{-- Change-request flag --}}
                         @if($crPending)
@@ -354,9 +347,9 @@
 
                 {{-- Status pill --}}
                 <td class="px-6 py-4 whitespace-nowrap">
-                  <span class="relative inline-flex items-center h-7 w-[112px] rounded-full text-xs font-medium leading-none {{ $cls }}">
-                    <span class="absolute left-3 inline-block size-2 rounded-full {{ $dot }}"></span>
-                    <span class="mx-auto">{{ $statusNice }}</span>
+                  <span class="relative inline-flex items-center h-6 px-3 rounded-full text-[10px] font-bold tracking-wide leading-none {{ $cls }}">
+                    <span class="absolute left-2 inline-block size-1.5 rounded-full {{ $dot }}"></span>
+                    <span class="ml-2.5">{{ strtoupper($statusNice) }}</span>
                   </span>
                 </td>
 
@@ -364,7 +357,7 @@
                 <td class="px-6 py-4 text-right whitespace-nowrap">
                   <div class="flex items-center justify-end gap-2">
                     <a href="{{ route('admin.appointments.show', $row->id) }}"
-                       class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-1.5 text-white hover:bg-indigo-700">
+                       class="inline-flex items-center justify-center rounded-xl bg-indigo-50 text-indigo-700 px-4 py-2 text-xs font-bold hover:bg-indigo-600 hover:text-white transition-all duration-200">
                       View
                     </a>
                   </div>
@@ -380,8 +373,8 @@
       </div>
 
       @if($appointments->hasPages())
-        <div class="px-6 py-4 bg-slate-50 border-t border-slate-200/70 not-print">
-          {{ $appointments->withQueryString()->links() }}
+        <div class="px-6 py-4 bg-slate-50 border-t border-slate-200/70 not-print rounded-b-3xl">
+          {{ $appointments->withQueryString()->onEachSide(1)->links() }}
         </div>
       @endif
     </div>

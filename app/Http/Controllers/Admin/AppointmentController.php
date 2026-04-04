@@ -441,6 +441,8 @@ public function updateStatus(Request $r, int $id): RedirectResponse
 
     public function exportPdf(Request $request)
     {
+        ini_set('memory_limit', '512M'); // 🔹 Fix: Allow Dompdf to allocate enough memory to parse complex Tailwind grids
+        
         $status = (string) $request->query('status', 'all');
         $period = (string) $request->query('period', 'all');
         $q      = trim((string) $request->query('q', ''));
@@ -542,6 +544,8 @@ public function updateStatus(Request $r, int $id): RedirectResponse
 
    public function exportShowPdf(Request $request, int $id)
 {
+    ini_set('memory_limit', '512M'); // 🔹 Fix: Allow Dompdf to allocate enough memory
+
     $appointment = $this->appointments->findDetailedById($id);
     abort_unless($appointment, 404);
 
