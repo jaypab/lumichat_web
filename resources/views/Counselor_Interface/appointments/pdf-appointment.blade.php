@@ -1,8 +1,9 @@
-{{-- resources/views/Counselor_Interface/appointments/pdf-case-note.blade.php --}}
+{{-- resources/views/Counselor_Interface/appointments/pdf-appointment.blade.php --}}
 @php
   use Carbon\Carbon;
 
   $dt        = Carbon::parse($appointment->scheduled_at);
+  $bookedAt  = $appointment->created_at ? Carbon::parse($appointment->created_at) : null;
   $generated = $generatedAt ?? now()->format('Y-m-d H:i');
 
   // status → chip colors (same palette as admin)
@@ -22,7 +23,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Case Note #{{ $appointment->id }}</title>
+  <title>Appointment #{{ $appointment->id }}</title>
   <style>
     /* Dompdf-safe + embed DejaVu to avoid missing-font issues */
     @font-face{
@@ -65,8 +66,7 @@
     /* Headings + meta */
     h1{
       margin:6px 0 8px;
-      font-size:20px;
-      font-weight: 700;
+      font-size:22px;
     }
     .meta-row{
       display:block;
@@ -79,69 +79,64 @@
     /* Chip */
     .chip{
       display:inline-block;
-      padding:2px 8px;
+      padding:3px 9px;
       border-radius:999px;
       font-weight:700;
-      font-size:10px;
+      font-size:10.5px;
       border:1px solid transparent;
     }
 
     /* Cards & tables */
     .cards-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    .cards-table td { vertical-align: top; width: 50%; padding: 0 4px; }
+    .cards-table td { vertical-align: top; width: 50%; padding: 0 6px; }
     .card{
       border:1px solid #e5e7eb;
-      border-radius:10px;
-      padding:10px;
-      min-height: 120px;
+      border-radius:12px;
+      padding:12px;
+      min-height: 140px;
     }
     .card h2{
-      margin:0 0 6px;
-      font-size:11px;
+      margin:0 0 8px;
+      font-size:12px;
       text-transform:uppercase;
       letter-spacing:.04em;
       color:#475569;
     }
 
     .info{ width:100%; border-collapse:collapse; }
-    .info td{ padding:1px 0; vertical-align:top; }
+    .info td{ padding:2px 0; vertical-align:top; }
 
-    .section{ margin-bottom:6px; }
+    .section{ margin-bottom:8px; }
 
     .kv b{
       display:block;
-      font-size:10px;
+      font-size:11px;
       color:#475569;
       text-transform:uppercase;
-      margin-bottom:1px;
+      margin-bottom:2px;
     }
-    .kv span{ font-size:12px; }
+    .kv span{ font-size:13px; }
 
-    /* Case Note Sections */
+    /* Final Diagnosis/Notes box */
     .box{
       border:1px solid #e5e7eb;
-      border-radius:10px;
-      padding:10px;
-      margin-top:10px;
-      background: #fafafa;
+      border-radius:12px;
+      padding:12px;
+      margin-top:14px;
     }
     .box h2{
-      margin:0 0 4px;
-      font-size:11px;
+      margin:0 0 6px;
+      font-size:12px;
       text-transform:uppercase;
       letter-spacing:.04em;
       color:#475569;
     }
-    .box-content {
-      font-size: 12px;
-      white-space: pre-wrap;
-      color: #334155;
-    }
-
     .small{
-      font-size:10px;
+      font-size:11px;
       color:#64748b;
     }
+
+    .spacer{ height:10px; }
   </style>
 </head>
 <body>
@@ -149,8 +144,8 @@
   {{-- Brand --}}
   <div class="brandbar">
     @if(!empty($logoData))
-      <img src="{{ $logoData }}" alt="LumiCHAT" width="40" height="40"
-           style="width:40px;height:40px;border-radius:50%;vertical-align:middle;">
+      <img src="{{ $logoData }}" alt="LumiCHAT" width="50" height="50"
+           style="width:50px;height:50px;border-radius:50%;vertical-align:middle;">
     @endif
     <span class="brand-title">LumiCHAT</span>
   </div>
@@ -159,9 +154,9 @@
   <div class="topbar"></div>
 
   {{-- Title --}}
-  <h1>Counselor Case Note: Appointment #{{ $appointment->id }}</h1>
+  <h1>Appointment Summary #{{ $appointment->id }}</h1>
 
-  {{-- Meta row --}}
+  {{-- Meta row: status chip + created + generated --}}
   <div class="meta-row">
     <div style="float: left;">
       Status:
@@ -170,8 +165,8 @@
         {{ strtoupper($statusLabel) }}
       </span>
       &nbsp;•&nbsp;
-      Scheduled on:
-      <strong>{{ $dt->format('F d, Y · g:i A') }}</strong>
+      Booked on:
+      <strong>{{ $bookedAt ? $bookedAt->format('F d, Y · g:i A') : '—' }}</strong>
     </div>
     <div class="muted" style="float: right;">
       Generated: {{ $generated }}
@@ -179,89 +174,106 @@
     <div style="clear: both;"></div>
   </div>
 
-  {{-- Participants / Timing --}}
+  <div class="spacer"></div>
+
+  {{-- Two columns via table (layout-neutral for Dompdf) --}}
   <table class="cards-table">
     <tr>
       <td>
         <div class="card">
-          <h2>Student Details</h2>
+          <h2>Participants</h2>
+
+          {{-- Student --}}
           <div class="section">
             <table class="info">
+              <tr>
+                <td class="small" style="text-transform:uppercase;">Student</td>
+              </tr>
               <tr>
                 <td><strong>{{ $appointment->student_name }}</strong></td>
               </tr>
               @if(!empty($appointment->student_email))
-                <tr><td class="small">{{ $appointment->student_email }}</td></tr>
+                <tr>
+                  <td class="small">{{ $appointment->student_email }}</td>
+                </tr>
               @endif
-              @if(!empty($appointment->student_program_year))
-                <tr><td class="small">{{ $appointment->student_program_year }}</td></tr>
+              @if(!empty($appointment->student_id))
+                <tr>
+                  <td class="small">Student ID: {{ $appointment->student_id }}</td>
+                </tr>
               @endif
+              @if(!empty($appointment->student_course) || !empty($appointment->student_program_year))
+                <tr>
+                  <td class="small">
+                    {{ $appointment->student_course ?? ($appointment->student_program_year ?? '') }}
+                  </td>
+                </tr>
+              @endif
+            </table>
+          </div>
+
+          {{-- Counselor --}}
+          <div class="section">
+            <table class="info">
+              <tr>
+                <td class="small" style="text-transform:uppercase;">Counselor</td>
+              </tr>
+              <tr>
+                <td><strong>{{ $appointment->counselor_name ?: '—' }}</strong></td>
+              </tr>
             </table>
           </div>
         </div>
       </td>
+
       <td>
         <div class="card">
-          <h2>Session Metadata</h2>
+          <h2>Appointment Timing</h2>
+
           <div class="kv">
-            <b>Note Date</b>
-            <span>{{ $note->note_date ? \Carbon\Carbon::parse($note->note_date)->format('F d, Y') : '—' }}</span>
+            <b>Scheduled For</b>
+            <span>{{ $dt->format('F d, Y · g:i A') }}</span>
           </div>
-          <div class="kv" style="margin-top:6px;">
-            <b>Counselor</b>
-            <span>{{ $appointment->counselor_name ?: auth()->user()->name }}</span>
+
+          @if(!empty($appointment->location))
+            <div class="kv" style="margin-top:10px;">
+              <b>Location</b>
+              <span>{{ $appointment->location }}</span>
+            </div>
+          @endif
+
+          <div class="kv" style="margin-top:10px;">
+            <b>Source</b>
+            <span>{{ strtoupper(str_replace('_',' ',$appointment->appointment_source ?? 'ONLINE')) }}</span>
           </div>
         </div>
       </td>
     </tr>
   </table>
 
-  {{-- Case Note Sections --}}
-  <div class="box">
-    <h2>I. Presenting Problem</h2>
-    <div class="box-content">{{ $note->presenting_problem }}</div>
-  </div>
-
-  <div class="box">
-    <h2>II. Observations</h2>
-    <div class="box-content">{{ $note->observations }}</div>
-  </div>
-
-  <div class="box">
-    <h2>III. Interventions / Actions</h2>
-    <div class="box-content">{{ $note->interventions }}</div>
-  </div>
-
-  <div class="box">
-    <h2>IV. Student’s Response</h2>
-    <div class="box-content">{{ $note->response }}</div>
-  </div>
-
-  <div class="box">
-    <h2>V. Plan / Follow-Up</h2>
-    <div class="box-content">{{ $note->plan_followup }}</div>
-  </div>
-
-  @if($note->emergency_contact_person)
-  <div class="box" style="background:#fff1f2; border-color:#fecaca;">
-    <h2 style="color:#9f1239;">VI. Emergency Safety Plan</h2>
-    <div style="font-size:11px; margin-top:2px;">
-      <strong>Contact:</strong> {{ $note->emergency_contact_person }} ({{ $note->emergency_relationship }})<br>
-      <strong>Phone:</strong> {{ $note->emergency_contact_no }}<br>
-      <strong>Address:</strong> {{ $note->emergency_address }}
+  @if(!empty($appointment->note))
+    <div class="box">
+      <h2>Student’s Note/Concern</h2>
+      <div style="font-size:13px; margin-top:4px;">{!! nl2br(e($appointment->note)) !!}</div>
     </div>
-  </div>
   @endif
 
   {{-- Footer --}}
-  <div class="small" style="margin-top:30px; text-align:center;">
-    LumiCHAT • Confidential student support record.
+  <div class="small" style="margin-top:40px; text-align:center;">
+    LumiCHAT • Tagoloan Community College — Confidential student support record.
   </div>
 
+  {{-- Footer page numbers --}}
   <script type="text/php">
   if (isset($pdf)) {
       $font  = $fontMetrics->get_font("DejaVu Sans", "normal");
-      $pdf->page_text(520, 810, "Page {PAGE_NUM} of {PAGE_COUNT}", $font, 8, [0,0,0]);
+      $size  = 9;
+      $w     = $pdf->get_width();
+      $h     = $pdf->get_height();
+      $text  = "Page {PAGE_NUM} of {PAGE_COUNT}";
+      $x     = $w - 100;
+      $y     = $h - 35;
+      $pdf->page_text($x, $y, $text, $font, $size, [0,0,0]);
   }
   </script>
 

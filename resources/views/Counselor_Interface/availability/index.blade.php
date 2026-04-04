@@ -7,15 +7,34 @@
 <div class="mx-auto max-w-6xl px-4 pt-0 pb-10 space-y-6">
 
   {{-- ============================
+       INSTRUCTIONS
+     ============================ --}}
+  <div class="bg-indigo-50/60 dark:bg-indigo-900/20 border border-indigo-100/80 dark:border-indigo-800/60 rounded-3xl p-5 shadow-sm backdrop-blur-md flex gap-4 text-[13px] text-indigo-900 dark:text-indigo-100 transition-all">
+    <div class="flex-shrink-0 mt-0.5">
+      <svg class="w-6 h-6 text-indigo-500 dark:text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01" stroke-width="3"></path>
+      </svg>
+    </div>
+    <div class="leading-relaxed">
+      <h4 class="font-bold text-indigo-950 dark:text-white text-sm mb-1.5">How to manage your schedule</h4>
+      <ul class="list-disc list-outside space-y-1 ml-4 marker:text-indigo-400 dark:marker:text-indigo-500 text-slate-700 dark:text-slate-300">
+        <li><strong class="text-indigo-900 dark:text-indigo-200">Weekday Quick Editor (Bottom):</strong> Set your foundation. Define your recurring weekly schedule (e.g., disabling all Fridays).</li>
+        <li><strong class="text-indigo-900 dark:text-indigo-200">Interactive Calendar (Top):</strong> Handle exceptions. Override specific dates (e.g., blocking off a single Monday for a vacation).</li>
+        <li>Need a break? Use the <strong class="text-emerald-700 dark:text-emerald-400">Accepting appointments</strong> toggle to temporarily hide your profile from all student bookings.</li>
+      </ul>
+    </div>
+  </div>
+
+  {{-- ============================
        CALENDAR (wide) + QUICK EDITOR (bottom)
      ============================ --}}
-  <div class="bg-white rounded-2xl shadow-md ring-1 ring-slate-200/70">
+  <div class="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.2)] border border-white/60 dark:border-slate-700/50 overflow-hidden transition-all duration-300">
     {{-- Header / Calendar --}}
-    <section class="p-5 lg:p-8">
-      <div class="flex items-center justify-between">
+    <section class="p-6 lg:p-8">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h3 class="text-slate-900 font-semibold tracking-tight">Interactive Calendar</h3>
-          <p class="text-sm text-slate-500">Weekends disabled. Hover to preview, click to select. Keyboard friendly.</p>
+          <h3 class="text-slate-900 dark:text-white font-bold tracking-tight text-lg">Interactive Calendar</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Weekends disabled. Hover to preview, click to select. Keyboard friendly.</p>
         </div>
         <div class="flex items-center gap-3">
 
@@ -25,35 +44,38 @@
               <input type="hidden" name="accepting" value="{{ ($accepting ?? true) ? 0 : 1 }}">
               <button
                 type="submit"
-                class="px-3 py-1.5 rounded-lg text-sm font-semibold transition
+                class="px-4 py-2 rounded-xl text-sm font-semibold transition shadow-sm
                       {{ ($accepting ?? true)
-                          ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                          : 'bg-slate-200 text-slate-700 hover:bg-slate-300' }}">
+                          ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600 border border-emerald-400/30'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700' }}">
                 {{ ($accepting ?? true) ? 'Accepting appointments' : 'Paused (hidden from students)' }}
               </button>
             </form>
             
           {{-- Month nav --}}
-          <div class="inline-flex items-center gap-2">
-            <button id="calPrev" type="button" class="ui-ghost" aria-label="Previous month">‹</button>
-            <div id="calMonth" class="font-semibold text-indigo-600 tabular-nums"></div>
-            <button id="calNext" type="button" class="ui-ghost" aria-label="Next month">›</button>
+          <div class="inline-flex items-center gap-1 bg-slate-50 dark:bg-slate-800/50 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/50">
+            <button id="calPrev" type="button" class="ui-ghost w-8 h-8 !p-0 flex items-center justify-center rounded-lg" aria-label="Previous month">‹</button>
+            <div id="calMonth" class="font-semibold text-indigo-600 dark:text-indigo-400 tabular-nums px-3 text-sm"></div>
+            <button id="calNext" type="button" class="ui-ghost w-8 h-8 !p-0 flex items-center justify-center rounded-lg" aria-label="Next month">›</button>
           </div>
         </div>
       </div>
 
       {{-- Calendar shell --}}
-      <div class="mt-4 rounded-2xl bg-white ring-1 ring-slate-200/80 shadow-sm overflow-hidden">
-        <div class="grid grid-cols-7 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-50/60">
-          <div class="py-2">Sun</div><div class="py-2">Mon</div><div class="py-2">Tue</div>
-          <div class="py-2">Wed</div><div class="py-2">Thu</div><div class="py-2">Fri</div><div class="py-2">Sat</div>
+      <div class="mt-6 rounded-2xl bg-white/50 dark:bg-slate-800/30 border border-slate-200/60 dark:border-slate-700/40 shadow-inner overflow-hidden backdrop-blur-md">
+        <div class="grid grid-cols-7 text-center text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 bg-slate-50/80 dark:bg-slate-800/80 border-b border-slate-100 dark:border-slate-700/60">
+          <div class="py-3">Sun</div><div class="py-3">Mon</div><div class="py-3">Tue</div>
+          <div class="py-3">Wed</div><div class="py-3">Thu</div><div class="py-3">Fri</div><div class="py-3">Sat</div>
         </div>
-        <div id="calGrid" class="cal-grid grid grid-cols-7 gap-1 p-2 sm:p-3 lg:gap-2 xl:gap-3" role="grid" aria-label="Calendar dates"></div>
+        <div id="calGrid" class="cal-grid grid grid-cols-7 gap-1.5 sm:gap-2 p-2 sm:p-4 lg:gap-3" role="grid" aria-label="Calendar dates"></div>
       </div>
 
-      <div class="mt-3 flex items-center justify-between gap-3">
-        <div class="text-xs text-slate-500">Tip: Use arrow keys to move, <kbd class="kbd">Enter</kbd> to select, <kbd class="kbd">Esc</kbd> to clear.</div>
-        <div class="flex items-center gap-2">
+      <div class="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
+          <svg class="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          <span>Use arrow keys to move, <kbd class="kbd">Enter</kbd> to select, <kbd class="kbd">Esc</kbd> to clear.</span>
+        </div>
+        <div class="flex items-center gap-3">
           <button id="calClear" type="button" class="ui-ghost" aria-label="Clear selected date">Clear</button>
          <button id="calUse"   type="button" class="ui-primary" aria-label="Edit selected date" disabled>Edit date</button>
         </div>
@@ -63,12 +85,12 @@
     </section>
 
    {{-- Weekday Quick Editor --}}
-    <section class="border-t border-slate-200/70 bg-white/80 p-5 lg:p-8">
-      <div class="mb-3 flex items-center justify-between">
+    <section class="border-t border-slate-200/50 dark:border-slate-700/50 bg-slate-50/30 dark:bg-slate-800/30 p-6 lg:p-8">
+      <div class="mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h3 class="text-slate-900 font-semibold tracking-tight">Weekday Quick Editor</h3>
-          <p class="text-sm text-slate-500">
-            Use <span class="font-semibold">Disable</span> for a full-day block, or <span class="font-semibold">Edit hours</span> to fine-tune hourly blocks.
+          <h3 class="text-slate-900 dark:text-white font-bold tracking-tight text-lg">Weekday Quick Editor</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Use <span class="font-semibold text-slate-700 dark:text-slate-300">Disable</span> for a full-day block, or <span class="font-semibold text-slate-700 dark:text-slate-300">Edit hours</span> to fine-tune hourly blocks.
           </p>
         </div>
         <a id="openTableBtn"
@@ -83,17 +105,17 @@
         </a>
       </div>
 
-      <ul class="mt-2 space-y-2.5" role="list">
+      <ul class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3" role="list">
         @php $wdList=[1=>'Monday',2=>'Tuesday',3=>'Wednesday',4=>'Thursday',5=>'Friday']; @endphp
         @foreach($wdList as $wd => $wdLabel)
-          <li class="group flex items-center justify-between p-3 rounded-xl ring-1 ring-slate-200/70 bg-white shadow-[0_1px_0_rgba(0,0,0,0.02)] hover:shadow-md transition">
+          <li class="group flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl border border-slate-200/60 dark:border-slate-700/50 bg-white/70 dark:bg-slate-800/60 shadow-sm hover:shadow-md transition-all duration-300 gap-4">
             <div class="flex items-center gap-3">
-              <span class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 text-white text-sm font-bold shadow-sm select-none">
+              <span class="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white text-sm font-bold shadow-md shadow-indigo-500/20 select-none">
                 {{ substr($wdLabel,0,3) }}
               </span>
               <div>
-                <div class="font-semibold text-slate-800 leading-tight">{{ $wdLabel }}</div>
-                <div class="text-xs text-slate-500 leading-tight">Defaults: 9–12 AM • 1–4 PM</div>
+                <div class="font-bold text-slate-800 dark:text-slate-100 leading-tight">{{ $wdLabel }}</div>
+                <div class="text-xs text-slate-500 dark:text-slate-400 leading-tight mt-0.5">Defaults: 9–12 AM • 1–4 PM</div>
               </div>
             </div>
 
@@ -120,8 +142,9 @@
         @endforeach
       </ul>
 
-      <p class="mt-3 text-[12px] text-slate-500">
-        <span class="font-semibold">Disable</span> = full-day block (09:00–17:00). For date-specific edits, use the interactive calendar above.
+      <p class="mt-5 text-[12px] text-slate-500 dark:text-slate-400 flex items-center gap-2">
+        <svg class="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        <span><span class="font-semibold text-slate-700 dark:text-slate-300">Disable</span> = full-day block (09:00–17:00). For date-specific edits, use the interactive calendar above.</span>
       </p>
     </section>
   </div>
@@ -835,43 +858,50 @@ async function fullBlock(wd) {
 /* Buttons */
 .ui-primary,.ui-ghost,.ui-danger,.ui-success{
    height:var(--ui-h);
-   padding:0 14px;
-   border-radius:12px;
+   padding:0 16px;
+   border-radius:14px;
    font-weight:700;
-   transition:all .15s ease;
+   transition:all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
  }
  
-.ui-primary{ background:linear-gradient(180deg,#6366f1,#4f46e5); color:#fff; border:1px solid #4f46e5; box-shadow:0 2px 10px rgba(99,102,241,.18);}
-.ui-primary:hover{ filter:brightness(1.05); }
-.ui-danger{ background:linear-gradient(180deg,#f43f5e,#e11d48); color:#fff; border:1px solid #e11d48; box-shadow:0 2px 10px rgba(225,29,72,.18);}
-.ui-danger:hover{ filter:brightness(1.05); }
-.ui-ghost{ background:#fff; color:#334155; border:1px solid #e5e7eb;}
-.ui-ghost:hover{ background:#f8fafc; }
+.ui-primary{ background:linear-gradient(135deg,#6366f1,#4f46e5); color:#fff; border:1px solid rgba(255,255,255,0.1); box-shadow:0 4px 12px rgba(79,70,229,.3);}
+.ui-primary:hover{ box-shadow:0 6px 16px rgba(79,70,229,.4); transform:translateY(-1px); filter:brightness(1.05); }
+
+.ui-danger{ background:linear-gradient(135deg,#f43f5e,#e11d48); color:#fff; border:1px solid rgba(255,255,255,0.1); box-shadow:0 4px 12px rgba(225,29,72,.3);}
+.ui-danger:hover{ box-shadow:0 6px 16px rgba(225,29,72,.4); transform:translateY(-1px); filter:brightness(1.05); }
+
+.ui-ghost{ background:rgba(255,255,255,0.8); color:#334155; border:1px solid rgba(226,232,240,0.8); box-shadow:0 2px 4px rgba(0,0,0,0.02);}
+.ui-ghost:hover{ background:#fff; transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,0.05); }
+.dark .ui-ghost{ background:rgba(30,41,59,0.5); color:#cbd5e1; border-color:rgba(255,255,255,0.05); }
+.dark .ui-ghost:hover{ background:rgba(30,41,59,0.8); color:#fff; }
 .ui-peel{ position:relative; overflow:hidden; }
 .ui-peel::after{ content:''; position:absolute; inset:auto -40% -60% -40%; height:120%; transform:skewY(-8deg);
   background:radial-gradient(80% 60% at 50% 20%,rgba(255,255,255,.35),rgba(255,255,255,0)); opacity:.3; transition:opacity .2s;}
 .ui-peel:hover::after{ opacity:.6; }
 
 /* Calendar days */
-.cal-day{ height:40px; border-radius:12px; border:1px solid #e5e7eb; background:#fff; font-weight:700; color:#0f172a;
-  box-shadow:0 1px 0 rgba(0,0,0,.02); transition:transform .08s ease, box-shadow .15s ease, border-color .15s ease, background-color .15s ease; }
-.cal-day:hover{ background:#eef2ff; border-color:#c7d2fe; box-shadow:0 3px 10px rgba(99,102,241,.15); transform:translateY(-1px);}
+.cal-day{ height:44px; border-radius:14px; border:1px solid transparent; background:rgba(255,255,255,0.4); font-weight:700; color:#0f172a;
+  box-shadow:0 2px 5px rgba(0,0,0,.02); transition:all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+.dark .cal-day{ background:rgba(30,41,59,0.4); color:#f8fafc; }
+.cal-day:hover:not(:disabled){ background:#fff; border-color:#6366f1; color:#4f46e5; box-shadow:0 4px 12px rgba(99,102,241,.15); transform:translateY(-2px);}
+.dark .cal-day:hover:not(:disabled){ background:rgba(30,41,59,0.8); border-color:#818cf8; color:#818cf8; }
 .cal-day:focus-visible{ outline:2px solid #6366f1; outline-offset:2px;}
-.cal-day--selected{ background:#4f46e5; color:#fff; border-color:#4f46e5; box-shadow:0 0 0 2px rgba(99,102,241,.35), 0 6px 18px rgba(99,102,241,.35);}
-.cal-day--disabled{ background:#f3f4f6; color:#9ca3af; border-color:#e5e7eb; cursor:not-allowed;}
-@media (min-width: 1024px){ .cal-grid .cal-day{ height: 52px; font-size: 15px; } }
-@media (min-width: 1280px){ .cal-grid .cal-day{ height: 56px; font-size: 16px; } }
+.cal-day--selected{ background:linear-gradient(135deg,#6366f1,#4f46e5) !important; color:#fff !important; border-color:transparent !important; box-shadow:0 8px 16px -4px rgba(79,70,229,.5) !important; transform:scale(1.05);}
+.cal-day--disabled{ opacity:0.4; background:transparent; box-shadow:none; cursor:not-allowed;}
+@media (min-width: 1024px){ .cal-grid .cal-day{ height: 56px; font-size: 15px; } }
+@media (min-width: 1280px){ .cal-grid .cal-day{ height: 62px; font-size: 16px; } }
 
 /* Modal tiles */
-.tile{ height:44px; border-radius:12px; border:1px solid #e5e7eb; background:#fff; font-weight:800; color:#0f172a; display:flex; align-items:center; justify-content:center; transition:all .15s ease; }
-.tile:hover{ background:#eef2ff; border-color:#c7d2fe; transform:translateY(-1px);}
-.tile-locked{ background:#f3f4f6; color:#9ca3af; border-color:#e5e7eb; cursor:not-allowed;}
-.tile-locked:hover{ transform:none; }
+.tile{ height:48px; border-radius:14px; border:1px solid rgba(226,232,240,0.8); background:rgba(255,255,255,0.7); font-weight:800; color:#0f172a; display:flex; align-items:center; justify-content:center; transition:all 0.2s cubic-bezier(0.4, 0, 0.2, 1); box-shadow:0 2px 4px rgba(0,0,0,0.02);}
+.dark .tile{ background:rgba(30,41,59,0.5); color:#f8fafc; border-color:rgba(255,255,255,0.05); }
+.tile:hover:not(.tile-locked){ background:#fff; border-color:#6366f1; color:#4f46e5; transform:translateY(-2px); box-shadow:0 4px 12px rgba(99,102,241,.12);}
+.dark .tile:hover:not(.tile-locked){ background:rgba(30,41,59,0.8); border-color:#818cf8; color:#818cf8; }
+.tile-locked{ opacity:0.5; background:transparent; cursor:not-allowed; border-color:transparent;}
 
 /* Disabled (OFF) visual + RED emphasis) */
-.tile-off{ text-decoration:line-through; }
-.tile-off--danger{ background: linear-gradient(180deg,#fda4af,#fb7185); border-color:#fb7185; color:#fff; box-shadow:0 2px 10px rgba(225,29,72,.18);}
-.tile-off--danger:hover{ filter:brightness(1.03); transform:none; }
+.tile-off{ text-decoration:line-through; opacity: 0.8;}
+.tile-off--danger{ background: linear-gradient(135deg,#fb7185,#e11d48); border-color:transparent; color:#fff !important; box-shadow:0 4px 12px rgba(225,29,72,.25);}
+.tile-off--danger:hover{ filter:brightness(1.05); transform:translateY(-1px); }
 
 /* Floating pill button */
 .table-btn-floating{

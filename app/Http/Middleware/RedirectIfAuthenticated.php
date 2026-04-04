@@ -24,8 +24,13 @@ class RedirectIfAuthenticated
             if (Auth::guard($guard)->check()) {
                 $user = Auth::guard($guard)->user();
 
-                if ($user && method_exists($user, 'canAccessAdmin') && $user->canAccessAdmin()) {
-                    return redirect()->route('admin.dashboard');
+                if ($user) {
+                    if ($user->isAdmin()) {
+                        return redirect()->route('admin.dashboard');
+                    }
+                    if ($user->isCounselor()) {
+                        return redirect()->route('counselor.dashboard');
+                    }
                 }
 
                 return redirect()->route('chat.index');

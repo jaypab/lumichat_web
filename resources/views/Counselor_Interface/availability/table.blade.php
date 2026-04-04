@@ -7,16 +7,15 @@
 <div class="mx-auto max-w-6xl px-4 pt-0 pb-10 space-y-6">
 
   {{-- ===== Top bar / breadcrumbs ===== --}}
-  <div class="sticky top-[56px] z-10 -mx-4 px-4 py-3 bg-white/85 backdrop-blur supports-[backdrop-filter]:bg-white/70
-              border-b border-slate-200/70 flex items-center justify-between rounded-t-2xl">
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
     <div class="flex items-center gap-3">
       <a href="{{ route('counselor.availability.index') }}"
-         class="inline-flex items-center gap-2 px-3 h-9 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
+         class="inline-flex items-center gap-2 px-4 h-10 rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white/50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/80 transition shadow-sm"
          aria-label="Back to calendar">
         ← <span class="font-medium">Back to calendar</span>
       </a>
       <div class="hidden sm:flex items-center gap-2 text-sm text-slate-500">
-        <span>Manage recurring weekday windows &amp; date-specific windows</span>
+        <span>Manage recurring &amp; date-specific windows</span>
       </div>
     </div>
 
@@ -26,17 +25,36 @@
       $datedCount = $dated->total();
     @endphp
     <div class="hidden sm:flex items-center gap-2 text-xs">
-      <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200">
+      <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 ring-1 ring-indigo-200 dark:ring-indigo-800/50">
         <strong class="tabular-nums">{{ $recCount }}</strong> recurring
       </span>
-      <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-violet-50 text-violet-700 ring-1 ring-violet-200">
+      <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 ring-1 ring-violet-200 dark:ring-violet-800/50">
         <strong class="tabular-nums">{{ $datedCount }}</strong> upcoming
       </span>
     </div>
   </div>
 
+  {{-- ============================
+       INSTRUCTIONS
+     ============================ --}}
+  <div class="bg-indigo-50/60 dark:bg-indigo-900/20 border border-indigo-100/80 dark:border-indigo-800/60 rounded-3xl p-5 shadow-sm backdrop-blur-md flex gap-4 text-[13px] text-indigo-900 dark:text-indigo-100 transition-all mb-2">
+    <div class="flex-shrink-0 mt-0.5">
+      <svg class="w-6 h-6 text-indigo-500 dark:text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01" stroke-width="3"></path>
+      </svg>
+    </div>
+    <div class="leading-relaxed">
+      <h4 class="font-bold text-indigo-950 dark:text-white text-sm mb-1.5">How to use the Availability Table</h4>
+      <ul class="list-disc list-outside space-y-1 ml-4 marker:text-indigo-400 dark:marker:text-indigo-500 text-slate-700 dark:text-slate-300">
+        <li><strong class="text-indigo-900 dark:text-indigo-200">Bulk Manage:</strong> Click the "Manage" button in the corner to toggle checkboxes, allowing you to delete multiple records instantly.</li>
+        <li><strong class="text-indigo-900 dark:text-indigo-200">Recurring Windows:</strong> These form your foundation (e.g., standard weekly hours). Deleting one removes your availability for that entire weekday.</li>
+        <li><strong class="text-indigo-900 dark:text-indigo-200">Date-Specific Windows:</strong> These are single-day exceptions (like holidays). Deleting an exception reverts that day back to your recurring schedule.</li>
+      </ul>
+    </div>
+  </div>
+
   {{-- ===== Card container ===== --}}
-  <div class="bg-white rounded-2xl shadow-md ring-1 ring-slate-200/70 p-5 lg:p-8">
+  <div class="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.2)] border border-white/60 dark:border-slate-700/50 p-6 lg:p-8 overflow-hidden transition-all duration-300">
 
     {{-- ========= Helpers / formatters ========= --}}
     @php
@@ -52,10 +70,10 @@
     
     @php $show = $show ?? request('show','available'); @endphp
 
-    <div class="mb-3 flex items-center justify-between gap-2 flex-wrap">
-      <h3 class="text-slate-900 font-semibold tracking-tight">Recurring Weekday Windows</h3>
+    <div class="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3 flex-wrap">
+      <h3 class="text-slate-900 dark:text-white font-bold text-lg tracking-tight">Recurring Weekday Windows</h3>
 
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-3 flex-wrap">
         <span class="hidden sm:inline text-[12px] text-slate-500">
           Tip: Recurring rows affect every matching weekday.
         </span>
@@ -105,11 +123,11 @@
         No recurring windows yet. Configure weekly defaults from the Calendar page.
       </div>
     @else
-      <div id="wrapRecurring" class="manage-off rounded-xl overflow-hidden ring-1 ring-slate-200/70">
+      <div id="wrapRecurring" class="manage-off rounded-2xl overflow-hidden border border-slate-200/60 dark:border-slate-700/50 bg-white/40 dark:bg-slate-800/30 backdrop-blur-sm">
         <form id="bulkDeleteRecurringForm" action="{{ route('counselor.availability.bulkDestroyRecurring') }}" method="POST">
           @csrf
           <table class="min-w-full text-sm hci-table">
-            <thead class="bg-slate-50/80 text-slate-600 sticky-th">
+            <thead class="bg-slate-50/80 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 font-semibold sticky-th border-b border-slate-200/50 dark:border-slate-700/50">
               <tr>
                 <th class="w-10 py-2.5 px-3 sel-col">
                   <input id="ckAllRecurring" type="checkbox" class="accent-indigo-600" aria-label="Select all recurring">
@@ -120,16 +138,16 @@
                 <th class="text-right py-2.5 px-3">Actions</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100">
+            <tbody class="divide-y divide-slate-100/60 dark:divide-slate-700/50">
               @foreach($recurring as $r)
-                <tr class="hover:bg-slate-50/70 transition-colors">
-                  <td class="py-2.5 px-3 sel-col">
-                    <input name="ids[]" value="{{ $r->id }}" type="checkbox" class="rowck-rec accent-indigo-600"
+                <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-colors">
+                  <td class="py-3 px-4 sel-col">
+                    <input name="ids[]" value="{{ $r->id }}" type="checkbox" class="rowck-rec accent-indigo-500 w-4 h-4"
                            aria-label="Select every {{ $wdLong[$r->weekday] ?? '—' }}">
                   </td>
-                  <td class="py-2.5 px-3 font-medium text-slate-800">
-                    <span class="inline-flex items-center gap-2">
-                      <span class="inline-flex h-7 w-7 items-center justify-center rounded-md bg-slate-900/5 text-slate-700 text-xs font-bold">{{ $wdShort[$r->weekday] ?? '—' }}</span>
+                  <td class="py-3 px-4 font-bold text-slate-800 dark:text-slate-200">
+                    <span class="inline-flex items-center gap-3">
+                      <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs font-black shadow-sm ring-1 ring-indigo-100 dark:ring-indigo-800/50">{{ $wdShort[$r->weekday] ?? '—' }}</span>
                       Every {{ $wdLong[$r->weekday] ?? '—' }}
                     </span>
                   </td>
@@ -138,8 +156,8 @@
                       {{ ucfirst($r->slot_type) }}
                     </span>
                   </td>
-                  <td class="py-2.5 px-3 text-slate-700">{{ $to12($r->start_time) }} – {{ $to12($r->end_time) }}</td>
-                  <td class="py-2.5 px-3 text-right">
+                  <td class="py-3 px-4 text-slate-600 dark:text-slate-400 font-medium">{{ $to12($r->start_time) }} <span class="text-slate-300 dark:text-slate-600">→</span> {{ $to12($r->end_time) }}</td>
+                  <td class="py-3 px-4 text-right">
                     <form id="del-rec-{{ $r->id }}" action="{{ route('counselor.availability.destroy', $r->id) }}" method="POST" class="inline">
                       @csrf @method('DELETE')
                       <button type="button"
@@ -230,42 +248,42 @@
         No upcoming dated windows.
       </div>
     @else
-      <div id="wrapUpcoming" class="manage-off rounded-xl overflow-hidden ring-1 ring-slate-200/70">
+      <div id="wrapUpcoming" class="manage-off rounded-2xl overflow-hidden border border-slate-200/60 dark:border-slate-700/50 bg-white/40 dark:bg-slate-800/30 backdrop-blur-sm">
         <form id="bulkDeleteForm" action="{{ route('counselor.availability.bulkDestroy') }}" method="POST">
           @csrf
           <table id="datedTable" class="min-w-full text-sm hci-table">
-            <thead class="text-slate-600 sticky-th">
+            <thead class="bg-slate-50/80 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 font-semibold sticky-th border-b border-slate-200/50 dark:border-slate-700/50">
               <tr>
-                <th class="w-10 py-2.5 px-3 sel-col">
-                  <input id="ckAll" type="checkbox" class="accent-indigo-600" aria-label="Select all rows">
+                <th class="w-10 py-3 px-4 sel-col">
+                  <input id="ckAll" type="checkbox" class="accent-indigo-500 w-4 h-4" aria-label="Select all rows">
                 </th>
-                <th class="text-left py-2.5 px-3">Date</th>
-                <th class="text-left py-2.5 px-3">Weekday</th>
+                <th class="text-left py-3 px-4">Date</th>
+                <th class="text-left py-3 px-4">Weekday</th>
                 <th class="text-left py-2.5 px-3">Type</th>
                 <th class="text-left py-2.5 px-3">Time</th>
                 <th class="text-right py-2.5 px-3">Actions</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100">
+            <tbody class="divide-y divide-slate-100/60 dark:divide-slate-700/50">
               @foreach($dated as $d)
-              <tr class="hover:bg-slate-50/70 transition-colors"
+              <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-colors"
                   data-type="{{ $d->slot_type }}"
                   data-text="{{ \Carbon\Carbon::parse($d->date)->format('M d, Y') }} {{ $wdShort[$d->weekday] ?? '' }} {{ strtolower($d->slot_type) }}">
-                <td class="py-2.5 px-3 sel-col">
-                  <input name="ids[]" value="{{ $d->id }}" type="checkbox" class="rowck accent-indigo-600"
+                <td class="py-3 px-4 sel-col">
+                  <input name="ids[]" value="{{ $d->id }}" type="checkbox" class="rowck accent-indigo-500 w-4 h-4"
                          aria-label="Select row for {{ \Carbon\Carbon::parse($d->date)->format('M d, Y') }}">
                 </td>
-                <td class="py-2.5 px-3 font-medium text-slate-800">
+                <td class="py-3 px-4 font-bold text-slate-800 dark:text-slate-200">
                   {{ \Carbon\Carbon::parse($d->date)->format('M d, Y') }}
                 </td>
-                <td class="py-2.5 px-3 text-slate-700">{{ $wdShort[$d->weekday] ?? '—' }}</td>
-                <td class="py-2.5 px-3">
+                <td class="py-3 px-4 text-slate-500 dark:text-slate-400 font-medium">{{ $wdShort[$d->weekday] ?? '—' }}</td>
+                <td class="py-3 px-4">
                   <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold {{ $pill($d->slot_type) }}">
                     {{ ucfirst($d->slot_type) }}
                   </span>
                 </td>
-                <td class="py-2.5 px-3 text-slate-700">{{ $to12($d->start_time) }} – {{ $to12($d->end_time) }}</td>
-                <td class="py-2.5 px-3 text-right">
+                <td class="py-3 px-4 text-slate-600 dark:text-slate-400 font-medium">{{ $to12($d->start_time) }} <span class="text-slate-300 dark:text-slate-600">→</span> {{ $to12($d->end_time) }}</td>
+                <td class="py-3 px-4 text-right">
                   <form id="del-dated-{{ $d->id }}" action="{{ route('counselor.availability.destroy', $d->id) }}" method="POST" class="inline">
                     @csrf @method('DELETE')
                     <button type="button"
@@ -462,106 +480,112 @@ document.addEventListener('DOMContentLoaded',()=>{
 .chip-select,
 .chip-search{
   border-radius: 999px;
-  border: 1px solid #e5e7eb;          /* slate-200 */
-  background: #fff;
-  color: #334155;                      /* slate-700 */
+  border: 1px solid rgba(226,232,240,0.8);
+  background: rgba(255,255,255,0.7);
+  backdrop-filter: blur(8px);
+  color: #334155;
   font-weight: 600;
   font-size: 13px;
-  line-height: 1.2;                    /* prevent y/g/j clipping */
-  height: auto;                        /* let text define height */
-  min-height: 36px;                    /* comfy touch target */
-  padding: 0.35rem 0.75rem;            /* real vertical padding */
-  transition: box-shadow .18s ease, border-color .15s ease, transform .12s ease;
+  line-height: 1.2;
+  min-height: 38px;
+  padding: 0.35rem 0.75rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
 }
+.dark .chip-select, .dark .chip-search{ background: rgba(30,41,59,0.5); color: #cbd5e1; border-color: rgba(255,255,255,0.05); }
 
-/* Select tweaks: darker text, remove native arrow, make room for custom chevron */
+/* Select tweaks */
 .chip-select{
-  color:#0f172a;                       /* slate-900 for contrast */
+  color:#0f172a;
   font-weight:500;
   font-size:14px;
-  border:1px solid #e2e8f0;            /* slate-200 to slate-300 */
   appearance:none; -webkit-appearance:none; -moz-appearance:none;
   padding-left:.85rem;
-  padding-right:2.25rem;               /* space for chevron */
+  padding-right:2.25rem;
   display:inline-block;
 }
+.dark .chip-select{ color:#f8fafc; }
 
-/* Chevron icon for select */
 .chip-chevron{
   position:absolute; right:12px; top:50%; transform:translateY(-50%);
-  width:14px; height:14px; color:#475569; /* slate-600 */
+  width:14px; height:14px; color:#64748b;
   pointer-events:none;
 }
 
-/* Search pill (fixed, compact widths by breakpoint) */
 .chip-search{
   font-weight:600;
-  padding-left:2.25rem;                /* room for magnifier icon */
+  padding-left:2.25rem;
 }
 
-/* Shared hover/focus */
-.chip-select:hover, .chip-search:hover{ border-color:#cbd5e1; }    /* slate-300 */
+.chip-select:hover, .chip-search:hover{ border-color:#818cf8; background:#fff; }
+.dark .chip-select:hover, .dark .chip-search:hover{ background:rgba(30,41,59,0.8); }
 .chip-select:focus, .chip-search:focus{
-  outline:none; border-color:#a5b4fc; box-shadow:0 0 0 3px rgba(99,102,241,.20); /* indigo-400 ring */
+  outline:none; border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.20);
 }
-.chip-search::placeholder{ color:#94a3b8; font-weight:500; }       /* slate-400 */
+.chip-search::placeholder{ color:#94a3b8; font-weight:500; }
 
 /* ---------- Header Pills (Show/Hide + Manage) ---------- */
 .btn-soft,
 .btn-outline-strong{
   display:inline-flex; align-items:center; gap:.45rem;
-  padding:0 .85rem; height:36px; border-radius:999px;
+  padding:0 1rem; height:38px; border-radius:999px;
   font-weight:700; font-size:13px; line-height:1;
-  transition: box-shadow .18s ease, transform .12s ease, background-color .15s ease, border-color .15s ease, color .15s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.btn-soft{                                /* toggle chip */
-  background:#f5f7ff; color:#4338ca;      /* indigo-700 */
-  border:1px solid #c7d2fe;               /* indigo-200 */
-  box-shadow:0 1px 2px rgba(15,23,42,.05);
+.btn-soft{
+  background: rgba(238,242,255,0.7); color: #4338ca;
+  border: 1px solid rgba(199,210,254,0.6);
+  box-shadow: 0 2px 4px rgba(99,102,241,0.05);
+  backdrop-filter: blur(4px);
 }
-.btn-soft:hover{ background:#eef2ff; border-color:#a5b4fc; transform:translateY(-1px); }
-.btn-soft:focus-visible{ outline:2px solid #6366f1; outline-offset:2px; } /* indigo-500 */
+.dark .btn-soft{ background: rgba(55,48,163,0.3); color: #818cf8; border-color: rgba(79,70,229,0.4); }
+.btn-soft:hover{ background: #e0e7ff; border-color: #a5b4fc; transform:translateY(-1px); }
+.dark .btn-soft:hover{ background: rgba(55,48,163,0.5); }
+.btn-soft:focus-visible{ outline:2px solid #6366f1; outline-offset:2px; }
 .btn-soft[data-active="true"]{
-  background:#e0e7ff; border-color:#6366f1; color:#3730a3;
-  box-shadow:0 4px 14px rgba(99,102,241,.18);
+  background: #c7d2fe; border-color: #818cf8; color: #312e81;
+  box-shadow: 0 4px 14px rgba(99,102,241,.2);
 }
+.dark .btn-soft[data-active="true"]{ background: #4f46e5; color: #fff; border-color: transparent; }
 
 .btn-outline-strong{
-  background:#fff; color:#0f172a; border:1px solid #cbd5e1; box-shadow:0 1px 2px rgba(2,6,23,.04);
+  background: rgba(255,255,255,0.7); color: #0f172a; border: 1px solid rgba(203,213,225,0.8); box-shadow: 0 2px 4px rgba(2,6,23,.04); backdrop-filter: blur(4px);
 }
+.dark .btn-outline-strong{ background: rgba(30,41,59,0.5); color: #f8fafc; border-color: rgba(255,255,255,0.1); }
 .btn-outline-strong:hover{
-  background:#ffffff; border-color:#94a3b8; box-shadow:0 6px 18px rgba(2,6,23,.10);
-  transform:translateY(-1px);
+  background: #fff; border-color: #6366f1; color: #4f46e5; box-shadow: 0 6px 16px rgba(99,102,241,.15);
+  transform: translateY(-1px);
 }
-.btn-outline-strong:focus-visible{ outline:2px solid #334155; outline-offset:2px; }
+.dark .btn-outline-strong:hover{ background: rgba(30,41,59,0.8); border-color: #818cf8; color: #818cf8; }
+.btn-outline-strong:focus-visible{ outline:2px solid #6366f1; outline-offset:2px; }
 .btn-outline-strong:active{ transform:translateY(0); }
 .btn-soft svg, .btn-outline-strong svg{ flex:0 0 auto; }
 
 /* ---------- Action Buttons ---------- */
-.btn-ghost-sm{ height:34px; padding:0 12px; border-radius:10px; border:1px solid #e5e7eb; background:#fff; color:#334155; font-weight:600; }
-.btn-ghost-sm:hover{ background:#f8fafc; }
-.btn-danger-sm{ height:34px; padding:0 12px; border-radius:10px; background:linear-gradient(180deg,#f43f5e,#e11d48); color:#fff; border:1px solid #e11d48; font-weight:700; box-shadow:0 2px 10px rgba(225,29,72,.18); }
-.btn-danger-sm:hover{ filter:brightness(1.05); }
+.btn-ghost-sm{ height:36px; padding:0 14px; border-radius:12px; border:1px solid rgba(226,232,240,0.8); background:rgba(255,255,255,0.7); color:#334155; font-weight:600; box-shadow:0 2px 4px rgba(0,0,0,.02); transition:all 0.2s ease;}
+.dark .btn-ghost-sm{ background:rgba(30,41,59,0.5); color:#cbd5e1; border-color:rgba(255,255,255,0.05); }
+.btn-ghost-sm:hover{ background:#fff; transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,.05); }
+.dark .btn-ghost-sm:hover{ background:rgba(30,41,59,0.8); color:#fff;}
+
+.btn-danger-sm{ height:36px; padding:0 14px; border-radius:12px; background:linear-gradient(135deg,#f43f5e,#e11d48); color:#fff; border:1px solid rgba(255,255,255,0.1); font-weight:700; box-shadow:0 4px 12px rgba(225,29,72,.3); transition:all 0.2s ease;}
+.btn-danger-sm:hover{ box-shadow:0 6px 16px rgba(225,29,72,.4); transform:translateY(-1px); filter:brightness(1.05); }
 
 /* ---------- Tables ---------- */
 .hci-table th, .hci-table td { vertical-align: middle; }
-:root { --stick-top: 0px; }              /* where sticky TH pins */
+:root { --stick-top: 0px; }
 .sticky-th th{
   position:sticky; top:var(--stick-top); z-index:1;
-  background:rgba(248,250,252,.96);      /* slate-50 */
-  backdrop-filter:blur(2px);
-  box-shadow:0 1px 0 rgba(226,232,240,.9);
+  background:rgba(248,250,252,.8);
+  backdrop-filter:blur(8px);
 }
-
-/* Pills for "Available"/"Blocked" inside table (from PHP helper classes) */
-/* already applied via $pill($type), included here just for reference
-   .bg-emerald-50 .text-emerald-700 .ring-emerald-200 etc. */
+.dark .sticky-th th{ background:rgba(15,23,42,.8); }
 
 /* ---------- Manage mode: selection column & bulk bar ---------- */
 .manage-off .sel-col{ display:none; }
 .manage-on  .sel-col{ display:table-cell; }
 
-.bulk-card { box-shadow: 0 10px 25px rgba(2,6,23,.08), 0 3px 10px rgba(2,6,23,.06); }
+.bulk-card { box-shadow: 0 10px 30px rgba(99,102,241,.18), 0 3px 10px rgba(2,6,23,.06); border:1px solid rgba(199,210,254,0.5); }
+.dark .bulk-card { background: #1e293b; box-shadow: 0 10px 30px rgba(0,0,0,.4); border-color: rgba(255,255,255,0.1); }
 #wrapRecurring.manage-off ~ #bulkBarRecurring .bulk-card{ display:none !important; }
 #wrapUpcoming.manage-off  ~ #bulkBar          .bulk-card{ display:none !important; }
 

@@ -1,85 +1,214 @@
 @php
   use Carbon\Carbon;
 
-  $code = 'WN-'.now()->format('Y').'-'.str_pad($walkin->id, 4, '0', STR_PAD_LEFT);
+  $code = 'WN-' . now()->format('Y') . '-' . str_pad($walkin->id, 4, '0', STR_PAD_LEFT);
   $date = $walkin->note_date
-          ? Carbon::parse($walkin->note_date)->format('F d, Y')
-          : '—';
+    ? Carbon::parse($walkin->note_date)->format('F d, Y')
+    : '—';
 
   $start = $walkin->start_time ? Carbon::parse($walkin->start_time) : null;
-  $end   = $walkin->end_time   ? Carbon::parse($walkin->end_time)   : null;
+  $end = $walkin->end_time ? Carbon::parse($walkin->end_time) : null;
 
   $appt = ($start && $end)
-          ? $start->format('M d, Y · g:i A').' – '.$end->format('g:i A')
-          : ($start ? $start->format('M d, Y · g:i A') : '—');
+    ? $start->format('M d, Y · g:i A') . ' – ' . $end->format('g:i A')
+    : ($start ? $start->format('M d, Y · g:i A') : '—');
 
   $duration = null;
   if ($start && $end) {
-      $diffMins = $end->diffInMinutes($start);
-      $h = intdiv($diffMins, 60);
-      $m = $diffMins % 60;
-      $duration = ($h ? $h.' hr'.($h>1?'s':'') : '').($h && $m ? ' ' : '').($m ? $m.' min' : '');
+    $diffMins = $end->diffInMinutes($start);
+    $h = intdiv($diffMins, 60);
+    $m = $diffMins % 60;
+    $duration = ($h ? $h . ' hr' . ($h > 1 ? 's' : '') : '') . ($h && $m ? ' ' : '') . ($m ? $m . ' min' : '');
   }
 
   $courseYear = trim(
-      ($walkin->course ?? '').($walkin->year_level ? ' - '.$walkin->year_level : '')
+    ($walkin->course ?? '') . ($walkin->year_level ? ' - ' . $walkin->year_level : '')
   ) ?: '—';
 
   $generated = $generated ?? now()->format('F d, Y · g:i A');
 @endphp
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="utf-8">
   <title>{{ $code }}</title>
   <style>
-    * { box-sizing: border-box; }
-    @font-face{
-      font-family:'DejaVu Sans';
-      src:url('{{ public_path('fonts/DejaVuSans.ttf') }}') format('truetype');
-      font-weight:400; font-style:normal;
+    * {
+      box-sizing: border-box;
     }
-    @font-face{
-      font-family:'DejaVu Sans';
-      src:url('{{ public_path('fonts/DejaVuSans-Bold.ttf') }}') format('truetype');
-      font-weight:700; font-style:normal;
+
+    @font-face {
+      font-family: 'DejaVu Sans';
+      src: url('{{ public_path('fonts/DejaVuSans.ttf') }}') format('truetype');
+      font-weight: 400;
+      font-style: normal;
     }
+
+    @font-face {
+      font-family: 'DejaVu Sans';
+      src: url('{{ public_path('fonts/DejaVuSans-Bold.ttf') }}') format('truetype');
+      font-weight: 700;
+      font-style: normal;
+    }
+
     body {
       font-family: "DejaVu Sans", Helvetica, Arial, sans-serif;
-      margin: 16mm 14mm 20mm; color:#111827; font-size:12px; line-height:1.45;
+      margin: 16mm 14mm 20mm;
+      color: #111827;
+      font-size: 12px;
+      line-height: 1.45;
     }
 
-    .mt-4{margin-top:4px}.mt-6{margin-top:6px}.mt-8{margin-top:8px}
-    .mt-10{margin-top:10px}.mt-12{margin-top:12px}.mt-16{margin-top:16px}
+    .mt-4 {
+      margin-top: 4px
+    }
 
-    .brandbar { margin:0 0 8px }
-    .brand { display:inline-block; vertical-align:middle }
-    .brand-logo { width:28px; height:28px; border-radius:50%; vertical-align:middle }
-    .brand-title { display:inline-block; vertical-align:middle; margin-left:8px; font:700 16px/1 "DejaVu Sans", sans-serif }
-    .topbar { height:4px; background:linear-gradient(90deg,#6366f1,#a855f7,#d946ef); border-radius:10px; margin:8px 0 14px }
+    .mt-6 {
+      margin-top: 6px
+    }
 
-    h1 { margin:0 0 6px; font-size:20px }
-    .meta { font-size:11px; color:#6b7280 }
+    .mt-8 {
+      margin-top: 8px
+    }
 
-    .card { border:1px solid #e5e7eb; border-radius:12px; background:#fff }
-    .card-body { padding:12px 14px }
+    .mt-10 {
+      margin-top: 10px
+    }
 
-    table.kv { width:100%; border-collapse:separate; border-spacing:0 10px; table-layout:fixed }
-    .k { width:22%; color:#64748b; font-size:11px; text-transform:uppercase; letter-spacing:.02em; white-space:nowrap; }
-    .v { width:28%; font-weight:700; word-wrap:break-word }
-    .kR{ width:22%; color:#64748b; font-size:11px; text-transform:uppercase; letter-spacing:.02em; white-space:nowrap; padding-left:24px; }
-    .vR{ width:28%; font-weight:700; word-wrap:break-word }
-    .row { height:22px; vertical-align:middle }
+    .mt-12 {
+      margin-top: 12px
+    }
 
-    .section-title { font-size:12px; color:#374151; font-weight:700; margin-bottom:6px; }
-    .section-box { border:1px solid #e5e7eb; background:#fafafa; border-radius:10px; padding:10px; }
-    .pre { white-space:pre-line; }
+    .mt-16 {
+      margin-top: 16px
+    }
 
-    .foot { margin-top:12px; padding-top:10px; border-top:1px solid #e5e7eb; font-size:11px; color:#6b7280 }
+    .brandbar {
+      margin: 0 0 8px
+    }
 
-    .avoid-break { page-break-inside: avoid; }
+    .brand {
+      display: inline-block;
+      vertical-align: middle
+    }
+
+    .brand-logo {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      vertical-align: middle
+    }
+
+    .brand-title {
+      display: inline-block;
+      vertical-align: middle;
+      margin-left: 8px;
+      font: 700 16px/1 "DejaVu Sans", sans-serif
+    }
+
+    .topbar {
+      height: 4px;
+      background: linear-gradient(90deg, #6366f1, #a855f7, #d946ef);
+      border-radius: 10px;
+      margin: 8px 0 14px
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 20px
+    }
+
+    .meta {
+      font-size: 11px;
+      color: #6b7280
+    }
+
+    .card {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      background: #fff
+    }
+
+    .card-body {
+      padding: 12px 14px
+    }
+
+    table.kv {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 10px;
+      table-layout: fixed
+    }
+
+    .k {
+      width: 22%;
+      color: #64748b;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .02em;
+      white-space: nowrap;
+    }
+
+    .v {
+      width: 28%;
+      font-weight: 700;
+      word-wrap: break-word
+    }
+
+    .kR {
+      width: 22%;
+      color: #64748b;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .02em;
+      white-space: nowrap;
+      padding-left: 24px;
+    }
+
+    .vR {
+      width: 28%;
+      font-weight: 700;
+      word-wrap: break-word
+    }
+
+    .row {
+      height: 22px;
+      vertical-align: middle
+    }
+
+    .section-title {
+      font-size: 12px;
+      color: #374151;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .section-box {
+      border: 1px solid #e5e7eb;
+      background: #fafafa;
+      border-radius: 10px;
+      padding: 10px;
+    }
+
+    .pre {
+      white-space: pre-line;
+    }
+
+    .foot {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid #e5e7eb;
+      font-size: 11px;
+      color: #6b7280
+    }
+
+    .avoid-break {
+      page-break-inside: avoid;
+    }
   </style>
 </head>
+
 <body>
 
   {{-- Brand --}}
@@ -196,4 +325,5 @@
   }
   </script>
 </body>
+
 </html>

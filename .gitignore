@@ -83,3 +83,5 @@ auth.json
 # -----------------------------
 *.log
 /rasa_bot
+/storage/fonts/
+
