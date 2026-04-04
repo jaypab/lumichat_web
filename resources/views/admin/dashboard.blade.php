@@ -6,172 +6,136 @@
 @section('content')
   <div class="max-w-7xl mx-auto space-y-8">
 
-    {{-- Dashboard Header with Quick Actions --}}
-    <section class="rounded-2xl text-white shadow-lg screen-only animate-fadeup relative overflow-hidden" style="background: linear-gradient(to right, rgb(79, 70, 229), rgb(147, 51, 234), rgb(124, 58, 237)) !important;">
-      {{-- Decorative background pattern --}}
-      <div class="absolute inset-0 opacity-10">
-        <div class="absolute top-0 right-0 w-96 h-96 bg-white rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2"></div>
-        <div class="absolute bottom-0 left-0 w-64 h-64 bg-white rounded-full blur-3xl transform -translate-x-1/2 translate-y-1/2"></div>
+    {{-- Dashboard Welcome Header --}}
+    <section class="group rounded-3xl bg-indigo-50/50 dark:bg-slate-800/50 border border-indigo-100/80 dark:border-slate-700/50 shadow-2xl shadow-indigo-500/5 dark:shadow-none screen-only animate-fadeup relative overflow-hidden">
+      {{-- Premium mesh background effect --}}
+      <div class="absolute inset-0 opacity-40 dark:opacity-20 transition-opacity duration-1000 group-hover:opacity-60 dark:group-hover:opacity-30">
+        <div class="absolute -top-[20%] -right-[10%] w-[50%] h-[80%] bg-indigo-200/50 dark:bg-indigo-500/20 rounded-full blur-[110px] animate-pulse"></div>
+        <div class="absolute -bottom-[20%] -left-[10%] w-[50%] h-[80%] bg-purple-200/50 dark:bg-purple-500/20 rounded-full blur-[110px]"></div>
       </div>
       
-      <div class="relative p-5 sm:p-6">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 class="text-xl sm:text-2xl font-bold tracking-tight">Welcome back, {{ auth()->user()->name ?? 'Admin' }}</h2>
-            <p class="text-white/90 text-sm mt-0.5">Here's what's happening with your students today.</p>
+      <div class="relative p-7 sm:p-9">
+        <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div class="max-w-2xl">
+            <nav class="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.25em] text-indigo-600/60 dark:text-indigo-400/60 mb-3 px-0.5">
+              <span>Admin Control Center</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-indigo-200 dark:bg-indigo-800"></span>
+              <span>Overview</span>
+            </nav>
+            <h2 class="text-3xl sm:text-4xl font-black tracking-tight leading-tight text-slate-900 dark:text-white">Welcome back, {{ auth()->user()->name ?? 'Admin' }}</h2>
+            <p class="text-slate-500 dark:text-slate-400 text-sm font-medium mt-3 leading-relaxed">Here's a live snapshot of your institution's health and engagement metrics for today.</p>
           </div>
 
-          <div class="flex items-center gap-2 flex-wrap">
+          <div class="flex items-center gap-3 flex-wrap lg:flex-nowrap">
             <a href="{{ route('admin.appointments.index') }}"
-               class="inline-flex items-center gap-2 rounded-xl bg-white/95 backdrop-blur-sm text-indigo-700 px-4 py-2 text-sm font-medium shadow-md hover:bg-white hover:shadow-lg active:scale-[.98] transition-all duration-200">
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 9V4h12v5M6 18h12a2 2 0 002-2v-5H4v5a2 2 0 002 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Appointments
+               class="inline-flex items-center gap-2 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-indigo-100 dark:border-slate-700 text-indigo-700 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.15em] transition-all shadow-lg shadow-indigo-500/5 dark:shadow-none hover:shadow-indigo-500/10 active:scale-[.95]">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              Quick Appointments
             </a>
             <a href="{{ route('admin.chatbot-sessions.index') }}"
-               class="inline-flex items-center gap-2 rounded-xl bg-white/95 backdrop-blur-sm text-indigo-700 px-4 py-2 text-sm font-medium shadow-md hover:bg-white hover:shadow-lg active:scale-[.98] transition-all duration-200">
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Chat Sessions
+               class="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 text-[10px] font-bold uppercase tracking-[0.15em] transition-all shadow-xl shadow-indigo-500/20 active:scale-[.95]">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z"/></svg>
+              Review Chats
             </a>
           </div>
         </div>
       </div>
     </section>
 
-    {{-- Enhanced KPI / Stat cards with gradients and animations --}}
-    <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5 animate-fadeup" style="--stagger:60ms">
+    {{-- Enhanced KPI / Stat cards --}}
+    <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-fadeup" style="--stagger:60ms">
 
       {{-- Total Appointments --}}
-      <div class="stat-card-enhanced group relative min-h-[140px] rounded-2xl border border-slate-200/50 bg-gradient-to-br from-white via-white to-sky-50/30 dark:from-gray-800 dark:via-gray-800 dark:to-sky-900/20 p-6 shadow-md hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 animate-fadeup overflow-hidden">
-        {{-- Gradient top bar --}}
-        <div class="absolute inset-x-0 -top-px h-1 rounded-t-2xl bg-gradient-to-r from-sky-400 via-blue-500 to-sky-400"></div>
-        
-        {{-- Background decoration --}}
-        <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-sky-100/40 to-transparent dark:from-sky-500/10 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+      <div class="group relative rounded-3xl border border-slate-200/60 bg-white dark:bg-slate-800/80 p-5 shadow-xl shadow-slate-200/50 dark:shadow-none hover:shadow-2xl hover:shadow-indigo-500/10 transition-all duration-500 hover:-translate-y-1 overflow-hidden">
+        {{-- Decorative background --}}
+        <div class="absolute top-0 right-0 w-32 h-32 bg-indigo-50 dark:bg-indigo-900/20 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
 
-        {{-- Info tooltip --}}
-        <details data-kpi class="group/tooltip absolute right-2.5 top-2.5 z-50 select-none">
-          <summary class="list-none inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/95 dark:bg-gray-700 ring-1 ring-sky-200 dark:ring-sky-500/30 text-sky-700 dark:text-sky-400 hover:bg-white dark:hover:bg-gray-600 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300" aria-label="About this metric">
-            <svg viewBox="0 0 24 24" class="w-[14px] h-[14px]" fill="currentColor" aria-hidden="true">
-              <path d="M12 2a10 10 0 1 0 10 10A10.011 10.011 0 0 0 12 2Zm.75 15h-1.5v-6h1.5Zm0-7.5h-1.5v-1.5h1.5Z"/>
-            </svg>
-          </summary>
-          <div class="absolute right-0 top-full mt-2 w-72 rounded-md bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm text-slate-800 dark:text-gray-200 text-xs px-3 py-2 shadow-xl ring-1 ring-slate-200 dark:ring-gray-700 opacity-0 translate-y-1 scale-95 transition duration-200 group-open/tooltip:opacity-100 group-open/tooltip:translate-y-0 group-open/tooltip:scale-100">
-            <span class="absolute -top-1 right-3 h-3 w-3 rotate-45 bg-white dark:bg-gray-800 ring-1 ring-slate-200 dark:ring-gray-700"></span>
-            <div class="font-semibold text-slate-700 dark:text-gray-300">Total Appointments</div>
-            <p class="leading-snug text-slate-600 dark:text-gray-400 mt-0.5">All appointments recorded. Trend compares this week (Mon–Sun) vs last week.</p>
-          </div>
-        </details>
-
-        <div class="relative z-10 flex items-start gap-4">
-          <span class="shrink-0 inline-flex w-14 h-14 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 to-blue-500 shadow-lg shadow-sky-500/30 group-hover:shadow-sky-500/50 group-hover:scale-110 transition-all duration-300">
-            <img src="{{ asset('images/icons/appointment.png') }}" class="w-7 h-7 brightness-0 invert" alt="Appointments icon">
-          </span>
-          <div class="min-w-0 flex-1">
-            <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gray-400 truncate">Total Appointments</div>
-            <div class="mt-1 text-3xl font-bold text-slate-900 dark:text-white counter-animate" data-target="{{ $appointmentsTotal ?? 0 }}">{{ number_format($appointmentsTotal ?? 0) }}</div>
-            <div class="mt-1 text-xs text-slate-500 dark:text-gray-400 whitespace-nowrap" id="kpi-appointments-change">
-              {{ $appointmentsTrend ?? '= Same as last week' }}
+        <div class="relative z-10 flex flex-col gap-4">
+          <div class="flex items-center justify-between">
+            <span class="inline-flex w-11 h-11 items-center justify-center rounded-2xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 transition-transform group-hover:scale-110 duration-500">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            </span>
+            <div class="text-right flex-1 min-w-0">
+              <div class="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 whitespace-nowrap overflow-hidden text-ellipsis">Total Appointments</div>
+              <div class="mt-1 text-2xl font-black text-slate-900 dark:text-white counter-animate" data-target="{{ $appointmentsTotal ?? 0 }}">{{ number_format($appointmentsTotal ?? 0) }}</div>
             </div>
+          </div>
+          <div class="flex items-center justify-between pt-4 border-t border-slate-50 dark:border-slate-700/50">
+            <span class="text-[10px] font-bold text-slate-400 dark:text-slate-500">Past 7 Days</span>
+            <span class="text-[10px] font-black px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 tracking-tight" id="kpi-appointments-change">
+              {{ $appointmentsTrend ?? 'Calculated automatically' }}
+            </span>
           </div>
         </div>
       </div>
 
       {{-- Critical Cases --}}
-      <div class="stat-card-enhanced group relative min-h-[140px] rounded-2xl border border-slate-200/50 bg-gradient-to-br from-white via-white to-rose-50/30 dark:from-gray-800 dark:via-gray-800 dark:to-rose-900/20 p-6 shadow-md hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 animate-fadeup overflow-hidden">
-        <div class="absolute inset-x-0 -top-px h-1 rounded-t-2xl bg-gradient-to-r from-rose-400 via-pink-500 to-rose-400"></div>
-        <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-rose-100/40 to-transparent dark:from-rose-500/10 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+      <div class="group relative rounded-3xl border border-slate-200/60 bg-white dark:bg-slate-800/80 p-5 shadow-xl shadow-slate-200/50 dark:shadow-none hover:shadow-2xl hover:shadow-rose-500/10 transition-all duration-500 hover:-translate-y-1 overflow-hidden">
+        <div class="absolute top-0 right-0 w-32 h-32 bg-rose-50 dark:bg-rose-900/20 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
 
-        <details data-kpi class="group/tooltip absolute right-2.5 top-2.5 z-50 select-none">
-          <summary class="list-none inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/95 dark:bg-gray-700 ring-1 ring-rose-200 dark:ring-rose-500/30 text-rose-700 dark:text-rose-400 hover:bg-white dark:hover:bg-gray-600 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300" aria-label="About this metric">
-            <svg viewBox="0 0 24 24" class="w-[14px] h-[14px]" fill="currentColor" aria-hidden="true">
-              <path d="M12 2a10 10 0 1 0 10 10A10.011 10.011 0 0 0 12 2Zm.75 15h-1.5v-6h1.5Zm0-7.5h-1.5v-1.5h1.5Z"/>
-            </svg>
-          </summary>
-          <div class="absolute right-0 top-full mt-2 w-72 rounded-md bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm text-slate-800 dark:text-gray-200 text-xs px-3 py-2 shadow-xl ring-1 ring-slate-200 dark:ring-gray-700 opacity-0 translate-y-1 scale-95 transition duration-200 group-open/tooltip:opacity-100 group-open/tooltip:translate-y-0 group-open/tooltip:scale-100">
-            <span class="absolute -top-1 right-3 h-3 w-3 rotate-45 bg-white dark:bg-gray-800 ring-1 ring-slate-200 dark:ring-gray-700"></span>
-            <div class="font-semibold text-slate-700 dark:text-gray-300">Critical Cases</div>
-            <p class="leading-snug text-slate-600 dark:text-gray-400 mt-0.5">Students with at least one <b>High-risk</b> chatbot session (distinct users). Requires attention.</p>
-          </div>
-        </details>
-
-        <div class="relative z-10 flex items-start gap-4">
-          <span class="shrink-0 inline-flex w-14 h-14 items-center justify-center rounded-xl bg-gradient-to-br from-rose-400 to-pink-500 shadow-lg shadow-rose-500/30 group-hover:shadow-rose-500/50 group-hover:scale-110 transition-all duration-300 {{ ($criticalCasesTotal ?? 0) > 0 ? 'animate-pulse-glow' : '' }}">
-            <img src="{{ asset('images/icons/diagnosis.png') }}" class="w-7 h-7 brightness-0 invert" alt="Critical cases icon">
-          </span>
-          <div class="min-w-0 flex-1">
-            <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gray-400 truncate">Critical Cases</div>
-            <div class="mt-1 text-3xl font-bold text-slate-900 dark:text-white counter-animate" data-target="{{ $criticalCasesTotal ?? 0 }}">{{ number_format($criticalCasesTotal ?? 0) }}</div>
-            <div class="mt-1 text-xs">
-              @if(($criticalCasesTotal ?? 0) > 0)
-                <a href="{{ route('admin.chatbot-sessions.index', ['only' => 'high']) }}" class="text-rose-600 dark:text-rose-400 font-semibold underline decoration-rose-300 hover:decoration-rose-600 transition-colors">
-                  Requires attention
-                </a>
-              @else
-                <span class="text-slate-500 dark:text-gray-400">All clear</span>
-              @endif
+        <div class="relative z-10 flex flex-col gap-4">
+          <div class="flex items-center justify-between">
+            <span class="inline-flex w-11 h-11 items-center justify-center rounded-2xl bg-rose-50 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 transition-transform group-hover:scale-110 duration-500 {{ ($criticalCasesTotal ?? 0) > 0 ? 'animate-pulse' : '' }}">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            </span>
+            <div class="text-right flex-1 min-w-0">
+              <div class="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 whitespace-nowrap overflow-hidden text-ellipsis">Critical Cases</div>
+              <div class="mt-1 text-2xl font-black text-slate-900 dark:text-white counter-animate" data-target="{{ $criticalCasesTotal ?? 0 }}">{{ number_format($criticalCasesTotal ?? 0) }}</div>
             </div>
+          </div>
+          <div class="flex items-center justify-between pt-4 border-t border-slate-50 dark:border-slate-700/50">
+            <span class="text-[10px] font-bold text-slate-400 dark:text-slate-500">Requires Attention</span>
+            @if(($criticalCasesTotal ?? 0) > 0)
+              <a href="{{ route('admin.chatbot-sessions.index', ['only' => 'high']) }}" class="text-[10px] font-black px-2.5 py-1 rounded-xl bg-rose-50 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 tracking-tight hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-colors">
+                View Risk Profile →
+              </a>
+            @else
+              <span class="text-[10px] font-black px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 tracking-tight">All Clear</span>
+            @endif
           </div>
         </div>
       </div>
 
       {{-- Active Counselor --}}
-      <div class="stat-card-enhanced group relative min-h-[140px] rounded-2xl border border-slate-200/50 bg-gradient-to-br from-white via-white to-amber-50/30 dark:from-gray-800 dark:via-gray-800 dark:to-amber-900/20 p-6 shadow-md hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 animate-fadeup overflow-hidden">
-        <div class="absolute inset-x-0 -top-px h-1 rounded-t-2xl bg-gradient-to-r from-amber-400 via-orange-500 to-amber-400"></div>
-        <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-amber-100/40 to-transparent dark:from-amber-500/10 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+      <div class="group relative rounded-3xl border border-slate-200/60 bg-white dark:bg-slate-800/80 p-5 shadow-xl shadow-slate-200/50 dark:shadow-none hover:shadow-2xl hover:shadow-amber-500/10 transition-all duration-500 hover:-translate-y-1 overflow-hidden">
+        <div class="absolute top-0 right-0 w-32 h-32 bg-amber-50 dark:bg-amber-900/20 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
 
-        <details data-kpi class="group/tooltip absolute right-2.5 top-2.5 z-50 select-none">
-          <summary class="list-none inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/95 dark:bg-gray-700 ring-1 ring-amber-200 dark:ring-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-white dark:hover:bg-gray-600 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300" aria-label="About this metric">
-            <svg viewBox="0 0 24 24" class="w-[14px] h-[14px]" fill="currentColor" aria-hidden="true">
-              <path d="M12 2a10 10 0 1 0 10 10A10.011 10.011 0 0 0 12 2Zm.75 15h-1.5v-6h1.5Zm0-7.5h-1.5v-1.5h1.5Z"/>
-            </svg>
-          </summary>
-          <div class="absolute right-0 top-full mt-2 w-64 rounded-md bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm text-slate-800 dark:text-gray-200 text-xs px-3 py-2 shadow-xl ring-1 ring-slate-200 dark:ring-gray-700 opacity-0 translate-y-1 scale-95 transition duration-200 group-open/tooltip:opacity-100 group-open/tooltip:translate-y-0 group-open/tooltip:scale-100">
-            <span class="absolute -top-1 right-3 h-3 w-3 rotate-45 bg-white dark:bg-gray-800 ring-1 ring-slate-200 dark:ring-gray-700"></span>
-            <div class="font-semibold text-slate-700 dark:text-gray-300">Active Counselor</div>
-            <p class="leading-snug text-slate-600 dark:text-gray-400 mt-0.5">Number of counselors currently available to accept students.</p>
+        <div class="relative z-10 flex flex-col gap-4">
+          <div class="flex items-center justify-between">
+            <span class="inline-flex w-11 h-11 items-center justify-center rounded-2xl bg-amber-50 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 transition-transform group-hover:scale-110 duration-500">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+            </span>
+            <div class="text-right flex-1 min-w-0">
+              <div class="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 whitespace-nowrap overflow-hidden text-ellipsis">Available Staff</div>
+              <div class="mt-1 text-2xl font-black text-slate-900 dark:text-white counter-animate" data-target="{{ $activeCounselors ?? 0 }}">{{ number_format($activeCounselors ?? 0) }}</div>
+            </div>
           </div>
-        </details>
-
-        <div class="relative z-10 flex items-start gap-4">
-          <span class="shrink-0 inline-flex w-14 h-14 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-lg shadow-amber-500/30 group-hover:shadow-amber-500/50 group-hover:scale-110 transition-all duration-300">
-            <img src="{{ asset('images/icons/counselor.png') }}" class="w-7 h-7 brightness-0 invert" alt="Counselor icon">
-          </span>
-          <div class="min-w-0 flex-1">
-            <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gray-400 truncate">Active Counselors</div>
-            <div class="mt-1 text-3xl font-bold text-slate-900 dark:text-white counter-animate" data-target="{{ $activeCounselors ?? 0 }}">{{ number_format($activeCounselors ?? 0) }}</div>
-            <div class="mt-1 text-xs text-slate-500 dark:text-gray-400">Available now</div>
+          <div class="flex items-center justify-between pt-4 border-t border-slate-50 dark:border-slate-700/50">
+            <span class="text-[10px] font-bold text-slate-400 dark:text-slate-500">Active Now</span>
+            <span class="text-[10px] font-black px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 tracking-tight">Online & Ready</span>
           </div>
         </div>
       </div>
 
       {{-- Chat Sessions --}}
-      <div class="stat-card-enhanced group relative min-h-[140px] rounded-2xl border border-slate-200/50 bg-gradient-to-br from-white via-white to-indigo-50/30 dark:from-gray-800 dark:via-gray-800 dark:to-indigo-900/20 p-6 shadow-md hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 animate-fadeup overflow-hidden">
-        <div class="absolute inset-x-0 -top-px h-1 rounded-t-2xl bg-gradient-to-r from-indigo-400 via-purple-500 to-indigo-400"></div>
-        <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-indigo-100/40 to-transparent dark:from-indigo-500/10 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+      <div class="group relative rounded-3xl border border-slate-200/60 bg-white dark:bg-slate-800/80 p-5 shadow-xl shadow-slate-200/50 dark:shadow-none hover:shadow-2xl hover:shadow-indigo-500/10 transition-all duration-500 hover:-translate-y-1 overflow-hidden">
+        <div class="absolute top-0 right-0 w-32 h-32 bg-indigo-50 dark:bg-indigo-900/20 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
 
-        <details data-kpi class="group/tooltip absolute right-2.5 top-2.5 z-50 select-none">
-          <summary class="list-none inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/95 dark:bg-gray-700 ring-1 ring-indigo-200 dark:ring-indigo-500/30 text-indigo-700 dark:text-indigo-400 hover:bg-white dark:hover:bg-gray-600 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300" aria-label="About this metric">
-            <svg viewBox="0 0 24 24" class="w-[14px] h-[14px]" fill="currentColor" aria-hidden="true">
-              <path d="M12 2a10 10 0 1 0 10 10A10.011 10.011 0 0 0 12 2Zm.75 15h-1.5v-6h1.5Zm0-7.5h-1.5v-1.5h1.5Z"/>
-            </svg>
-          </summary>
-          <div class="absolute right-0 top-full mt-2 w-72 rounded-md bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm text-slate-800 dark:text-gray-200 text-xs px-3 py-2 shadow-xl ring-1 ring-slate-200 dark:ring-gray-700 opacity-0 translate-y-1 scale-95 transition duration-200 group-open/tooltip:opacity-100 group-open/tooltip:translate-y-0 group-open/tooltip:scale-100">
-            <span class="absolute -top-1 right-3 h-3 w-3 rotate-45 bg-white dark:bg-gray-800 ring-1 ring-slate-200 dark:ring-gray-700"></span>
-            <div class="font-semibold text-slate-700 dark:text-gray-300">Chat Sessions</div>
-            <p class="leading-snug text-slate-600 dark:text-gray-400 mt-0.5">Total number of chatbot conversations so far. Trend compares this week vs. last week.</p>
-          </div>
-        </details>
-
-        <div class="relative z-10 flex items-start gap-4">
-          <span class="shrink-0 inline-flex w-14 h-14 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-400 to-purple-500 shadow-lg shadow-indigo-500/30 group-hover:shadow-indigo-500/50 group-hover:scale-110 transition-all duration-300">
-            <img src="{{ asset('images/icons/chatbot-session.png') }}" class="w-7 h-7 brightness-0 invert" alt="Chat sessions icon">
-          </span>
-          <div class="min-w-0 flex-1">
-            <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-gray-400 truncate">Chat Sessions</div>
-            <div class="mt-1 text-3xl font-bold text-slate-900 dark:text-white counter-animate" data-target="{{ $chatSessionsTotal ?? $chatSessionsThisWeek ?? 0 }}">{{ number_format($chatSessionsTotal ?? $chatSessionsThisWeek ?? 0) }}</div>
-            <div class="mt-1 text-xs text-slate-500 dark:text-gray-400 whitespace-nowrap" id="kpi-sessions-change">
-              {{ $sessionsTrend ?? '= Same as last week' }}
+        <div class="relative z-10 flex flex-col gap-4">
+          <div class="flex items-center justify-between">
+            <span class="inline-flex w-11 h-11 items-center justify-center rounded-2xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 transition-transform group-hover:scale-110 duration-500">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+            </span>
+            <div class="text-right flex-1 min-w-0">
+              <div class="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 whitespace-nowrap overflow-hidden text-ellipsis">Student Chats</div>
+              <div class="mt-1 text-2xl font-black text-slate-900 dark:text-white counter-animate" data-target="{{ $chatSessionsTotal ?? $chatSessionsThisWeek ?? 0 }}">{{ number_format($chatSessionsTotal ?? $chatSessionsThisWeek ?? 0) }}</div>
             </div>
+          </div>
+          <div class="flex items-center justify-between pt-4 border-t border-slate-50 dark:border-slate-700/50">
+            <span class="text-[10px] font-bold text-slate-400 dark:text-slate-500">Volume Trend</span>
+            <span class="text-[10px] font-black px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 tracking-tight" id="kpi-sessions-change">
+              {{ $sessionsTrend ?? 'Active monitoring' }}
+            </span>
           </div>
         </div>
       </div>
@@ -181,10 +145,17 @@
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fadeup" style="--stagger:120ms">
       
       {{-- Appointments Trend Chart --}}
-      <div class="rounded-2xl border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 shadow-md hover:shadow-lg transition-all duration-200">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-base font-semibold text-slate-900 dark:text-white">Appointments Trend</h3>
-          <span class="text-xs text-slate-500 dark:text-gray-400">Last 7 days</span>
+      <div class="rounded-3xl border border-slate-200/60 bg-white p-6 shadow-xl shadow-slate-200/50 transition-all duration-300 hover:shadow-2xl hover:shadow-indigo-500/5">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <nav class="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">
+              <span>Performance</span>
+            </nav>
+            <h3 class="text-lg font-black text-slate-900 leading-none">Appointments Trend</h3>
+          </div>
+          <div class="px-2 py-1 rounded-lg bg-slate-50 border border-slate-100">
+            <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Last 7 Days</span>
+          </div>
         </div>
         <div class="h-64">
           <canvas id="appointmentsChart"></canvas>
@@ -192,10 +163,17 @@
       </div>
 
       {{-- Session Distribution Chart --}}
-      <div class="rounded-2xl border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 shadow-md hover:shadow-lg transition-all duration-200">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-base font-semibold text-slate-900 dark:text-white">Sessions by Risk Level</h3>
-          <span class="text-xs text-slate-500 dark:text-gray-400">Current week</span>
+      <div class="rounded-3xl border border-slate-200/60 bg-white p-6 shadow-xl shadow-slate-200/50 transition-all duration-300 hover:shadow-2xl hover:shadow-indigo-500/5">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <nav class="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">
+              <span>Risk Analysis</span>
+            </nav>
+            <h3 class="text-lg font-black text-slate-900 leading-none">Risk Distribution</h3>
+          </div>
+          <div class="px-2 py-1 rounded-lg bg-slate-50 border border-slate-100">
+            <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Current Week</span>
+          </div>
         </div>
         <div class="h-64">
           <canvas id="sessionsChart"></canvas>
@@ -207,39 +185,42 @@
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fadeup" style="--stagger:180ms">
 
       {{-- Recent appointments --}}
-      <div class="rounded-2xl border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 shadow-md hover:shadow-lg transition-all duration-200">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-base font-semibold text-slate-900 dark:text-white">Recent Appointments</h3>
-          <a class="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 rounded transition-colors" href="{{ route('admin.appointments.index') }}">View all →</a>
+      <div class="rounded-3xl border border-slate-200/60 bg-white p-6 shadow-xl shadow-slate-200/50 transition-all duration-300 hover:shadow-2xl">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <nav class="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">
+              <span>Scheduling</span>
+            </nav>
+            <h3 class="text-lg font-black text-slate-900 leading-none">Recent Appointments</h3>
+          </div>
+          <a class="text-[10px] font-black uppercase tracking-widest text-indigo-600 hover:text-indigo-700 transition-colors italic" href="{{ route('admin.appointments.index') }}">View all →</a>
         </div>
 
         @if(($recentAppointments ?? collect())->isEmpty())
           <div class="text-center py-12">
-            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 dark:bg-gray-700 mb-3">
-              <svg class="w-8 h-8 text-slate-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-              </svg>
+            <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-slate-50 mb-3">
+              <svg class="w-6 h-6 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
             </div>
-            <p class="text-sm text-slate-500 dark:text-gray-400">No appointments yet</p>
+            <p class="text-[11px] font-black uppercase tracking-widest text-slate-400">No appointments yet</p>
           </div>
         @else
-          <ul class="divide-y divide-slate-100 dark:divide-gray-700 text-sm" id="list-recent-appointments">
+          <ul class="divide-y divide-slate-50 text-sm" id="list-recent-appointments">
             @foreach($recentAppointments as $appt)
               @php
                 $status = strtolower($appt->status ?? 'scheduled');
-                $dotClass = (str_contains($status, 'cancel') ? 'bg-rose-500' : (str_contains($status, 'confirm') ? 'bg-emerald-500' : (str_contains($status, 'complete') ? 'bg-indigo-500' : (str_contains($status, 'pending') ? 'bg-amber-500' : ((str_contains($status,'critical') || str_contains($status,'urgent')) ? 'bg-rose-500' : 'bg-sky-500')))));
+                $dotClass = (str_contains($status, 'cancel') ? 'bg-rose-500 shadow-rose-500/50' : (str_contains($status, 'confirm') ? 'bg-emerald-500 shadow-emerald-500/50' : (str_contains($status, 'complete') ? 'bg-indigo-500 shadow-indigo-500/50' : (str_contains($status, 'pending') ? 'bg-amber-500 shadow-amber-500/50' : ((str_contains($status,'critical') || str_contains($status,'urgent')) ? 'bg-rose-500 shadow-rose-500/50' : 'bg-sky-500 shadow-sky-500/50')))));
               @endphp
-              <li class="py-3 px-2 flex items-center justify-between rounded-md transition hover:bg-slate-50/60 dark:hover:bg-gray-700/50 cursor-pointer group">
-                <div class="flex items-center gap-3">
-                  <span class="w-2 h-2 rounded-full {{ $dotClass }} group-hover:scale-125 transition-transform"></span>
+              <li class="py-3 px-1 flex items-center justify-between group cursor-pointer border-b border-transparent hover:border-slate-100 transition-all translate-x-0 hover:translate-x-1">
+                <div class="flex items-center gap-4">
+                  <span class="w-1.5 h-1.5 rounded-full {{ $dotClass }} shadow-lg transition-transform group-hover:scale-150"></span>
                   <div>
-                    <div class="font-medium text-slate-900 dark:text-white">{{ $appt->status ? ucfirst($appt->status) : 'Scheduled' }}</div>
+                    <div class="font-black text-slate-900 text-xs tracking-tight">{{ $appt->status ? ucfirst($appt->status) : 'Scheduled' }}</div>
                     @if(!empty($appt->notes))
-                      <div class="text-xs text-slate-500 dark:text-gray-400 line-clamp-1">{{ $appt->notes }}</div>
+                      <div class="text-[11px] font-medium text-slate-400 line-clamp-1 mt-0.5 italic">"{{ $appt->notes }}"</div>
                     @endif
                   </div>
                 </div>
-                <span class="text-slate-400 dark:text-gray-500 text-xs">{{ optional($appt->when)->diffForHumans() }}</span>
+                <span class="text-[10px] font-black uppercase text-slate-300 tracking-widest group-hover:text-indigo-400 transition-colors">{{ optional($appt->when)->diffForHumans() }}</span>
               </li>
             @endforeach
           </ul>
@@ -247,38 +228,45 @@
       </div>
 
       {{-- System Activity --}}
-      <div class="rounded-2xl border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 shadow-md hover:shadow-lg transition-all duration-200">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-base font-semibold text-slate-900 dark:text-white">System Activity</h3>
+      <div class="rounded-3xl border border-slate-200/60 bg-white p-6 shadow-xl shadow-slate-200/50 transition-all duration-300 hover:shadow-2xl">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <nav class="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">
+              <span>Live Feed</span>
+            </nav>
+            <h3 class="text-lg font-black text-slate-900 leading-none">System Activity</h3>
+          </div>
+          <div class="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-100/50 animate-pulse">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            <span class="text-[9px] font-black text-emerald-700 uppercase tracking-widest">Live Now</span>
+          </div>
         </div>
 
         @if(($activities ?? collect())->isEmpty())
           <div class="text-center py-12">
-            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 dark:bg-gray-700 mb-3">
-              <svg class="w-8 h-8 text-slate-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-              </svg>
+            <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-slate-50 mb-3">
+              <svg class="w-6 h-6 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
             </div>
-            <p class="text-sm text-slate-500 dark:text-gray-400">No activity yet</p>
+            <p class="text-[11px] font-black uppercase tracking-widest text-slate-400">No activity yet</p>
           </div>
         @else
-          <ul class="space-y-3 text-sm" id="list-activities">
+          <ul class="space-y-4 text-xs" id="list-activities">
             @foreach($activities as $a)
               @php
-                $dot = str_starts_with($a->event, 'chat_session') ? 'bg-indigo-500' : (str_starts_with($a->event, 'user.registered') ? 'bg-emerald-500' : 'bg-slate-400');
-                $text = str_starts_with($a->event, 'chat_session') ? 'Chat session started: ' . ($a->meta ?? 'Starting conversation…') : (str_starts_with($a->event, 'user.registered') ? 'New user registered' : 'Activity');
+                $dot = str_starts_with($a->event, 'chat_session') ? 'bg-indigo-500 shadow-indigo-500/50' : (str_starts_with($a->event, 'user.registered') ? 'bg-emerald-500 shadow-emerald-500/50' : 'bg-slate-300 shadow-slate-300/50');
+                $text = str_starts_with($a->event, 'chat_session') ? 'Chat session started' : (str_starts_with($a->event, 'user.registered') ? 'New user registered' : 'Activity');
+                $subText = str_starts_with($a->event, 'chat_session') ? ($a->meta ?? 'Starting conversation…') : '';
               @endphp
-              <li class="flex items-center justify-between group hover:bg-slate-50/60 dark:hover:bg-gray-700/50 -mx-2 px-2 py-2 rounded-lg transition">
-                <div class="flex items-center gap-3">
-                  <span class="w-2 h-2 rounded-full {{ $dot }} group-hover:scale-125 transition-transform"></span>
-                  <span class="text-slate-700 dark:text-gray-300">
-                    <span class="font-medium">{{ $text }}</span>
-                    @if(!empty($a->actor))
-                      <span class="text-slate-400 dark:text-gray-500 ml-2 text-xs">{{ $a->actor }}</span>
-                    @endif
-                  </span>
+              <li class="flex items-start justify-between group translate-x-0 hover:translate-x-1 transition-all">
+                <div class="flex items-start gap-4">
+                  <div class="mt-1.5 w-1.5 h-1.5 rounded-full {{ $dot }} shadow-lg transition-transform group-hover:scale-150"></div>
+                  <div>
+                    <div class="font-black text-slate-900 uppercase tracking-tight text-[11px]">{{ $text }}</div>
+                    @if($subText) <div class="text-[10px] font-medium text-slate-400 mt-0.5 line-clamp-1 italic">"{{ $subText }}"</div> @endif
+                    @if(!empty($a->actor)) <div class="text-[9px] font-black text-indigo-400 uppercase tracking-widest mt-1">{{ $a->actor }}</div> @endif
+                  </div>
                 </div>
-                <span class="text-slate-400 dark:text-gray-500 text-xs">{{ optional($a->created_at)->diffForHumans() }}</span>
+                <span class="text-[10px] font-black uppercase text-slate-300 tracking-widest">{{ optional($a->created_at)->diffForHumans() }}</span>
               </li>
             @endforeach
           </ul>
@@ -287,39 +275,42 @@
     </section>
 
     {{-- Recent chats --}}
-    <section class="rounded-2xl border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 shadow-md hover:shadow-lg transition-all duration-200 animate-fadeup" style="--stagger:240ms">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-base font-semibold text-slate-900 dark:text-white">Recent Chat Sessions</h3>
-        <a class="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 rounded transition-colors" href="{{ route('admin.chatbot-sessions.index') }}">Open history →</a>
+    <section class="rounded-3xl border border-slate-200/60 bg-white p-6 shadow-xl shadow-slate-200/50 transition-all duration-300 hover:shadow-2xl animate-fadeup" style="--stagger:240ms">
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <nav class="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">
+            <span>Conversations</span>
+          </nav>
+          <h3 class="text-lg font-black text-slate-900 leading-none">History & Logs</h3>
+        </div>
+        <a class="text-[10px] font-black uppercase tracking-widest text-indigo-600 hover:text-indigo-700 transition-colors italic" href="{{ route('admin.chatbot-sessions.index') }}">Full History →</a>
       </div>
 
       @if(($recentChatSessions ?? collect())->isEmpty())
         <div class="text-center py-12">
-          <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 dark:bg-gray-700 mb-3">
-            <svg class="w-8 h-8 text-slate-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
-            </svg>
+          <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-slate-50 mb-3">
+            <svg class="w-6 h-6 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
           </div>
-          <p class="text-sm text-slate-500 dark:text-gray-400">No chat sessions yet</p>
+          <p class="text-[11px] font-black uppercase tracking-widest text-slate-400">No chat sessions yet</p>
         </div>
       @else
-        <ul class="divide-y divide-slate-100 dark:divide-gray-700" id="list-recent-chats">
+        <ul class="divide-y divide-slate-50" id="list-recent-chats">
           @foreach($recentChatSessions as $s)
             @php
               $risk = strtolower($s->risk_level ?? 'low');
-              $dotClass = ($risk === 'high' ? 'bg-rose-500' : ($risk === 'moderate' ? 'bg-amber-500' : 'bg-indigo-500'));
+              $dotClass = ($risk === 'high' ? 'bg-rose-500 shadow-rose-500/50' : ($risk === 'moderate' ? 'bg-amber-500 shadow-amber-500/50' : 'bg-indigo-500 shadow-indigo-500/50'));
             @endphp
-            <li class="py-3 px-2 flex items-center justify-between rounded-md transition hover:bg-slate-50/60 dark:hover:bg-gray-700/50 cursor-pointer group">
-              <div class="flex items-center gap-3">
-                <span class="w-2 h-2 rounded-full {{ $dotClass }} group-hover:scale-125 transition-transform"></span>
+            <li class="py-3 px-1 flex items-center justify-between group cursor-pointer border-b border-transparent hover:border-slate-100 transition-all translate-x-0 hover:translate-x-1">
+              <div class="flex items-center gap-4">
+                <span class="w-1.5 h-1.5 rounded-full {{ $dotClass }} shadow-lg transition-transform group-hover:scale-150"></span>
                 <div>
-                  <span class="font-medium text-slate-900 dark:text-white">{{ $s->topic_summary ?: 'Starting conversation…' }}</span>
+                  <span class="font-black text-slate-900 text-sm tracking-tight">{{ $s->topic_summary ?: 'Starting conversation…' }}</span>
                   @if(!empty($s->actor))
-                    <span class="text-xs text-slate-400 dark:text-gray-500 ml-2">{{ $s->actor }}</span>
+                    <span class="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-2">{{ $s->actor }}</span>
                   @endif
                 </div>
               </div>
-              <span class="text-slate-400 dark:text-gray-500 text-sm">{{ optional($s->created_at)->diffForHumans() }}</span>
+              <span class="text-[10px] font-black uppercase text-slate-300 tracking-widest group-hover:text-indigo-400 transition-colors">{{ optional($s->created_at)->diffForHumans() }}</span>
             </li>
           @endforeach
         </ul>
@@ -441,52 +432,57 @@ details > summary::-webkit-details-marker { display: none; }
   function liRecentAppointment(item) {
     const status = (item.status || 'scheduled').toLowerCase();
     const dot = statusDot(status);
+    const dotShadow = (status.includes('cancel') || status.includes('critical')) ? 'shadow-rose-500/50' : (status.includes('confirm') ? 'shadow-emerald-500/50' : (status.includes('complete') ? 'shadow-indigo-500/50' : (status.includes('pending') ? 'shadow-amber-500/50' : 'shadow-sky-500/50')));
     const label = status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Scheduled';
     return `
-      <li class="py-3 px-2 flex items-center justify-between rounded-md transition hover:bg-slate-50/60 dark:hover:bg-gray-700/50 cursor-pointer group">
-        <div class="flex items-center gap-3">
-          <span class="w-2 h-2 rounded-full ${dot} group-hover:scale-125 transition-transform"></span>
+      <li class="py-3 px-1 flex items-center justify-between group cursor-pointer border-b border-transparent hover:border-slate-100 dark:hover:border-slate-700 transition-all translate-x-0 hover:translate-x-1">
+        <div class="flex items-center gap-4">
+          <span class="w-1.5 h-1.5 rounded-full ${dot} ${dotShadow} shadow-lg transition-transform group-hover:scale-150"></span>
           <div>
-            <div class="font-medium text-slate-900 dark:text-white">${esc(label)}</div>
-            ${item.notes ? `<div class="text-xs text-slate-500 dark:text-gray-400 line-clamp-1">${esc(item.notes)}</div>` : ''}
+            <div class="font-black text-slate-900 dark:text-white text-xs tracking-tight">${esc(label)}</div>
+            ${item.notes ? `<div class="text-[11px] font-medium text-slate-400 dark:text-slate-500 mt-0.5 line-clamp-1">"${esc(item.notes)}"</div>` : ''}
           </div>
         </div>
-        <span class="text-slate-400 dark:text-gray-500 text-xs">${esc(timeAgo(item.when) || '')}</span>
+        <span class="text-[10px] font-black uppercase text-slate-300 dark:text-slate-600 tracking-widest group-hover:text-indigo-400 transition-colors">${esc(timeAgo(item.when) || '')}</span>
       </li>`;
   }
 
   function liActivity(a) {
     const isChat = (a.event || '').startsWith('chat_session');
-    const dot = isChat ? 'bg-indigo-500' : ((a.event || '').startsWith('user.registered') ? 'bg-emerald-500' : 'bg-slate-400');
-    const text = isChat ? `Chat session started: ${esc(a.meta || 'Starting conversation…')}` : ((a.event || '').startsWith('user.registered') ? 'New user registered' : 'Activity');
-    const actor = a.actor ? `<span class="text-slate-400 dark:text-gray-500 ml-2 text-xs">${esc(a.actor)}</span>` : '';
+    const isUser = (a.event || '').startsWith('user.registered');
+    const dot = isChat ? 'bg-indigo-500 shadow-indigo-500/50' : (isUser ? 'bg-emerald-500 shadow-emerald-500/50' : 'bg-slate-300 shadow-slate-300/50');
+    const text = isChat ? 'Chat session started' : (isUser ? 'New user registered' : 'Activity');
+    const subText = isChat ? (a.meta || 'Starting conversation…') : '';
+    const actor = a.actor ? `<div class="text-[9px] font-black text-indigo-400 uppercase tracking-widest mt-1">${esc(a.actor)}</div>` : '';
     return `
-      <li class="flex items-center justify-between group hover:bg-slate-50/60 dark:hover:bg-gray-700/50 -mx-2 px-2 py-2 rounded-lg transition">
-        <div class="flex items-center gap-3">
-          <span class="w-2 h-2 rounded-full ${dot} group-hover:scale-125 transition-transform"></span>
-          <span class="text-slate-700 dark:text-gray-300 font-medium">${text}</span>
-          ${actor}
+      <li class="flex items-start justify-between group translate-x-0 hover:translate-x-1 transition-all">
+        <div class="flex items-start gap-4">
+          <div class="mt-1.5 w-1.5 h-1.5 rounded-full ${dot} shadow-lg transition-transform group-hover:scale-150"></div>
+          <div>
+            <div class="font-black text-slate-900 dark:text-white uppercase tracking-tight text-[11px]">${esc(text)}</div>
+            ${subText ? `<div class="text-[10px] font-medium text-slate-400 dark:text-slate-500 mt-0.5 line-clamp-1">"${esc(subText)}"</div>` : ''}
+            ${actor}
+          </div>
         </div>
-        <span class="text-slate-400 dark:text-gray-500 text-xs">${esc(timeAgo(a.created_at) || '')}</span>
+        <span class="text-[10px] font-black uppercase text-slate-300 dark:text-slate-600 tracking-widest">${esc(timeAgo(a.created_at) || '')}</span>
       </li>`;
   }
 
   function liRecentChat(s) {
     const risk = (s.risk_level || 'low').toLowerCase();
-    let dot = 'bg-indigo-500';
-    if (risk === 'high') dot = 'bg-rose-500';
-    else if (risk === 'moderate') dot = 'bg-amber-500';
+    const dotClass = (risk === 'high' ? 'bg-rose-500 shadow-rose-500/50' : (risk === 'moderate' ? 'bg-amber-500 shadow-amber-500/50' : 'bg-indigo-500 shadow-indigo-500/50'));
+    const actor = s.actor ? `<span class="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-2">${esc(s.actor)}</span>` : '';
 
     return `
-      <li class="py-3 px-2 flex items-center justify-between rounded-md transition hover:bg-slate-50/60 dark:hover:bg-gray-700/50 cursor-pointer group">
-        <div class="flex items-center gap-3">
-          <span class="w-2 h-2 rounded-full ${dot} group-hover:scale-125 transition-transform"></span>
+      <li class="py-3 px-1 flex items-center justify-between group cursor-pointer border-b border-transparent hover:border-slate-100 dark:hover:border-slate-700 transition-all translate-x-0 hover:translate-x-1">
+        <div class="flex items-center gap-4">
+          <span class="w-1.5 h-1.5 rounded-full ${dotClass} shadow-lg transition-transform group-hover:scale-150"></span>
           <div>
-            <span class="font-medium text-slate-900 dark:text-white">${esc(s.topic_summary || 'Starting conversation…')}</span>
-            ${s.actor ? `<span class="text-xs text-slate-400 dark:text-gray-500 ml-2">${esc(s.actor)}</span>` : ''}
+            <span class="font-black text-slate-900 dark:text-white text-sm tracking-tight">${esc(s.topic_summary || 'Starting conversation…')}</span>
+            ${actor}
           </div>
         </div>
-        <span class="text-slate-400 dark:text-gray-500 text-sm">${esc(timeAgo(s.created_at) || '')}</span>
+        <span class="text-[10px] font-black uppercase text-slate-300 dark:text-slate-600 tracking-widest group-hover:text-indigo-400 transition-colors">${esc(timeAgo(s.created_at) || '')}</span>
       </li>`;
   }
 
@@ -625,19 +621,19 @@ details > summary::-webkit-details-marker { display: none; }
       const k = data.kpis || {};
       
       // Helper to update specific counter elements
-      const updateCounter = (selector, value) => {
-        const el = document.querySelector(selector);
-        if (el) {
-          el.textContent = nf.format(value ?? 0);
-          el.dataset.target = value ?? 0;
-        }
-      };
-      
-      // Update each KPI counter with its specific value
-      updateCounter('[data-target]:nth-of-type(1) .counter-animate', k.appointmentsTotal);
-      updateCounter('[data-target]:nth-of-type(2) .counter-animate', k.criticalCasesTotal);
-      updateCounter('[data-target]:nth-of-type(3) .counter-animate', k.activeCounselors);
-      updateCounter('[data-target]:nth-of-type(4) .counter-animate', k.chatSessionsTotal || k.chatSessionsThisWeek);
+      const counters = document.querySelectorAll('.counter-animate');
+      if (counters.length >= 4) {
+        const updateByIndex = (idx, value) => {
+          if (counters[idx]) {
+            counters[idx].textContent = nf.format(value ?? 0);
+            counters[idx].dataset.target = value ?? 0;
+          }
+        };
+        updateByIndex(0, k.appointmentsTotal);
+        updateByIndex(1, k.criticalCasesTotal);
+        updateByIndex(2, k.activeCounselors);
+        updateByIndex(3, k.chatSessionsTotal || k.chatSessionsThisWeek);
+      }
 
       const setText = (id, text) => {
         const el = document.getElementById(id);
