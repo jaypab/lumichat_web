@@ -53,104 +53,99 @@
 @section('content')
 <div class="max-w-5xl mx-auto space-y-6">
 
-  {{-- Header / actions --}}
-  <div class="flex items-start justify-between gap-4 screen-only">
-    <div>
-      <h2 class="text-2xl font-semibold tracking-tight text-slate-800">Course Summary</h2>
-      <p class="text-sm text-slate-500">{{ $courseLabel }} • {{ $yearLabel }}</p>
+  {{-- ========= Page Header (Clean SaaS Layout) ========= --}}
+  <header class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-2 screen-only">
+    <div class="flex flex-col gap-1.5">
+      <div class="flex items-center gap-3">
+        <a href="{{ route('admin.course-analytics.index') }}" 
+           class="group flex items-center justify-center w-10 h-10 rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50/30 transition-all duration-200 shadow-sm active:scale-95">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+        </a>
+        <h1 class="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
+          Course <span class="text-indigo-600">Breakdown</span>
+        </h1>
+      </div>
+      <p class="text-slate-500 text-sm font-medium ml-13">{{ $courseLabel }} • {{ $yearLabel }}</p>
     </div>
 
-    <div class="flex gap-2">
-      {{-- Show: Single Course -> PDF --}}
+    <div class="flex items-center gap-3 ml-13 sm:ml-0">
       <a href="{{ route('admin.course-analytics.show.export.pdf', ['course' => $courseId]) }}"
          target="_blank" rel="noopener"
-         class="inline-flex items-center h-9 px-3 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700">
-        <svg class="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+         class="group inline-flex items-center justify-center gap-2 rounded-xl bg-white text-slate-700 border border-slate-200 px-4 py-2.5 text-sm font-bold shadow-sm hover:bg-slate-50 hover:text-slate-900 active:scale-[.98] transition-all duration-200">
+        <svg class="w-4 h-4 text-slate-400 group-hover:text-amber-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
         </svg>
-        Download PDF
-      </a>
-
-      <a href="{{ route('admin.course-analytics.index') }}"
-         class="inline-flex items-center h-9 px-3 rounded-lg text-sm font-medium bg-white border border-slate-200 shadow-sm hover:bg-slate-50">
-        ← Back to list
+        <span>Export PDF</span>
       </a>
     </div>
-  </div>
+  </header>
 
   {{-- ===== PRINT SCOPE ===== --}}
   <div id="print-analytics-show" class="space-y-6">
 
-    {{-- Print title --}}
-    <h1 class="hidden print:block text-xl font-semibold">
-      Course Summary — {{ $courseLabel }} • {{ $yearLabel }}
+    {{-- Print title (Hidden on screen) --}}
+    <h1 class="hidden print:block text-xl font-bold uppercase tracking-widest text-slate-900 mb-6">
+      Course Breakdown — {{ $courseLabel }} • {{ $yearLabel }}
     </h1>
 
-    {{-- Summary card --}}
-    <div class="relative bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
-      <span class="pointer-events-none accent-bar"></span>
-
-      <div class="p-5">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div class="fade-in">
-            <div class="text-[11px] uppercase tracking-wide text-slate-500">Course</div>
-            <div class="font-semibold text-slate-900">{{ $courseLabel }}</div>
+    {{-- KPI Dashboard --}}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {{-- Students KPI --}}
+      <div class="group relative bg-white rounded-3xl border border-slate-200/60 p-5 shadow-xl shadow-slate-200/40 hover:shadow-indigo-500/10 transition-all duration-300 overflow-hidden">
+        <div class="flex items-start justify-between relative z-10">
+          <div>
+            <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Enrolled Students</p>
+            <h3 class="text-3xl font-black text-slate-900 mt-1 countup" data-target="{{ (int)($c->student_count ?? 0) }}">0</h3>
           </div>
-          <div class="fade-in" style="--delay:0.05s">
-            <div class="kpi-label">Year Level</div>
-            <div class="font-medium text-slate-900">{{ $yearLabel }}</div>
-          </div>
-          <div class="fade-in" style="--delay:0.1s">
-            <div class="kpi-label">No. of Students</div>
-            <div class="font-medium text-slate-900">
-              <span class="countup" data-target="{{ (int)($c->student_count ?? 0) }}">0</span>
-            </div>
-          </div>
-          <div class="fade-in" style="--delay:0.15s">
-            <div class="kpi-label">Total Case Notes</div>
-            <div class="font-medium text-slate-900">
-              <span class="countup" data-target="{{ (int)$totalDx }}">0</span>
-            </div>
+          <div class="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-sm border border-indigo-100/50 group-hover:scale-110 transition-transform">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
           </div>
         </div>
+      </div>
 
-        {{-- Top presenting concerns chips --}}
-        @if(count($items))
-          <div class="mt-4">
-            <div class="text-[11px] uppercase tracking-wide text-slate-500 mb-2">
-              Top presenting concerns
-            </div>
-            <div class="flex flex-wrap gap-1.5">
-              @foreach(array_slice($items,0,6) as $it)
-                {!! $pill($it['label']) !!}
-              @endforeach
-
-              @if(count($items) > 6)
-                @php
-                  $rest       = array_slice($items, 6);
-                  $restLabels = implode(', ', array_map(fn($r)=>$r['label'], $rest));
-                @endphp
-                <span
-                  class="inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200 cursor-default whitespace-nowrap"
-                  title="{{ $restLabels }}"
-                >
-                  +{{ count($rest) }} more
-                </span>
-              @endif
-            </div>
+      {{-- Records KPI --}}
+      <div class="group relative bg-white rounded-3xl border border-slate-200/60 p-5 shadow-xl shadow-slate-200/40 hover:shadow-emerald-500/10 transition-all duration-300 overflow-hidden">
+        <div class="flex items-start justify-between relative z-10">
+          <div>
+            <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Records</p>
+            <h3 class="text-3xl font-black text-slate-900 mt-1 countup" data-target="{{ (int)$totalDx }}">0</h3>
           </div>
-        @endif
+          <div class="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-sm border border-emerald-100/50 group-hover:scale-110 transition-transform">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          </div>
+        </div>
+      </div>
+
+      {{-- Course Info KPI --}}
+      <div class="sm:col-span-2 group relative bg-indigo-600 rounded-3xl p-5 shadow-xl shadow-indigo-200 transition-all duration-300 overflow-hidden">
+        <div class="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent"></div>
+        <div class="flex items-start justify-between relative z-10 h-full">
+          <div>
+            <p class="text-[10px] font-black uppercase tracking-widest text-white/60">Target Population</p>
+            <h3 class="text-xl font-black text-white mt-1 leading-tight">{{ $courseLabel }}</h3>
+            <p class="text-[11px] font-bold text-white/50 uppercase tracking-widest mt-1">{{ $yearLabel }} Level</p>
+          </div>
+          <div class="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center text-white shadow-sm border border-white/20">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+          </div>
+        </div>
       </div>
     </div>
 
-    {{-- Breakdown (summary) --}}
-    <div class="relative bg-white rounded-2xl shadow-sm border border-slate-200/70">
-
-      <div class="p-5">
-        <h3 class="text-base font-semibold text-slate-800 mb-3">
-          Presenting Concerns Breakdown (summary)
-        </h3>
+    {{-- Top Presenting Concerns Bar Chart --}}
+    <div class="rounded-3xl bg-white border border-slate-200/60 shadow-xl shadow-slate-200/40 overflow-hidden group/chart">
+      <div class="p-6 sm:p-8">
+        <div class="flex items-center justify-between mb-8">
+          <div class="flex items-center gap-3">
+             <div class="w-10 h-10 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600 shadow-sm border border-rose-100/50">
+               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+             </div>
+             <div>
+               <h3 class="text-lg font-black tracking-tight text-slate-900 uppercase tracking-widest text-[13px]">Presenting Concerns Breakdown</h3>
+               <p class="text-xs text-slate-400 font-bold uppercase tracking-tight mt-0.5">Top recurring issues identified in session notes</p>
+             </div>
+          </div>
+        </div>
 
         @if(count($items))
           <div role="list" class="space-y-3">

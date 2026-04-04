@@ -1,100 +1,152 @@
 @extends('layouts.admin')
 
-@section('page_title', 'Edit Announcement')
+@section('page_title', 'Edit Broadcast')
 
 @section('content')
-<div class="max-w-4xl mx-auto px-4 pb-12">
-    <div class="mb-8">
-        <a href="{{ route('admin.announcements.index') }}" class="inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-indigo-600 transition-colors mb-4 group">
-            <svg class="w-4 h-4 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
-            Back to Dashboard
-        </a>
-        <h2 class="text-3xl font-bold text-slate-800 dark:text-white text-indigo-600 dark:text-indigo-400">Modify Broadcast</h2>
-        <p class="text-slate-500 dark:text-slate-400 mt-2 text-lg italic opacity-80">Update the details or schedule of your announcement.</p>
+<div class="px-6 pb-12 relative" x-data="{ scrolled: false }" x-init="$window.addEventListener('scroll', () => { scrolled = window.scrollY > 10 })">
+    {{-- Breadcrumb & Header --}}
+    <div class="mb-10">
+        <nav class="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-4 px-1">
+            <a href="{{ route('admin.announcements.index') }}" class="hover:text-indigo-600 transition-colors">Broadcast History</a>
+            <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
+            <span class="text-indigo-600/60 lowercase first-letter:uppercase">Edit Broadcast</span>
+        </nav>
+        <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-amber-500 flex items-center justify-center text-white shadow-xl shadow-amber-500/20 active:scale-95 transition-transform">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+            </div>
+            <div>
+                <h2 class="text-3xl font-black text-slate-900 tracking-tight leading-none">Modify Broadcast</h2>
+                <p class="text-slate-500 text-[13px] font-medium mt-3 tracking-tight">Update the details or schedule of your announcement.</p>
+            </div>
+        </div>
     </div>
 
-    <form action="{{ route('admin.announcements.update', $announcement) }}" method="POST" class="space-y-6">
+    <form action="{{ route('admin.announcements.update', $announcement) }}" method="POST" class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         @csrf
         @method('PUT')
         
-        <div class="bg-white dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden backdrop-blur-md">
-            <div class="p-6 sm:p-8 space-y-6">
-                {{-- Title --}}
-                <div class="space-y-2">
-                    <label for="title" class="text-sm font-bold text-slate-700 dark:text-slate-300">Broadcast Title</label>
-                    <input type="text" name="title" id="title" required
-                           class="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all @error('title') border-rose-500 @enderror"
-                           placeholder="e.g., Final Examination Schedule..." value="{{ old('title', $announcement->title) }}">
-                    @error('title') <p class="text-xs text-rose-500 mt-1">{{ $message }}</p> @enderror
-                </div>
+        {{-- Main Content Column --}}
+        <div class="lg:col-span-8 space-y-6">
+            <div class="bg-white rounded-3xl border border-slate-200/60 shadow-xl shadow-slate-200/50 overflow-hidden">
+                <div class="p-6 sm:p-8 space-y-6">
+                    <div class="space-y-4">
+                        <label for="title" class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-400 px-1">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"/></svg>
+                            Broadcast Title
+                        </label>
+                        <input type="text" name="title" id="title" required
+                            class="w-full px-5 py-4 rounded-2xl border border-slate-100 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-black text-base text-slate-900 placeholder-slate-300"
+                            placeholder="e.g., Final Examination Dates for SY 2023-2024" value="{{ old('title', $announcement->title) }}">
+                        @error('title') <p class="text-xs font-bold text-rose-500 mt-2 pl-2 tracking-tight italic">⚠ {{ $message }}</p> @enderror
+                    </div>
 
-                {{-- Content --}}
-                <div class="space-y-2">
-                    <label for="content" class="text-sm font-bold text-slate-700 dark:text-slate-300">Message Content</label>
-                    <textarea name="content" id="content" rows="6" required
-                              class="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all @error('content') border-rose-500 @enderror"
-                              placeholder="Write your announcement details here...">{{ old('content', $announcement->content) }}</textarea>
-                    @error('content') <p class="text-xs text-rose-500 mt-1">{{ $message }}</p> @enderror
+                    <div class="space-y-4">
+                        <label for="content" class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-400 px-1">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+                            Message Details
+                        </label>
+                        <textarea name="content" id="content" rows="10" required
+                            class="w-full px-5 py-4 rounded-2xl border border-slate-100 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium text-sm text-slate-700 placeholder-slate-300 leading-relaxed"
+                            placeholder="Write the full details of your announcement here...">{{ old('content', $announcement->content) }}</textarea>
+                        @error('content') <p class="text-xs font-bold text-rose-500 mt-2 pl-2 tracking-tight italic">⚠ {{ $message }}</p> @enderror
+                    </div>
                 </div>
+            </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
-                    {{-- Priority --}}
-                    <div class="space-y-2">
-                        <label class="text-sm font-bold text-slate-700 dark:text-slate-300">Priority Level</label>
-                        <div class="flex gap-3">
+            {{-- Meta Card --}}
+            <div class="bg-slate-900 rounded-3xl p-6 text-white shadow-xl shadow-slate-200 overflow-hidden relative group">
+                <div class="absolute -right-10 -bottom-10 w-48 h-48 bg-white/5 rounded-full blur-3xl group-hover:scale-125 transition-transform duration-700"></div>
+                <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div>
+                        <h4 class="text-lg font-black uppercase tracking-widest mb-2 italic">Broadcast Meta</h4>
+                        <p class="text-slate-400 font-medium leading-relaxed max-w-xl">
+                            Created by <span class="text-indigo-400">{{ $announcement->author->name ?? 'System' }}</span> on {{ $announcement->created_at->format('M d, Y \a\t h:i A') }}
+                        </p>
+                    </div>
+                    <div class="px-4 py-2 rounded-xl bg-white/10 border border-white/10 backdrop-blur-md">
+                        <span class="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1">Last Updated</span>
+                        <span class="text-sm font-bold text-white">{{ $announcement->updated_at->diffForHumans() }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- Configuration Sidebar Column --}}
+        <div class="lg:col-span-4 space-y-6">
+            {{-- Settings Panel --}}
+            <div class="bg-white rounded-3xl border border-slate-200/60 shadow-xl shadow-slate-200/50 overflow-hidden sticky top-8">
+                <div class="p-6 space-y-6">
+                    <h3 class="text-sm font-black uppercase tracking-[0.2em] text-slate-900 border-b border-slate-50 pb-6 italic">Configuration</h3>
+
+                    {{-- Visibility Toggle (Alpine.js) --}}
+                    <div class="space-y-4" x-data="{ active: {{ old('is_active', $announcement->is_active) ? 'true' : 'false' }} }">
+                        <label class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-400 px-1">
+                            Broadcast Status
+                        </label>
+                        <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 transition-all" :class="active ? 'bg-emerald-50/50 border-emerald-100' : ''">
+                            <span class="text-[12px] font-black uppercase tracking-tight" :class="active ? 'text-emerald-700' : 'text-slate-500'">Live for Students</span>
+                            <input type="hidden" name="is_active" :value="active ? 1 : 0">
+                            <button type="button" @click="active = !active" 
+                                class="relative w-12 h-6 rounded-full transition-colors duration-200 focus:outline-none"
+                                :class="active ? 'bg-emerald-500' : 'bg-slate-300'">
+                                <span class="absolute left-1 top-1 w-4 h-4 rounded-full bg-white transition-transform duration-200"
+                                    :class="active ? 'translate-x-6' : ''"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {{-- Priority Select --}}
+                    <div class="space-y-4">
+                        <label class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-400 px-1">
+                            Priority Level
+                        </label>
+                        <div class="grid grid-cols-3 gap-2">
                             @foreach(['low' => 'slate', 'normal' => 'indigo', 'high' => 'rose'] as $label => $color)
-                            <label class="relative flex-1 cursor-pointer">
+                            <label class="relative cursor-pointer group">
                                 <input type="radio" name="priority" value="{{ $label }}" class="peer sr-only" {{ old('priority', $announcement->priority) === $label ? 'checked' : '' }}>
-                                <div class="px-3 py-2.5 text-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40 peer-checked:border-{{$color}}-500 peer-checked:bg-{{$color}}-50 dark:peer-checked:bg-{{$color}}-900/20 peer-checked:text-{{$color}}-600 dark:peer-checked:text-{{$color}}-400 transition-all">
-                                    <span class="text-sm font-bold capitalize">{{ $label }}</span>
+                                <div class="px-2 py-2 text-center rounded-xl border border-slate-100 bg-slate-50/50 group-hover:bg-white peer-checked:border-{{$color}}-500 peer-checked:bg-{{$color}}-500 peer-checked:text-white transition-all peer-checked:shadow-lg peer-checked:shadow-{{$color}}-500/20 active:scale-95">
+                                    <span class="text-[10px] font-black uppercase tracking-widest">{{ $label }}</span>
                                 </div>
                             </label>
                             @endforeach
                         </div>
                     </div>
 
-                    {{-- Visibility Toggle --}}
-                    <div class="space-y-2 flex flex-col">
-                        <label class="text-sm font-bold text-slate-700 dark:text-slate-300">Visibility</label>
-                        <label class="mt-1 relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" name="is_active" value="1" class="sr-only peer" {{ old('is_active', $announcement->is_active) ? 'checked' : '' }}>
-                            <div class="w-14 h-7 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-emerald-500"></div>
-                            <span class="ml-3 text-sm font-semibold text-slate-600 dark:text-slate-300">Live for Students</span>
-                        </label>
-                    </div>
-                </div>
+                    {{-- Temporal Configuration --}}
+                    <div class="space-y-6 pt-6 border-t border-slate-50">
+                        <div class="space-y-4">
+                            <label class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-400 px-1">
+                                Schedule Start
+                            </label>
+                            <div class="relative group">
+                                <input type="datetime-local" name="starts_at" id="starts_at" 
+                                    class="w-full px-5 py-4 rounded-2xl border border-slate-100 bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-sm text-slate-700"
+                                    value="{{ old('starts_at', $announcement->starts_at ? $announcement->starts_at->format('Y-m-d\TH:i') : '') }}">
+                            </div>
+                        </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 border-t border-slate-100 dark:border-slate-700/50">
-                    {{-- Starts At --}}
-                    <div class="space-y-2">
-                        <label for="starts_at" class="text-sm font-bold text-slate-700 dark:text-slate-300">Schedule Start (Optional)</label>
-                        <input type="datetime-local" name="starts_at" id="starts_at" 
-                               class="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                               value="{{ old('starts_at', $announcement->starts_at ? $announcement->starts_at->format('Y-m-d\TH:i') : '') }}">
-                        <p class="text-[11px] text-slate-400">Leave blank for immediate broadcast.</p>
+                        <div class="space-y-4">
+                            <label class="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-400 px-1">
+                                Auto-Expiration
+                            </label>
+                            <div class="relative group">
+                                <input type="datetime-local" name="expires_at" id="expires_at" 
+                                    class="w-full px-5 py-4 rounded-2xl border border-slate-100 bg-slate-50 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-sm text-slate-700"
+                                    value="{{ old('expires_at', $announcement->expires_at ? $announcement->expires_at->format('Y-m-d\TH:i') : '') }}">
+                            </div>
+                        </div>
                     </div>
 
-                    {{-- Expires At --}}
-                    <div class="space-y-2">
-                        <label for="expires_at" class="text-sm font-bold text-slate-700 dark:text-slate-300">Expiration Date (Optional)</label>
-                        <input type="datetime-local" name="expires_at" id="expires_at" 
-                               class="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all font-inter"
-                               value="{{ old('expires_at', $announcement->expires_at ? $announcement->expires_at->format('Y-m-d\TH:i') : '') }}">
-                        <p class="text-[11px] text-slate-400">Automatically hide after this time.</p>
+                    {{-- Actions --}}
+                    <div class="pt-6 space-y-3">
+                        <button type="submit" class="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] transition-all shadow-xl shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-95 italic">
+                            Update Broadcast
+                        </button>
+                        <a href="{{ route('admin.announcements.index') }}" class="flex h-12 items-center justify-center w-full text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-rose-500 transition-colors">
+                            Cancel Changes
+                        </a>
                     </div>
-                </div>
-            </div>
-            
-            {{-- Submit Footer --}}
-            <div class="px-6 py-5 bg-slate-50/50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-700/50 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <p class="text-xs text-slate-400 max-w-sm italic">Created by {{ $announcement->author->name ?? 'System' }} on {{ $announcement->created_at->format('M d, Y') }}</p>
-                <div class="flex items-center gap-3 w-full sm:w-auto">
-                    <a href="{{ route('admin.announcements.index') }}" class="px-5 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 transition-colors">
-                        Cancel Changes
-                    </a>
-                    <button type="submit" class="flex-1 sm:flex-none px-8 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-indigo-500/20 active:scale-95 shadow-indigo-500/20">
-                        Update Broadcast
-                    </button>
                 </div>
             </div>
         </div>

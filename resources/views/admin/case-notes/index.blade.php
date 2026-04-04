@@ -39,130 +39,110 @@
 
 <div class="max-w-7xl mx-auto p-6 space-y-6">
 
-  {{-- ======= Page Header (gradient band + KPI) ======= --}}
-  <section class="rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm screen-only">
-    <div class="p-5 sm:p-6">
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 class="text-xl sm:text-2xl font-bold tracking-tight">Case Form Summary</h2>
-          <p class="text-white/80 text-sm mt-0.5">Review counselor case notes recorded per student session.</p>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="inline-flex items-center gap-2 rounded-xl bg-white/15 px-3 py-1.5 text-sm ring-1 ring-white/20">
-            <svg class="h-4 w-4 opacity-90" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 1a7 7 0 0 0-7 7v3.126a4 4 0 0 1-.832 2.4L2.6 16.6A1 1 0 0 0 3.4 18h17.2a1 1 0 0 0 .8-1.6l-1.568-3.074A4 4 0 0 1 19 11.126V8a7 7 0 0 0-7-7Zm0 22a3 3 0 0 0 3-3H9a3 3 0 0 0 3 3Z"/>
-            </svg>
-            <strong class="font-semibold">{{ $total }}</strong>
-            <span class="opacity-90">records</span>
-          </span>
-
-          <a href="{{ route('admin.case-notes.export.pdf', request()->only('date','q','from','to','source')) }}"
-             target="_blank" rel="noopener"
-             class="inline-flex items-center gap-2 rounded-xl bg-white text-indigo-700 px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50 active:scale-[.99] transition">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
-            </svg>
-            Download PDF
-          </a>
+  {{-- ========= Page Header (Clean SaaS Layout) ========= --}}
+  <header class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 screen-only mb-2">
+    <div class="flex flex-col gap-1.5">
+      <div class="flex items-center gap-3">
+        <h1 class="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">Case Form Summary</h1>
+        <div class="hidden sm:flex items-center justify-center px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-[11px] font-bold ring-1 ring-inset ring-indigo-500/20">
+          {{ number_format($total) }} Records
         </div>
       </div>
+      <p class="text-slate-500 text-sm font-medium">Review counselor case notes recorded per student session.</p>
     </div>
-  </section>
 
-  {{-- ======= Filters ======= --}}
-  <form method="GET" action="{{ route('admin.case-notes.index') }}" class="screen-only">
-    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+    <div class="flex items-center gap-3">
+      <a href="{{ route('admin.case-notes.export.pdf', request()->only('date','q','from','to','source')) }}"
+         target="_blank" rel="noopener"
+         class="group inline-flex items-center justify-center gap-2 rounded-xl bg-white text-slate-700 border border-slate-200 px-4 py-2.5 text-sm font-bold shadow-sm hover:bg-slate-50 hover:text-slate-900 active:scale-[.98] transition-all duration-200">
+        <svg class="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
+        </svg>
+        <span>Export PDF</span>
+      </a>
+    </div>
+  </header>
 
-      {{-- Quick date chips --}}
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="text-xs font-medium text-slate-500 mr-1.5">Date:</span>
+  {{-- ========= Modern Inline Filter Bar ========= --}}
+  <form id="filterForm" method="GET" action="{{ route('admin.case-notes.index') }}" class="screen-only group/form">
+    <div class="flex flex-col lg:flex-row gap-4">
+      {{-- Search --}}
+      <div class="relative flex-1 group">
+        <input
+          id="qInput"
+          type="text"
+          name="q"
+          value="{{ $q }}"
+          placeholder="Search student, counselor, or note text..."
+          autocomplete="off"
+          class="h-12 w-full rounded-2xl border-none bg-white px-11 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 transition-all duration-200 group-hover:ring-slate-300"
+        />
+        <svg class="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 group-hover:text-indigo-500 transition-colors duration-200"
+             viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <circle cx="11" cy="11" r="7" stroke-width="2.5"></circle>
+          <path d="M21 21l-4.3-4.3" stroke-width="2.5" stroke-linecap="round"></path>
+        </svg>
+
+        @if($q !== '')
+          <a href="{{ route('admin.case-notes.index', array_filter(['date'=>$dateKey,'from'=>$from,'to'=>$to,'source'=>$source])) }}"
+             class="absolute right-3 top-1/2 -translate-y-1/2 rounded-xl p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-all"
+             aria-label="Clear search">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </a>
+        @endif
+      </div>
+
+      {{-- Date Presets --}}
+      <div class="flex items-center gap-1.5 p-1 bg-white rounded-2xl ring-1 ring-slate-200 shadow-sm shrink-0 overflow-x-auto custom-scrollbar">
         @foreach($datePresets as $key => $label)
           @php $active = $dateKey === $key; @endphp
-          <button name="date" value="{{ $key }}"
-                  class="inline-flex items-center h-8 px-3 rounded-lg text-xs font-medium
-                         {{ $active ? 'bg-indigo-600 text-white shadow-sm'
-                                    : 'bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100' }}">
+          <button type="submit" name="date" value="{{ $key }}"
+                  class="h-10 px-4 rounded-xl text-[11px] font-black uppercase tracking-wider whitespace-nowrap transition-all duration-200
+                         {{ $active ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
+                                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900' }}">
             {{ $label }}
           </button>
         @endforeach
-        {{-- keep other params when switching date --}}
-        <input type="hidden" name="q" value="{{ $q }}">
-        @if($from)<input type="hidden" name="from" value="{{ $from }}">@endif
-        @if($to)<input type="hidden" name="to" value="{{ $to }}">@endif
-        @if($source)<input type="hidden" name="source" value="{{ $source }}">@endif
       </div>
 
-      {{-- Custom range & search row --}}
-      <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-        {{-- Custom range (only show when active) --}}
-        <div class="md:col-span-5 {{ $dateKey==='range' ? '' : 'opacity-60 pointer-events-none' }}">
-          <label class="block text-xs font-medium text-slate-600 mb-1">Custom range</label>
-          <div class="grid grid-cols-2 gap-2">
-            <input type="date" name="from" value="{{ $from }}"
-                   class="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-            <input type="date" name="to" value="{{ $to }}"
-                   class="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-          </div>
+      {{-- Custom Range (conditional) --}}
+      @if($dateKey === 'range')
+        <div class="flex items-center gap-2 p-1 bg-white rounded-2xl ring-1 ring-slate-200 shadow-sm shrink-0">
+          <input type="date" name="from" value="{{ $from }}" onchange="this.form.submit()"
+                 class="h-10 rounded-xl border-none text-[11px] font-bold text-slate-700 focus:ring-0 bg-transparent">
+          <span class="text-slate-300 font-bold text-xs">—</span>
+          <input type="date" name="to" value="{{ $to }}" onchange="this.form.submit()"
+                 class="h-10 rounded-xl border-none text-[11px] font-bold text-slate-700 focus:ring-0 bg-transparent">
         </div>
+      @endif
 
-        {{-- Search --}}
-        <div class="md:col-span-5">
-          <label class="block text-xs font-medium text-slate-600 mb-1">Search</label>
-          <div class="relative">
-            <input id="qInput" type="text" name="q" value="{{ $q }}" autocomplete="off"
-                   placeholder="Search student, counselor, or note text"
-                   class="w-full h-10 bg-white border border-slate-200 rounded-xl pl-10 pr-9 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"/>
-            <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
-                 viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <circle cx="11" cy="11" r="7" stroke-width="2"/>
-              <path d="M21 21l-4.3-4.3" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            @if($q!=='')
-              <a href="{{ route('admin.case-notes.index', array_filter(['date'=>$dateKey,'from'=>$from,'to'=>$to,'source'=>$source])) }}"
-                 class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" title="Clear">
-                ✕
-              </a>
-            @endif
-          </div>
-        </div>
-
-        {{-- Actions (Reset only, no Apply) --}}
-        <div class="md:col-span-2 flex items-end gap-2 justify-end">
-          <a href="{{ route('admin.case-notes.index') }}"
-             class="h-10 inline-flex items-center gap-2 rounded-xl bg-white px-4 text-slate-700 ring-1 ring-slate-200 shadow-sm hover:bg-slate-50 active:scale-[.99]">
-            Reset
-          </a>
-        </div>
+      {{-- Actions --}}
+      <div class="flex items-center gap-2 shrink-0">
+        <a href="{{ route('admin.case-notes.index') }}"
+           class="h-12 px-5 inline-flex items-center justify-center gap-2 rounded-2xl bg-white text-slate-600 border border-slate-200 text-xs font-black uppercase tracking-widest shadow-sm hover:bg-slate-50 active:scale-[.98] transition-all">
+          <svg class="w-4 h-4 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          <span>Reset</span>
+        </a>
       </div>
     </div>
   </form>
 
-  {{-- ======= Results table ======= --}}
-  <section id="case-print-root" class="space-y-2">
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/70 overflow-hidden">
-      <div class="relative overflow-x-auto">
-        <table class="min-w-full text-sm leading-6 table-auto">
-          <colgroup>
-            <col style="width:16%">
-            <col style="width:22%">
-            <col style="width:18%">
-            <col style="width:22%">
-            <col style="width:12%">  {{-- Source --}}
-            <col style="width:10%">
-            <col class="col-action" style="width:4%">
-          </colgroup>
-
-          <thead class="bg-slate-100 border-b border-slate-200 text-slate-700 sticky top-0 z-10">
-            <tr class="align-middle">
-              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">ID</th>
-               <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Source</th>
-              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Student Name</th>
-              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Counselor Name</th>
-              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Presenting Problem (snippet)</th>
-
-              <th class="px-6 py-3 text-left font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap">Date</th>
-              <th class="px-6 py-3 text-right font-semibold uppercase tracking-wide text-[11px] whitespace-nowrap col-action">Action</th>
+  {{-- ========= Modern Sticky Results Table ========= --}}
+  <section id="case-print-root" class="relative group/table" x-data="{ scrolled: false }" x-init="$el.querySelector('.panel-scroll').addEventListener('scroll', e => { scrolled = e.target.scrollTop > 10 })">
+    <div class="rounded-3xl bg-white border border-slate-200/60 shadow-xl shadow-slate-200/50 overflow-hidden transition-all duration-300 group-hover/table:shadow-slate-300/50">
+      <div class="panel-scroll relative overflow-x-auto max-h-[calc(100vh-320px)] custom-scrollbar">
+        <table class="w-full text-sm text-left border-separate border-spacing-0">
+          <thead class="sticky top-0 z-20 transition-all duration-300" :class="scrolled ? 'bg-indigo-50/95 backdrop-blur-md shadow-sm' : 'bg-indigo-50'">
+            <tr>
+              <th scope="col" class="px-6 py-4 text-[11px] font-black uppercase tracking-widest text-indigo-900/80 border-b-2 border-indigo-100 transition-all duration-300" :class="scrolled ? 'rounded-none' : 'rounded-tl-[1.4rem]'">ID</th>
+              <th scope="col" class="px-6 py-4 text-[11px] font-black uppercase tracking-widest text-indigo-900/80 border-b-2 border-indigo-100">Source</th>
+              <th scope="col" class="px-6 py-4 text-[11px] font-black uppercase tracking-widest text-indigo-900/80 border-b-2 border-indigo-100">Student Name</th>
+              <th scope="col" class="px-6 py-4 text-[11px] font-black uppercase tracking-widest text-indigo-900/80 border-b-2 border-indigo-100">Counselor Name</th>
+              <th scope="col" class="px-6 py-4 text-[11px] font-black uppercase tracking-widest text-indigo-900/80 border-b-2 border-indigo-100">Presenting Problem</th>
+              <th scope="col" class="px-6 py-4 text-[11px] font-black uppercase tracking-widest text-indigo-900/80 border-b-2 border-indigo-100">Date</th>
+              <th scope="col" class="px-6 py-4 text-[11px] font-black uppercase tracking-widest text-indigo-900/80 border-b-2 border-indigo-100 text-right pr-6 transition-all duration-300" :class="scrolled ? 'rounded-none' : 'rounded-tr-[1.4rem]'">Actions</th>
             </tr>
           </thead>
 
@@ -176,50 +156,63 @@
                 $studentName = $n->student_name_display ?? $n->student_name ?? '—';
                 $counselor   = $n->counselor_name ?? ('Counselor #' . ($n->counselor_id ?? '—'));
                 $date        = $n->note_date ? \Carbon\Carbon::parse($n->note_date)->format('M d, Y') : '—';
+                $rawSource   = $n->note_source ?? null;
               @endphp
-              <tr class="align-middle even:bg-slate-50 hover:bg-slate-100/60 transition">
-                <td class="px-6 py-4 font-semibold text-slate-900 whitespace-nowrap">{{ $code }}</td>
+              <tr class="group/row hover:bg-slate-50/80 transition-all duration-150">
+                <td class="px-6 py-5 whitespace-nowrap">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold ring-1 ring-inset ring-slate-200/60 group-hover/row:bg-white transition-colors">
+                    {{ $code }}
+                  </span>
                 </td>
 
-                  {{-- Source chip --}}
-                  @php
-                    // Safely read note_source even if it's missing
-                    $rawSource = isset($n->note_source) ? $n->note_source : null;
-                  @endphp
+                <td class="px-6 py-5 whitespace-nowrap">
+                  @if($rawSource === 'Walk-in')
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 text-[11px] font-bold border border-amber-100/50">
+                      <span class="size-1.5 rounded-full bg-amber-400"></span>
+                      Walk-in
+                    </span>
+                  @else
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-[11px] font-bold border border-indigo-100/50">
+                      <span class="size-1.5 rounded-full bg-indigo-400"></span>
+                      Scheduled
+                    </span>
+                  @endif
+                </td>
 
-                  <td class="px-6 py-4 whitespace-nowrap">
-                    @if($rawSource === 'Walk-in')
-                      <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 ring-1 ring-amber-200">
-                        Walk-in
-                      </span>
-                    @else
-                      <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200">
-                        Scheduled
-                      </span>
-                    @endif
-                  </td>
+                <td class="px-6 py-5 whitespace-nowrap">
+                  <div class="text-sm font-bold text-slate-700 group-hover/row:text-indigo-600 transition-colors">{{ $studentName }}</div>
+                </td>
 
+                <td class="px-6 py-5 whitespace-nowrap">
+                   <div class="text-[12px] font-semibold text-slate-600">{{ $counselor }}</div>
+                </td>
 
-                <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $studentName }}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $counselor }}</td>
                 <td class="px-6 py-4 whitespace-nowrap" title="{{ $n->presenting_problem ?? '' }}">
-                  {!! $chip($n->presenting_problem ?? '') !!}
-                
-                <td class="px-6 py-4 whitespace-nowrap text-slate-700">{{ $date }}</td>
-                <td class="px-6 py-4 text-right">
+                   <span class="inline-flex items-center px-2.5 py-1 rounded-lg bg-slate-50 text-slate-600 text-[11px] font-medium border border-slate-200/60 max-w-[200px] truncate group-hover/row:bg-white transition-colors">
+                      {{ Str::limit($n->presenting_problem ?? '—', 32) }}
+                   </span>
+                </td>
+
+                <td class="px-6 py-5 whitespace-nowrap">
+                  <div class="text-[12px] font-bold text-slate-500">{{ $date }}</div>
+                </td>
+
+                <td class="px-6 py-4 text-right pr-6">
                   <a href="{{ route('admin.case-notes.show', $n->id) }}"
-                     class="inline-flex items-center px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm">
-                    View
+                     class="inline-flex items-center justify-center gap-2 rounded-xl bg-white border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 hover:text-indigo-600 hover:border-indigo-200 shadow-sm transition-all duration-200 active:scale-95 group/btn">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                   </a>
                 </td>
               </tr>
             @empty
               <tr>
-                <td colspan="7" class="px-6 py-14">
-                  <div class="text-center">
-                    <div class="mx-auto mb-2 h-9 w-9 rounded-full bg-slate-100 ring-1 ring-slate-200 flex items-center justify-center text-slate-400">☰</div>
-                    <p class="text-slate-700 font-medium">No case notes found</p>
-                    <p class="text-slate-500 text-sm">Try adjusting the date filter or clearing the search.</p>
+                <td colspan="7" class="px-6 py-20">
+                  <div class="flex flex-col items-center justify-center text-center">
+                    <div class="w-16 h-16 rounded-3xl bg-slate-50 flex items-center justify-center text-slate-300 mb-4 border border-slate-100 shadow-inner">
+                      <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    </div>
+                    <p class="text-slate-800 font-black uppercase tracking-widest text-[11px]">No Case Records Found</p>
+                    <p class="text-slate-400 text-xs mt-1 font-medium">Try adjusting your filters or search keywords.</p>
                   </div>
                 </td>
               </tr>
@@ -229,9 +222,12 @@
       </div>
 
       @if(($notes instanceof \Illuminate\Contracts\Pagination\Paginator) && $notes->hasPages())
-        <div class="px-6 py-4 bg-slate-50 border-t border-slate-200/70 screen-only">
-          <div class="flex items-center justify-between text-sm text-slate-600">
-            <span>Showing {{ $notes->firstItem() }}–{{ $notes->lastItem() }} of {{ $notes->total() }}</span>
+        <div class="px-6 py-4 bg-slate-50/50 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p class="text-[11px] font-black uppercase tracking-widest text-slate-400">
+            Showing <span class="text-slate-700">{{ $notes->firstItem() }}</span>–<span class="text-slate-700">{{ $notes->lastItem() }}</span> 
+            of <span class="text-slate-700">{{ $notes->total() }}</span> Entries
+          </p>
+          <div class="modern-pagination">
             {{ $notes->withQueryString()->links() }}
           </div>
         </div>

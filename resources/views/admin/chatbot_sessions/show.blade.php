@@ -13,6 +13,8 @@
   $riskLogs                    = $riskLogs               ?? collect(); // Collection of risk change logs
   $lastRisk                    = $lastRisk               ?? null;      // last risk-change log
   $nextAppt                    = $nextAppt               ?? null;      // upcoming appointment (object)
+  $msgCount                    = $msgCount               ?? null;      // message count
+  $minsDur                     = $minsDur                ?? null;      // session duration
   $hasAnyActiveForStudent      = $hasAnyActiveForStudent ?? false;     // bool
   $hasCompletedForThisSession  = $hasCompletedForThisSession ?? false; // bool
 @endphp
@@ -72,10 +74,8 @@
 
   $studentName = trim($session->user->name ?? '') ?: 'Unknown Student';
 
-  // ---- Lightweight stats for KPI chips
-  try {
-    $msgCount = null; $minsDur = null; $lastAct = $session->updated_at;
-  } catch (\Throwable $e) { $msgCount=null; $minsDur=null; $lastAct=$session->updated_at; }
+  // ---- Lightweight stats for KPI chips (Safe initialization)
+  $lastAct = $session->updated_at;
 
   // ---- Latest high-risk trigger message (ONLY if controller passed it and not locked)
   if (!($sensitiveLocked ?? false)) {
@@ -514,75 +514,95 @@
       </div>
     </div>
 
-    {{-- Emotions Mentioned --}}
-    <div class="emo-card card rounded-2xl bg-white ring-1 ring-slate-200 p-3 md:p-4 lg:col-span-3">
-      <div class="flex items-center justify-between">
-        <h3 class="text-sm font-semibold text-slate-900">Detected Emotions</h3>
-        @if($total>0)
-          <span class="text-[11px] text-slate-500">{{ $total }} total</span>
-        @endif
-      </div>
+    {{-- Detect Emotions Card (Modernized) --}}
+    <div class="lg:col-span-3">
+      <div class="h-full rounded-3xl bg-white border border-slate-200/60 shadow-xl shadow-slate-200/40 overflow-hidden flex flex-col">
+        <div class="p-4 md:p-5 border-b border-slate-100 flex items-center justify-between">
+          <h3 class="text-[11px] font-black uppercase tracking-widest text-slate-400">Detected Emotions</h3>
+          @if($total > 0)
+            <span class="inline-flex items-center px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 text-[10px] font-black uppercase tracking-wider border border-indigo-100/50">
+              {{ $total }} total
+            </span>
+          @endif
+        </div>
 
-      @if($total === 0)
-        <div class="mt-2 text-sm text-slate-500">—</div>
-      @else
-        <ul class="mt-3 space-y-2">
-          @foreach($top as $k => $n)
-            @php
-              $pct = $total ? round($n * 100 / $total) : 0;
-              $label = ucfirst($k);
-            @endphp
-            <li>
-              <div class="flex items-center justify-between text-sm">
-                <span class="text-slate-700 truncate">{{ $label }}</span>
-                <span class="text-slate-500 text-xs">{{ $n }} • {{ $pct }}%</span>
+        <div class="p-4 md:p-5 flex-1 overflow-y-auto custom-scrollbar" style="max-height: 280px;">
+          @if($total === 0)
+            <div class="flex flex-col items-center justify-center h-full py-8 text-center">
+              <div class="w-10 h-10 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-300 mb-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
               </div>
-              <div class="mt-1 h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-                <div class="h-2 rounded-full"
-                     style="width: {{ $pct }}%; background: linear-gradient(90deg, rgba(99,102,241,.45), rgba(99,102,241,.85));"></div>
-              </div>
-            </li>
-          @endforeach
-        </ul>
-      @endif
+              <p class="text-sm font-medium text-slate-400 uppercase tracking-wide text-[10px]">No emotions detected</p>
+            </div>
+          @else
+            <ul class="space-y-4">
+              @foreach($top as $k => $n)
+                @php
+                  $pct = $total ? round($n * 100 / $total) : 0;
+                  $lbl = ucfirst($k);
+                  // Dynamic colors based on emotion
+                  $color = match(strtolower($k)) {
+                    'happiness','joy' => 'from-emerald-400 to-teal-500 shadow-emerald-500/20',
+                    'neutral','calm'   => 'from-slate-400 to-slate-500 shadow-slate-500/20',
+                    'sadness','grief' => 'from-blue-400 to-indigo-500 shadow-blue-500/20',
+                    'anger','frustration' => 'from-rose-400 to-red-500 shadow-rose-500/20',
+                    'anxiety','fear'    => 'from-amber-400 to-orange-500 shadow-amber-500/20',
+                    default             => 'from-indigo-400 to-violet-500 shadow-indigo-500/20'
+                  };
+                @endphp
+                <li class="group/emo">
+                  <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-xs font-bold text-slate-700 group-hover/emo:text-indigo-600 transition-colors">{{ $lbl }}</span>
+                    <span class="text-[10px] font-black text-slate-400 uppercase tracking-tighter">{{ $n }} • {{ $pct }}%</span>
+                  </div>
+                  <div class="h-2 w-full rounded-full bg-slate-100 ring-1 ring-inset ring-slate-200/50 overflow-hidden">
+                    <div class="h-full rounded-full bg-gradient-to-r {{ $color }} transition-all duration-1000 ease-out shadow-sm"
+                         style="width: {{ $pct }}%"></div>
+                  </div>
+                </li>
+              @endforeach
+            </ul>
+          @endif
+        </div>
+      </div>
     </div>
 
-    {{-- ROW 3: Session Counts --}}
-    <div class="lg:col-span-9 space-y-4">
-      <div id="sessionPrintable" class="space-y-4">
-        <div class="card relative rounded-2xl shadow-sm ring-1 ring-slate-200/70 overflow-hidden">
-          <div class="p-4 md:p-5">
-            <div class="flex flex-wrap items-center gap-2 justify-between">
-              <h3 class="text-base font-semibold text-slate-900">Session Counts</h3>
-              <div class="flex items-center gap-2 no-print">
-                <button id="calPrev"  class="inline-flex items-center rounded-lg px-3 py-1.5 text-sm ring-1 ring-slate-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">← Prev</button>
-                <button id="calToday" class="inline-flex items-center rounded-lg px-3 py-1.5 text-sm bg-indigo-600 text-white hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">Today</button>
-                <button id="calNext"  class="inline-flex items-center rounded-lg px-3 py-1.5 text-sm ring-1 ring-slate-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">Next →</button>
-              </div>
+    {{-- ROW 3: Session Counts (Modernized Calendar) --}}
+    <div class="lg:col-span-9">
+      <div class="rounded-3xl bg-white border border-slate-200/60 shadow-xl shadow-slate-200/40 overflow-hidden">
+        <div class="p-5 md:p-6">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 class="text-[11px] font-black uppercase tracking-widest text-slate-400">Weekly Activity</h3>
+              <div id="calRange" class="mt-1 text-sm font-bold text-slate-700" role="status" aria-live="polite">Loading...</div>
             </div>
+            
+            <div class="flex items-center gap-1.5 no-print p-1 bg-slate-50 rounded-2xl ring-1 ring-inset ring-slate-200/50">
+              <button id="calPrev" class="h-9 px-3 rounded-xl border border-slate-200/60 bg-white text-slate-600 font-bold text-xs hover:bg-slate-50 hover:text-indigo-600 transition-all shadow-sm">← Prev</button>
+              <button id="calToday" class="h-9 px-4 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition-all shadow-md shadow-indigo-500/20">Today</button>
+              <button id="calNext" class="h-9 px-3 rounded-xl border border-slate-200/60 bg-white text-slate-600 font-bold text-xs hover:bg-slate-50 hover:text-indigo-600 transition-all shadow-sm">Next →</button>
+            </div>
+          </div>
 
-            <div id="calRange" class="mt-1 text-sm text-slate-500" role="status" aria-live="polite"></div>
+          <div id="calSkeleton" class="mt-6 grid grid-cols-7 gap-3">
+            @for ($i=0; $i<7; $i++)
+              <div class="animate-pulse bg-slate-50 h-20 rounded-2xl ring-1 ring-slate-100"></div>
+            @endfor
+          </div>
 
-            <div id="calSkeleton" class="mt-3 grid grid-cols-7 gap-px">
-              @for ($i=0; $i<7; $i++)
-                <div class="animate-pulse bg-slate-100 h-14 rounded"></div>
+          <div class="mt-6 overflow-hidden border border-slate-100 rounded-3xl">
+            <div class="grid grid-cols-7 bg-indigo-50/50 text-[10px] font-black uppercase tracking-widest text-indigo-900/60 border-b border-indigo-100">
+              <div class="px-3 py-3 text-center">Sun</div><div class="px-3 py-3 text-center border-l border-indigo-100/50">Mon</div><div class="px-3 py-3 text-center border-l border-indigo-100/50">Tue</div>
+              <div class="px-3 py-3 text-center border-l border-indigo-100/50">Wed</div><div class="px-3 py-3 text-center border-l border-indigo-100/50">Thu</div><div class="px-3 py-3 text-center border-l border-indigo-100/50">Fri</div>
+              <div class="px-3 py-3 text-center border-l border-indigo-100/50">Sat</div>
+            </div>
+            <div class="grid grid-cols-7 divide-x divide-slate-100 text-center">
+              @for ($i = 0; $i < 7; $i++)
+                <div class="px-3 py-6 group hover:bg-indigo-50/30 transition-colors cursor-default">
+                  <div id="cnt{{ $i }}" class="text-xl md:text-2xl font-black text-slate-900 transition-all group-hover:scale-110 group-hover:text-indigo-600">0</div>
+                  <div class="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-indigo-400 transition-colors">Sessions</div>
+                </div>
               @endfor
-            </div>
-
-            <div class="mt-3 overflow-hidden rounded-xl ring-1 ring-slate-200/70">
-              <div class="grid grid-cols-7 bg-slate-50/60 text-xs font-medium uppercase tracking-wide text-slate-600">
-                <div class="px-3 py-2 text-center">Sun</div><div class="px-3 py-2 text-center">Mon</div><div class="px-3 py-2 text-center">Tue</div>
-                <div class="px-3 py-2 text-center">Wed</div><div class="px-3 py-2 text-center">Thu</div><div class="px-3 py-2 text-center">Fri</div>
-                <div class="px-3 py-2 text-center">Sat</div>
-              </div>
-              <div class="grid grid-cols-7 divide-x divide-slate-200/70 text-center">
-                @for ($i = 0; $i < 7; $i++)
-                  <div class="px-3 py-5 group">
-                    <div id="cnt{{ $i }}" class="text-lg md:text-xl font-semibold text-slate-900 transition-transform group-hover:scale-105">—</div>
-                    <div class="mt-0.5 text-xs text-slate-500">sessions</div>
-                  </div>
-                @endfor
-              </div>
             </div>
           </div>
         </div>
@@ -592,36 +612,57 @@
   </div>
 </div>
 
-{{-- ===== Risk history modal ===== --}}
-<div id="riskHistoryModal" class="fixed inset-0 z-[70] hidden items-center justify-center">
-  <div class="absolute inset-0 bg-black/30"></div>
-  <div class="relative z-[71] w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
-    <div class="flex items-center justify-between mb-3">
-      <h3 class="text-lg font-semibold text-slate-900">Risk change history</h3>
-      <button type="button" id="riskHistoryClose" class="rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">✕</button>
+{{-- ===== Risk history modal (Modernized) ===== --}}
+<div id="riskHistoryModal" class="fixed inset-0 z-[70] hidden items-center justify-center p-4">
+  <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]"></div>
+  <div class="relative z-[71] w-full max-w-2xl rounded-3xl bg-white p-6 md:p-8 shadow-2xl ring-1 ring-slate-200/60 overflow-hidden transform transition-all duration-300 scale-95 opacity-0" id="riskHistoryPanel">
+    <div class="flex items-center justify-between mb-6">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-sm border border-indigo-100/50">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+        <h3 class="text-xl font-black tracking-tight text-slate-900 uppercase tracking-widest text-[14px]">Risk Change History</h3>
+      </div>
+      <button type="button" id="riskHistoryClose" class="rounded-xl p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
     </div>
-    <div class="max-h-[60vh] overflow-auto">
+
+    <div class="max-h-[60vh] overflow-y-auto custom-scrollbar pr-2 -mr-2">
       @if(($riskLogs->count() ?? 0) === 0)
-        <div class="text-slate-500 text-sm">No changes recorded.</div>
+        <div class="flex flex-col items-center justify-center py-12 text-center text-slate-400">
+          <svg class="w-12 h-12 mb-3 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+          <p class="text-sm font-bold uppercase tracking-wider text-[11px]">No status changes recorded for this session</p>
+        </div>
       @else
-        <ul class="space-y-3">
+        <ul class="space-y-4">
           @foreach($riskLogs as $log)
-            <li class="rounded-xl ring-1 ring-slate-200 p-3">
-              <div class="text-sm">
-                <span class="font-medium">{{ ucfirst($log->from_level ?: '—') }}</span>
-                → <span class="font-semibold">{{ ucfirst($log->to_level) }}</span>
-                <span class="text-slate-500"> • {{ $log->created_at->format('M d, Y • h:i A') }}</span>
+            <li class="relative pl-6 before:absolute before:left-0 before:top-2 before:bottom-0 before:w-px before:bg-slate-100 last:before:display-none">
+              <div class="absolute left-[-4px] top-2 w-2 h-2 rounded-full bg-indigo-500 ring-4 ring-white"></div>
+              <div class="rounded-2xl border border-slate-200/60 bg-slate-50/30 p-4 shadow-sm hover:shadow-md transition-shadow">
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-2">
+                  <div class="flex items-center gap-2">
+                     <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">Transition:</span>
+                     <span class="inline-flex items-center px-2 py-0.5 rounded-lg bg-white border border-slate-200 text-[11px] font-bold text-slate-700">{{ ucfirst($log->from_level ?: 'Unset') }}</span>
+                     <svg class="w-3 h-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"/></svg>
+                     <span class="inline-flex items-center px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-100 text-[11px] font-black text-indigo-700 uppercase tracking-tight">{{ ucfirst($log->to_level) }}</span>
+                  </div>
+                  <span class="text-[10px] font-bold text-slate-400 italic">{{ $log->created_at->format('M d, Y • h:i A') }}</span>
+                </div>
+                @if($log->note)
+                  <blockquote class="text-[13px] text-slate-600 leading-relaxed border-l-2 border-indigo-500/20 pl-3 py-1 bg-white/50 rounded-r-lg">
+                    {{ $log->note }}
+                  </blockquote>
+                @endif
               </div>
-              @if($log->note)
-                <div class="mt-1 text-sm text-slate-700 whitespace-pre-wrap">{{ $log->note }}</div>
-              @endif
             </li>
           @endforeach
         </ul>
       @endif
     </div>
-    <div class="mt-4 text-right">
-      <button type="button" id="riskHistoryClose2" class="rounded-lg bg-slate-100 px-4 py-2 text-slate-700 hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">Close</button>
+
+    <div class="mt-8 flex justify-end">
+      <button type="button" id="riskHistoryClose2" class="h-11 px-6 rounded-2xl bg-white border-2 border-slate-100 text-slate-600 font-bold text-sm hover:bg-slate-50 hover:border-slate-200 transition-all shadow-sm active:scale-95">Dismiss</button>
     </div>
   </div>
 </div>
@@ -727,37 +768,41 @@
   </div>
 </div>
 
-{{-- ===== Sensitive unlock modal (second 2FA) ===== --}}
-<div id="hrModal" class="fixed inset-0 z-[75] hidden flex items-center justify-center" aria-hidden="true" role="dialog" aria-labelledby="hrTitle">
-  <div class="absolute inset-0 bg-slate-900/45 backdrop-blur-[2px] opacity-0 transition-opacity.duration-200"></div>
-<div class="relative z-[76] w-full max-w-md origin-center scale-95 opacity-0 translate-y-2
-              rounded-2xl bg-white shadow-xl ring-1 ring-slate-200 p-5 md:p-6 transition-all duration-200">
-
-    <div class="flex items-center justify-between">
-      <h3 id="hrTitle" class="text-base font-semibold text-slate-900">Confirm again to view sensitive content</h3>
-      <button type="button" id="hrClose" class="rounded-lg p-1 text-slate-500 hover:bg-slate-100">✕</button>
+{{-- ===== Sensitive unlock modal (Modernized) ===== --}}
+<div id="hrModal" class="fixed inset-0 z-[75] hidden flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-slate-900/45 backdrop-blur-[4px]"></div>
+  <div class="relative z-[76] w-full max-w-lg rounded-3xl bg-white p-6 md:p-8 shadow-2xl ring-1 ring-slate-200/60 overflow-hidden transform transition-all duration-300 scale-95 opacity-0" id="hrModalPanel">
+    
+    <div class="flex flex-col items-center text-center mb-8">
+      <div class="w-16 h-16 rounded-[2rem] bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-sm border border-indigo-100/50 mb-4 animate-pulse">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+      </div>
+      <h3 class="text-xl font-black tracking-tight text-slate-900 uppercase tracking-widest text-[14px]">Security Verification</h3>
+      <p class="text-sm font-bold text-slate-400 mt-2 leading-relaxed">High-risk messages require secondary authentication to view. Please enter your administrator PIN.</p>
     </div>
-    <form id="hrForm" class="mt-4 space-y-4" novalidate>
+
+    <form id="hrForm" class="space-y-6" novalidate>
       @csrf
       <div>
-        <label for="hrPassword" class="block text-sm font-medium text-slate-700">Password</label>
-        <div class="mt-1 relative">
-          <input id="hrPassword" name="password" type="password" autocomplete="current-password" required
-                 class="block w-full rounded-xl border border-slate-300 px-3 py-2.5 pr-10 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/60">
-          <button type="button" id="hrToggle" class="absolute inset-y-0 right-0 my-1 mr-1 rounded-lg px-2 hover:bg-slate-100">
-            <img id="hrEye" src="{{ asset('images/icons/eye.png') }}" class="h-5 w-5 opacity-80" alt="Show">
-          </button>
+        <div class="relative group/field">
+          <input type="password" id="hrPassword" name="password" 
+                 class="w-full h-14 rounded-2xl border-none bg-slate-50 ring-1 ring-slate-200 px-12 text-lg font-black text-slate-900 text-center tracking-[0.5em] shadow-inner focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all placeholder:text-slate-300 group-hover/field:ring-slate-300"
+                 placeholder="••••" required autofocus>
+          <div class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-hover/field:text-indigo-500 transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+          </div>
         </div>
-        <p id="hrErr" class="mt-2 text-sm text-rose-600 hidden"></p>
+        <div id="hrError" class="mt-3 hidden text-center text-[11px] font-black uppercase tracking-widest text-rose-500 bg-rose-50 py-2 rounded-xl border border-rose-100/50"></div>
       </div>
-      <div class="flex items-center justify-end gap-2">
-        <button type="button" id="hrCancel" class="rounded-xl px-3 py-2 ring-1 ring-slate-200 hover:bg-slate-50">Cancel</button>
-        <button type="submit" id="hrSubmit" class="inline-flex items-center gap-2 rounded-xl px-3 py-2 bg-indigo-600 text-white hover:bg-indigo-700">
+
+      <div class="flex items-center gap-3">
+        <button type="button" id="hrClose" class="flex-1 h-12 rounded-2xl border-2 border-slate-100 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-all shadow-sm">Cancel</button>
+        <button type="submit" id="hrSubmit" class="flex-[2] h-12 rounded-2xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 shadow-md shadow-indigo-500/20 active:scale-95 transition-all flex items-center justify-center gap-2">
           <svg id="hrSpin" class="hidden h-4 w-4 animate-spin" viewBox="0 0 24 24">
             <circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none"/>
             <path class="opacity-80" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v3a5 5 0 0 0-5 5H4z"/>
           </svg>
-          <span id="hrLabel">Confirm</span>
+          Verify & Unlock
         </button>
       </div>
     </form>
