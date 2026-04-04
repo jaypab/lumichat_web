@@ -22,7 +22,7 @@ class AppointmentController extends Controller
     /** how long after a slot we allow marking no-show (grace minutes after end) */
     private const NO_SHOW_GRACE_MIN = 30;
 
-    /** Resolve the counselor’s primary key used in tbl_appointments.counselor_id */
+    /** Resolve the counselorâ€™s primary key used in tbl_appointments.counselor_id */
     private function myCounselorId(): ?int
     {
         $uid = auth()->id();
@@ -62,7 +62,7 @@ class AppointmentController extends Controller
         $q = trim((string) $r->query('q', ''));
         $now = now();
 
-        // If this user isn’t linked to a counselor record, show an empty list + warning.
+        // If this user isnâ€™t linked to a counselor record, show an empty list + warning.
         if (!$cid) {
             $empty = new LengthAwarePaginator([], 0, 10, 1, [
                 'path' => url()->current(),
@@ -93,7 +93,7 @@ class AppointmentController extends Controller
 
         DB::table('tbl_appointments')
             ->where('counselor_id', $cid)
-            ->whereIn('status', ['pending', 'confirmed'])   // ✅ kasama na pending
+            ->whereIn('status', ['pending', 'confirmed'])   // âœ… kasama na pending
             ->where('scheduled_at', '<=', $autoCutoff)
             ->update([
                 'status' => 'no_show',
@@ -105,10 +105,10 @@ class AppointmentController extends Controller
             'a.scheduled_at',
             'a.created_at as booked_at',
             'a.status',
-            'a.appointment_source', // 👈 use this, not type
+            'a.appointment_source', // ðŸ‘ˆ use this, not type
         ];
 
-        $select[] = DB::raw("COALESCE(s.name,'—')  as student_name");
+        $select[] = DB::raw("COALESCE(s.name,'â€”')  as student_name");
         $select[] = DB::raw("COALESCE(s.email,'') as student_email");
 
         // counselor reassignment columns
@@ -167,7 +167,7 @@ class AppointmentController extends Controller
                     'a.scheduled_at as current_scheduled_at',
                     'a.appointment_source',
 
-                    DB::raw("COALESCE(s.name,'—')  as student_name"),
+                    DB::raw("COALESCE(s.name,'â€”')  as student_name"),
                     DB::raw("COALESCE(s.email,'') as student_email"),
 
                     'h.old_scheduled_at',
@@ -233,7 +233,8 @@ class AppointmentController extends Controller
             ->orderByRaw("CASE WHEN a.scheduled_at >= ? THEN a.scheduled_at END ASC", [$now])
             ->orderByRaw("CASE WHEN a.scheduled_at <  ? THEN a.scheduled_at END DESC", [$now]);
 
-        $appointments = $qrb->paginate(10)->withQueryString();
+        $appointments = $qrb->paginate(15);
+        $appointments->withQueryString();
 
         // ===== REASSIGNED HISTORY (read-only; still visible to past counselor) =====
         $reassignedAppointments = collect();
@@ -244,7 +245,7 @@ class AppointmentController extends Controller
                 'a.id',
                 'a.scheduled_at',
                 'a.created_at as booked_at',
-                DB::raw("COALESCE(s.name,'—')  as student_name"),
+                DB::raw("COALESCE(s.name,'â€”')  as student_name"),
                 DB::raw("COALESCE(s.email,'') as student_email"),
                 'h.status as history_status',
                 'h.changed_at',
@@ -265,8 +266,8 @@ class AppointmentController extends Controller
                     'a.id',
                     'a.scheduled_at',
                     'a.created_at as booked_at',
-                    'a.appointment_source', // 👈 add this
-                    DB::raw("COALESCE(s.name,'—')  as student_name"),
+                    'a.appointment_source', // ðŸ‘ˆ add this
+                    DB::raw("COALESCE(s.name,'â€”')  as student_name"),
                     DB::raw("COALESCE(s.email,'') as student_email"),
                     'h.status as history_status',
                     'h.changed_at',
@@ -302,7 +303,7 @@ class AppointmentController extends Controller
             ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
             ->select(
                 'a.*',
-                DB::raw("COALESCE(s.name,'—') as student_name"),
+                DB::raw("COALESCE(s.name,'â€”') as student_name"),
                 DB::raw("COALESCE(s.email,'') as student_email"),
                 DB::raw("
                     TRIM(
@@ -310,7 +311,7 @@ class AppointmentController extends Controller
                             COALESCE(s.course, ''),
                             CASE 
                                 WHEN s.course IS NOT NULL AND s.year_level IS NOT NULL 
-                                    THEN ' · ' 
+                                    THEN ' Â· ' 
                                 ELSE '' 
                             END,
                             COALESCE(s.year_level, '')
@@ -327,7 +328,7 @@ class AppointmentController extends Controller
             $now = now();
             $start = Carbon::parse($row->scheduled_at);
 
-            // After full slot length (STEP_MINUTES) → auto no_show
+            // After full slot length (STEP_MINUTES) â†’ auto no_show
             if ($now->gte($start->copy()->addMinutes(self::STEP_MINUTES))) {
                 DB::table('tbl_appointments')
                     ->where('id', $row->id)
@@ -352,7 +353,7 @@ class AppointmentController extends Controller
                 ->leftJoin('tbl_users as s', 's.id', '=', 'a.student_id')
                 ->select(
                     'a.*',
-                    DB::raw("COALESCE(s.name,'—') as student_name"),
+                    DB::raw("COALESCE(s.name,'â€”') as student_name"),
                     DB::raw("COALESCE(s.email,'') as student_email"),
                     DB::raw("
                         TRIM(
@@ -360,7 +361,7 @@ class AppointmentController extends Controller
                                 COALESCE(s.course, ''),
                                 CASE 
                                     WHEN s.course IS NOT NULL AND s.year_level IS NOT NULL 
-                                        THEN ' · ' 
+                                        THEN ' Â· ' 
                                     ELSE '' 
                                 END,
                                 COALESCE(s.year_level, '')
@@ -370,8 +371,8 @@ class AppointmentController extends Controller
                     'h.status as history_status',
                     'h.changed_at'
                 )
-                ->where('h.counselor_id', $cid)   // ✅ only this counselor
-                ->where('h.appointment_id', $id)  // ✅ only this appointment
+                ->where('h.counselor_id', $cid)   // âœ… only this counselor
+                ->where('h.appointment_id', $id)  // âœ… only this appointment
                 ->where('h.status', 'reassigned')
                 ->orderByDesc('h.changed_at')
                 ->first();
@@ -406,7 +407,7 @@ class AppointmentController extends Controller
             ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
             ->select(
                 'a.*',
-                DB::raw("COALESCE(s.name,'—') as student_name"),
+                DB::raw("COALESCE(s.name,'â€”') as student_name"),
                 DB::raw("COALESCE(s.email,'') as student_email"),
                 's.course as student_course',
                 'c.name as counselor_name',
@@ -416,7 +417,7 @@ class AppointmentController extends Controller
                     COALESCE(s.course, ''),
                     CASE 
                         WHEN s.course IS NOT NULL AND s.year_level IS NOT NULL 
-                            THEN ' · ' 
+                            THEN ' Â· ' 
                         ELSE '' 
                     END,
                     COALESCE(s.year_level, '')
@@ -430,12 +431,17 @@ class AppointmentController extends Controller
 
 
         $caseNote = \App\Models\CaseNote::where('appointment_id', $appointment->id)->first();
-        abort_unless($caseNote, 404);
+        abort_unless((bool)$caseNote, 404);
 
         // Optional logo embed (set to your actual path or null)
         $logoPath = public_path('images/chatbot.png');
         $logoData = file_exists($logoPath)
             ? 'data:image/png;base64,' . base64_encode(file_get_contents($logoPath))
+            : null;
+
+        $guidancePath = public_path('images/icons/guidance_logo.png');
+        $guidanceLogoData = file_exists($guidancePath)
+            ? 'data:image/png;base64,' . base64_encode(file_get_contents($guidancePath))
             : null;
 
         $pdf = app('dompdf.wrapper');
@@ -449,8 +455,9 @@ class AppointmentController extends Controller
         $pdf->loadView('Counselor_Interface.appointments.pdf-case-note', [
             'appointment' => $appointment,
             'note' => $caseNote,
-            'generatedAt' => now()->format('F d, Y · g:i A'),
+            'generatedAt' => now()->format('F d, Y Â· g:i A'),
             'logoData' => $logoData,
+            'guidanceLogoData' => $guidanceLogoData,
         ]);
 
         $filename = 'Case_Note_Appointment_' . $appointment->id . '.pdf';
@@ -525,11 +532,11 @@ class AppointmentController extends Controller
         $rules = [
             // Header
             'case_note.student_name' => ['required', 'string', 'max:255'],
-            'case_note.date' => ['required', 'date', 'before_or_equal:today'], // ✅ not future
+            'case_note.date' => ['required', 'date', 'before_or_equal:today'], // âœ… not future
             'case_note.program_year' => ['nullable', 'string', 'max:255'],
             'case_note.address' => ['nullable', 'string', 'max:255'],
 
-            // I–V
+            // Iâ€“V
             'case_note.presenting_problem' => ['required', 'string', 'max:4000'],
             'case_note.observations' => ['required', 'string', 'max:4000'],
             'case_note.interventions' => ['required', 'string', 'max:4000'],
@@ -539,7 +546,7 @@ class AppointmentController extends Controller
             // VI
             'case_note.emergency_contact_person' => ['required', 'string', 'max:255'],
             'case_note.emergency_relationship' => ['required', 'string', 'max:255'],
-            'case_note.emergency_contact_no' => ['required', 'regex:/^\+?\d{10,15}$/'], // ✅ phone format
+            'case_note.emergency_contact_no' => ['required', 'regex:/^\+?\d{10,15}$/'], // âœ… phone format
             'case_note.emergency_address' => ['required', 'string', 'max:255'],
         ];
 
@@ -547,7 +554,7 @@ class AppointmentController extends Controller
             'case_note.presenting_problem.required' => 'Presenting Problem is required.',
             'case_note.observations.required' => 'Observations is required.',
             'case_note.interventions.required' => 'Interventions is required.',
-            'case_note.response.required' => 'Student’s Response / Insight is required.',
+            'case_note.response.required' => 'Studentâ€™s Response / Insight is required.',
             'case_note.plan_followup.required' => 'Plan / Follow-Up is required.',
             'case_note.emergency_contact_person.required' => 'Emergency contact person is required.',
             'case_note.emergency_relationship.required' => 'Emergency relationship is required.',
@@ -556,8 +563,8 @@ class AppointmentController extends Controller
             'case_note.student_name.required' => 'Student name is required.',
             'case_note.date.required' => 'Date is required.',
 
-            // ✅ missing but needed
-            'case_note.emergency_contact_no.regex' => 'Enter a valid contact number (10–15 digits, optional + at the start).',
+            // âœ… missing but needed
+            'case_note.emergency_contact_no.regex' => 'Enter a valid contact number (10â€“15 digits, optional + at the start).',
             'case_note.date.date' => 'Date must be a valid calendar date.',
             'case_note.date.before_or_equal' => 'Date cannot be in the future.',
 
@@ -571,7 +578,7 @@ class AppointmentController extends Controller
             'case_note.*.max' => 'This field exceeds the allowed length.', // catch-all fallback
         ];
 
-        // 👉 Single validator, explicitly disable stop-on-first-failure
+        // ðŸ‘‰ Single validator, explicitly disable stop-on-first-failure
         $validator = \Validator::make($request->all(), $rules, $messages);
         $validator->stopOnFirstFailure(false);
         $validated = $validator->validate();
@@ -616,7 +623,7 @@ class AppointmentController extends Controller
         ]);
     }
 
-    /** POST /counselor/appointments/{id}/no-show — after grace */
+    /** POST /counselor/appointments/{id}/no-show â€” after grace */
     public function markNoShow(int $id)
     {
         $cid = $this->myCounselorId();
@@ -657,7 +664,7 @@ class AppointmentController extends Controller
         ]);
 
         $a = DB::table('tbl_appointments')->where('id', $id)->where('counselor_id', $cid)->first();
-        abort_unless($a, 404);
+        abort_unless((bool)$a, 404);
 
         if ($a->status !== 'completed') {
             return back()->with('swal', ['icon' => 'warning', 'title' => 'Not allowed', 'text' => 'You can save the diagnosis only for completed appointments.']);
@@ -712,7 +719,7 @@ class AppointmentController extends Controller
             ->where('id', $id)
             ->where('counselor_id', $cid)
             ->first();
-        abort_unless($ap, 404);
+        abort_unless((bool)$ap, 404);
 
         // Allow follow-up when appointment is Completed OR marked as No-Show
         if (!in_array($ap->status, ['completed', 'no_show'], true)) {
@@ -819,20 +826,20 @@ class AppointmentController extends Controller
             if ($studentEmail) {
                 $this->sendPlainEmail(
                     $studentEmail,
-                    'LumiCHAT — Follow-up Appointment Scheduled',
+                    'LumiCHAT â€” Follow-up Appointment Scheduled',
                     "Hi {$studentName},\n\n"
                     . "Your counselor has scheduled a follow-up guidance appointment for you:\n\n"
-                    . "📅 {$whenNice}\n\n"
+                    . "ðŸ“… {$whenNice}\n\n"
                     . "Please log in to LumiCHAT to review the details. If this time does not work for you, "
                     . "coordinate with your counselor or guidance office.\n\n"
-                    . "We’re here to support you."
+                    . "Weâ€™re here to support you."
                 );
             }
 
             if ($counselorEmail) {
                 $this->sendPlainEmail(
                     $counselorEmail,
-                    'LumiCHAT — Follow-up Appointment Confirmed',
+                    'LumiCHAT â€” Follow-up Appointment Confirmed',
                     "Hi {$counselorName},\n\n"
                     . "You created a follow-up appointment for {$studentName} scheduled on {$whenNice}.\n"
                     . "You can view the appointment details in your LumiCHAT counselor dashboard.\n"
@@ -855,7 +862,7 @@ class AppointmentController extends Controller
             ]);
     }
 
-    /** Ensure a date falls Mon–Fri (Sun->Mon 9:00, Sat->Mon 9:00). */
+    /** Ensure a date falls Monâ€“Fri (Sun->Mon 9:00, Sat->Mon 9:00). */
     private function nextWeekdayMonToFri(Carbon $dt): Carbon
     {
         $dow = (int) $dt->dayOfWeek; // 0 Sun .. 6 Sat
@@ -866,7 +873,7 @@ class AppointmentController extends Controller
         return $dt;
     }
 
-    /** Optional: counselor’s single appointment PDF */
+    /** Optional: counselorâ€™s single appointment PDF */
     public function exportShowPdf(Request $request, int $id)
     {
         $cid = $this->myCounselorId();
@@ -878,7 +885,7 @@ class AppointmentController extends Controller
             ->leftJoin('tbl_counselors as c', 'c.id', '=', 'a.counselor_id')
             ->select(
                 'a.*',
-                DB::raw("COALESCE(s.name,'—') as student_name"),
+                DB::raw("COALESCE(s.name,'â€”') as student_name"),
                 DB::raw("COALESCE(s.email,'') as student_email"),
                 's.course as student_course',
                 'c.name as counselor_name',
@@ -888,7 +895,7 @@ class AppointmentController extends Controller
                     COALESCE(s.course, ''),
                     CASE 
                         WHEN s.course IS NOT NULL AND s.year_level IS NOT NULL 
-                            THEN ' · ' 
+                            THEN ' Â· ' 
                         ELSE '' 
                     END,
                     COALESCE(s.year_level, '')
@@ -911,6 +918,11 @@ class AppointmentController extends Controller
             ? 'data:image/png;base64,' . base64_encode(file_get_contents($logoPath))
             : null;
 
+        $guidancePath = public_path('images/icons/guidance_logo.png');
+        $guidanceLogoData = file_exists($guidancePath)
+            ? 'data:image/png;base64,' . base64_encode(file_get_contents($guidancePath))
+            : null;
+
         $pdf = app('dompdf.wrapper');
         $pdf->setPaper('a4', 'portrait');
         $pdf->setOptions([
@@ -923,8 +935,9 @@ class AppointmentController extends Controller
 
         $data = [
             'appointment' => $appointment,
-            'generatedAt' => now()->format('F d, Y · g:i A'),
+            'generatedAt' => now()->format('F d, Y Â· g:i A'),
             'logoData' => $logoData,
+            'guidanceLogoData' => $guidanceLogoData,
         ];
 
         if ($caseNote) {
@@ -962,7 +975,7 @@ class AppointmentController extends Controller
                 'a.scheduled_at',
                 'a.created_at as booked_at',
                 'a.status',
-                DB::raw("COALESCE(s.name,'—') as student_name"),
+                DB::raw("COALESCE(s.name,'â€”') as student_name"),
             ]);
 
         if ($status !== 'all') {
@@ -1001,6 +1014,11 @@ class AppointmentController extends Controller
             ? 'data:image/png;base64,' . base64_encode(file_get_contents($logoPath))
             : null;
 
+        $guidancePath = public_path('images/icons/guidance_logo.png');
+        $guidanceLogoData = file_exists($guidancePath)
+            ? 'data:image/png;base64,' . base64_encode(file_get_contents($guidancePath))
+            : null;
+
         $pdf = app('dompdf.wrapper');
         $pdf->setPaper('a4', 'landscape'); // Landscape for better table fit
         $pdf->setOptions([
@@ -1018,6 +1036,7 @@ class AppointmentController extends Controller
             'q' => $q,
             'generatedAt' => now()->format('Y-m-d H:i'),
             'logoData' => $logoData,
+            'guidanceLogoData' => $guidanceLogoData,
         ]);
 
         $filename = 'Counselor_Appointments_' . now()->format('Ymd_His') . '.pdf';
@@ -1035,12 +1054,12 @@ class AppointmentController extends Controller
             ->first();
         abort_unless($appt, 404);
 
-        // 🔒 Walk-in appointments are managed from the Walk-in page only.
+        // ðŸ”’ Walk-in appointments are managed from the Walk-in page only.
         $source = strtolower((string) ($appt->appointment_source ?? ''));
         if (in_array($source, ['walk_in', 'walk-in', 'walk in'], true)) {
             return back()->withErrors(
                 'Walk-in sessions are already completed from the Walk-in Case Note page. ' .
-                'You don’t need to use Start/End here.'
+                'You donâ€™t need to use Start/End here.'
             );
         }
 
@@ -1048,7 +1067,7 @@ class AppointmentController extends Controller
         $startAt = Carbon::parse($appt->scheduled_at);
         $graceMin = 10;
 
-        // ✅ FIX: read the action from the request
+        // âœ… FIX: read the action from the request
         $action = (string) $request->input('action', '');
         $allowed = ['confirm', 'start', 'done', 'no_show'];
         if (!in_array($action, $allowed, true)) {
@@ -1079,7 +1098,7 @@ class AppointmentController extends Controller
             }
             DB::table('tbl_appointments')->where('id', $id)->update([
                 'status' => 'ongoing',
-                // 'started_at' => $now,   // ❌ remove (column doesn't exist)
+                // 'started_at' => $now,   // âŒ remove (column doesn't exist)
                 'updated_at' => $now,
             ]);
             return back()->with('swal', ['title' => 'Session started', 'text' => 'Status set to Ongoing.']);
@@ -1094,7 +1113,7 @@ class AppointmentController extends Controller
             }
             DB::table('tbl_appointments')->where('id', $id)->update([
                 'status' => 'completed',
-                // 'ended_at'   => $now,   // ❌ remove
+                // 'ended_at'   => $now,   // âŒ remove
                 'updated_at' => $now,
             ]);
             return back()->with('swal', ['title' => 'Completed', 'text' => 'Appointment marked as Completed.']);
@@ -1111,7 +1130,7 @@ class AppointmentController extends Controller
             return back()->with('swal', ['title' => 'Marked No-Show', 'text' => 'Student marked as No-Show.']);
         }
 
-        // Fallback (shouldn’t hit)
+        // Fallback (shouldnâ€™t hit)
         return back();
     }
 
@@ -1119,7 +1138,7 @@ class AppointmentController extends Controller
     {
         $cid = $this->myCounselorId();
 
-        // Keep UI happy: never 404—return reasons.
+        // Keep UI happy: never 404â€”return reasons.
         if (!$cid) {
             return response()->json(['reason' => 'not_counselor']);
         }
@@ -1235,7 +1254,7 @@ class AppointmentController extends Controller
         return DB::table('tbl_counselor_availabilities')
             ->where('counselor_id', $cid)
             ->whereNull('date')
-            ->where('weekday', $isoDow) // 🔑 ISO alignment
+            ->where('weekday', $isoDow) // ðŸ”‘ ISO alignment
             ->orderBy('start_time')
             ->get(['start_time', 'end_time', 'slot_type']);
     }
@@ -1307,9 +1326,9 @@ class AppointmentController extends Controller
             ], 422);
         }
 
-        // ✅ Gamitin ang tamang table at column
-        //   – table: tbl_users
-        //   – column: name (hindi student_name)
+        // âœ… Gamitin ang tamang table at column
+        //   â€“ table: tbl_users
+        //   â€“ column: name (hindi student_name)
         $studentQuery = DB::table('tbl_users')
             ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
 
@@ -1323,7 +1342,7 @@ class AppointmentController extends Controller
         if (!$student) {
             return response()->json([
                 'ok' => false,
-                'message' => 'This student is not yet registered. Please add them in Admin ▸ Students first, then record the walk-in.',
+                'message' => 'This student is not yet registered. Please add them in Admin â–¸ Students first, then record the walk-in.',
             ]);
         }
 

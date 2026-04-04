@@ -114,9 +114,29 @@
       font-weight: 700;
       border: 1px solid transparent;
     }
+
+    /* Sealed Watermark */
+    #watermark {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 650px;
+      height: 650px;
+      margin-top: -325px;
+      margin-left: -325px;
+      z-index: -1000;
+      opacity: 0.12;
+    }
   </style>
 </head>
 <body>
+
+  {{-- Sealed Watermark --}}
+  @if(!empty($guidanceLogoData))
+    <div id="watermark">
+      <img src="{{ $guidanceLogoData }}" style="width: 100%;">
+    </div>
+  @endif
 
   {{-- Brand --}}
   <div class="brandbar">
