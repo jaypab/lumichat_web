@@ -45,9 +45,9 @@ class ChatbotSessionRepository implements ChatbotSessionRepositoryInterface
 
     /** -------- Admin index: search + date + sort + pagination -------- */
 
-    public function paginateWithFilters(string $q = '', string $dateKey = 'all', int $perPage = 10, string $sort = 'newest'): LengthAwarePaginator
+    public function paginateWithFilters(string $q = '', string $dateKey = 'all', int $perPage = 10, string $sort = 'newest', string $only = 'all'): LengthAwarePaginator
     {
-        $query = $this->baseFilteredQuery($q, $dateKey);
+        $query = $this->baseFilteredQuery($q, $dateKey, $only);
         $this->applySort($query, $sort);
 
         return $query->paginate($perPage)->withQueryString();
@@ -55,9 +55,9 @@ class ChatbotSessionRepository implements ChatbotSessionRepositoryInterface
 
     /** -------- Export (same filters + sort, no pagination) -------- */
 
-    public function allWithFilters(string $q = '', string $dateKey = 'all', string $sort = 'newest'): Collection
+    public function allWithFilters(string $q = '', string $dateKey = 'all', string $sort = 'newest', string $only = 'all'): Collection
     {
-        $query = $this->baseFilteredQuery($q, $dateKey);
+        $query = $this->baseFilteredQuery($q, $dateKey, $only);
         $this->applySort($query, $sort);
 
         return $query->get();
@@ -95,7 +95,7 @@ class ChatbotSessionRepository implements ChatbotSessionRepositoryInterface
 
     /** -------- Private helpers -------- */
 
-    private function baseFilteredQuery(string $q, string $dateKey): Builder
+    private function baseFilteredQuery(string $q, string $dateKey, string $only = 'all'): Builder
     {
         $query = ChatSession::query()->with('user');
 
@@ -123,6 +123,27 @@ class ChatbotSessionRepository implements ChatbotSessionRepositoryInterface
         // relative date filters
         $this->applyDateKeyFilter($query, $dateKey);
 
+        // specific filters (e.g. only=high)
+        $this->applyOnlyFilter($query, $only);
+
+        return $query;
+    }
+
+    private function applyOnlyFilter(Builder $query, string $only): Builder
+    {
+        if ($only === 'high') {
+            $query->where(function (Builder $sub) {
+                $parts = [];
+                if (Schema::hasColumn('chat_sessions', 'risk_level')) {
+                    $parts[] = "LOWER(COALESCE(risk_level,'')) IN ('high','high-risk','high_risk')";
+                }
+                if (Schema::hasColumn('chat_sessions', 'risk_score')) {
+                    $parts[] = "COALESCE(risk_score,0) >= 80";
+                }
+                $cond = $parts ? implode(' OR ', $parts) : '0';
+                $sub->whereRaw("({$cond})");
+            });
+        }
         return $query;
     }
 

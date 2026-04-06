@@ -194,8 +194,9 @@ public function index(Request $r): View
     $q       = (string) $r->query('q', '');
     $dateKey = (string) $r->query('date', 'all');
     $sort    = (string) $r->query('sort', 'newest');
+    $only    = (string) $r->query('only', 'all');
 
-    $sessions = $this->sessions->paginateWithFilters($q, $dateKey, self::PER_PAGE, $sort);
+    $sessions = $this->sessions->paginateWithFilters($q, $dateKey, self::PER_PAGE, $sort, $only);
 
     // Build “handled/cleared after this session” maps for the page
     $pageSessions = collect($sessions->items());
@@ -277,6 +278,7 @@ public function index(Request $r): View
         'handledAfter' => $handledAfter,
         'clearedAfter' => $clearedAfter,
         'sort'         => $sort,
+        'only'         => $only,
     ]);
 }
 
@@ -949,11 +951,12 @@ if (!$bookNow && $slot->lte(now())) {
         $dateReq = (string) $request->input('date', self::DATE_KEY_ALL);
         $dateKey = in_array($dateReq, self::DATE_KEYS, true) ? $dateReq : self::DATE_KEY_ALL;
         $sort    = (string) $request->input('sort', 'newest');
+        $only    = (string) $request->input('only', 'all');
 
         $rows = method_exists($this->sessions, 'allWithFilters')
-            ? $this->sessions->allWithFilters($q, $dateKey, $sort)
-            : (function () use ($q, $dateKey, $sort) {
-                $p = $this->sessions->paginateWithFilters($q, $dateKey, PHP_INT_MAX, $sort);
+            ? $this->sessions->allWithFilters($q, $dateKey, $sort, $only)
+            : (function () use ($q, $dateKey, $sort, $only) {
+                $p = $this->sessions->paginateWithFilters($q, $dateKey, PHP_INT_MAX, $sort, $only);
                 return method_exists($p, 'items') ? collect($p->items()) : collect($p);
             })();
 

@@ -6,6 +6,7 @@
   $q       = $q ?? request('q', '');
   $dateKey = $dateKey ?? request('date','all');
   $sort    = $sort ?? request('sort','newest');
+  $only    = $only ?? request('only','all');
   $total   = method_exists($sessions,'total') ? $sessions->total() : $sessions->count();
 
   // keep existing query params while swapping one key
@@ -32,13 +33,20 @@
     </div>
 
     <div class="flex items-center gap-3">
-      <a href="{{ route('admin.chatbot-sessions.export.pdf', request()->only('date','q','sort')) }}"
+      <a href="{{ route('admin.chatbot-sessions.export.pdf', request()->only('date','q','sort','only')) }}"
          target="_blank" rel="noopener"
          class="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 text-white px-4 py-2.5 text-sm font-bold shadow-sm shadow-indigo-500/20 hover:bg-indigo-700 active:scale-[.98] transition-all duration-200">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M7 10l5 5 5-5M12 15V3M5 19h14a2 2 0 002-2v-2H3v2a2 2 0 002 2z"/>
         </svg>
         Download CSV/PDF
+      </a>
+      
+      {{-- NEW: High Risk Toggle --}}
+      <a href="{{ route('admin.chatbot-sessions.index', keepq(['only' => ($only === 'high' ? 'all' : 'high'), 'page' => ''])) }}"
+         class="inline-flex items-center justify-center gap-2 rounded-xl transition-all duration-200 px-4 py-2.5 text-sm font-bold shadow-sm whitespace-nowrap {{ $only === 'high' ? 'bg-rose-100 text-rose-700 ring-1 ring-rose-200 active:scale-[.98]' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-rose-50 hover:text-rose-600 active:scale-[.98]' }}">
+        <img src="{{ asset('images/icons/alert.png') }}" class="w-4 h-4 {{ $only === 'high' ? '' : 'grayscale opacity-60' }}" alt="">
+        {{ $only === 'high' ? 'Showing High Risk' : 'Filter High Risk' }}
       </a>
     </div>
   </header>
@@ -98,6 +106,8 @@
         </svg>
         Reset Filter
       </a>
+      
+      <input type="hidden" name="only" value="{{ $only }}">
     </div>
   </form>
 
@@ -189,9 +199,13 @@
               <td class="px-6 py-5 whitespace-nowrap">
                 <div class="flex items-center gap-3">
                   <div class="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center font-black text-slate-500 text-[10px] shadow-sm transform group-hover:scale-105 transition-transform">
-                    {{ \Illuminate\Support\Str::of($s->user->name)->explode(' ')->map(fn($p)=>mb_substr($p,0,1))->take(2)->join('') }}
+                    @if($s->user)
+                      {{ \Illuminate\Support\Str::of($s->user->name)->explode(' ')->map(fn($p)=>mb_substr($p,0,1))->take(2)->join('') }}
+                    @else
+                      AN
+                    @endif
                   </div>
-                  <span class="font-bold text-slate-700">{{ $s->user->name ?? '—' }}</span>
+                  <span class="font-bold text-slate-700">{{ $s->user->name ?? 'Anonymous' }}</span>
                 </div>
               </td>
 
