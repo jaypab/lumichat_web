@@ -18,16 +18,22 @@ class RasaClient
     {
         $url = rtrim($this->baseUrl, '/') . $this->restPath;
 
-        $res = Http::timeout(8)->post($url, [
-            'sender'  => $senderId,
-            'message' => $message,
-        ]);
+        try {
+            $res = Http::timeout(5)->post($url, [
+                'sender'  => $senderId,
+                'message' => $message,
+            ]);
 
-        if (!$res->ok()) {
-            return [[ 'text' => 'Sorry, the assistant is temporarily unavailable. Please try again shortly.' ]];
+            if ($res->ok()) {
+                return $res->json() ?? [];
+            }
+        } catch (\Exception $e) {
+            \Log::error('[RASA_CLIENT] Communication failed', ['error' => $e->getMessage()]);
         }
 
-        // Rasa returns an array of messages: [{text: "..."} ...]
-        return $res->json() ?? [];
+        // Return a safe, hardcoded fallback if Rasa is unreachable
+        return [[ 
+            'text' => "I apologize, Earl. I'm having a little trouble connecting to my full engine right now, but I'm still here for you. Is there something specific on your mind?" 
+        ]];
     }
 }

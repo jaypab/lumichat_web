@@ -470,12 +470,17 @@ if ($nonMental && !$unreadable) {
 
     // ===== 5) Flow control (venting, coping, Rasa) – ONLY MENTAL CONTENT REACHES HERE =====
     $botReplies = [];
+    $callRasa   = false;
     $rasaUrl    = $this->rasaWebhookUrl();
 
     $ventKey   = 'vent_turns_for_session_'.$sessionId;
     $ventTurns = (int) session($ventKey, 0);
-
     $lastIntent = $this->lastBotIntent($sessionId);
+
+    // 🔁 Session-level stats for smarter context
+    $modKey        = 'moderate_hits_for_session_'.$sessionId;
+    $moderateHits  = (int) session($modKey, 0);
+    $autoCopingTrigger = ($moderateHits > 0 && $moderateHits % 5 === 0);
 
     $askedForAppt =
         ($flags['wants_appointment'] ?? false)
@@ -486,73 +491,35 @@ if ($nonMental && !$unreadable) {
         $msgRisk = 'high';
     }
 
-    $bypass           = $this->shouldBypassVenting_EN($norm, $msgRisk, $flags);
-    $inEmotionalRange = ($msgRisk !== 'low') || !empty($labels);
-    $inVentWindow     = $inEmotionalRange && ($ventTurns < 3) && !$bypass;
+    if ($msgRisk === 'moderate') {
+        session([$modKey => $moderateHits + 1]);
+    }
 
-    // 🔍 DEBUG: Track venting flow decision
-    \Log::info('[VENT_FLOW] Session state', [
-        'session_id' => $sessionId,
-        'user_id' => $userId,
-        'vent_turns' => $ventTurns,
-        'msg_risk' => $msgRisk,
-        'labels' => $labels,
-        'bypass' => $bypass,
-        'in_emotional_range' => $inEmotionalRange,
-        'in_vent_window' => $inVentWindow,
-        'flags' => $flags,
-        'message_preview' => \Illuminate\Support\Str::limit($analysisText, 60),
-    ]);
-
-    // Session-level stats for smarter context
+    // --- Prepare Metadata & Flow Stats ---
     $sessionEmotionCounts = $this->emotionsAsCounts($session->emotions ?? []);
-    $sessionUserMsgCount  = Chat::where('chat_session_id', $sessionId)
-        ->where('sender', 'user')
-        ->count();
-
-    // Coping throttle (anti-spam)
+    $sessionUserMsgCount  = Chat::where('chat_session_id', $sessionId)->where('sender', 'user')->count();
+    
+    // Coping throttle
     $copingThrottleKey = 'coping_last_offer_'.$sessionId;
     $copingCooldownSec = 300;
     $nowEpoch          = time();
     $canOfferCoping    = !session()->has($copingThrottleKey)
         || ($nowEpoch - (int) session($copingThrottleKey, 0) >= $copingCooldownSec);
 
-    // High-level message type (for Rasa + analytics)
+    // High-level message type
     $messageType = 'other';
+    if ($unreadable) { $messageType = 'unreadable'; }
+    elseif ($msgRisk === 'high') { $messageType = 'crisis'; }
+    elseif ($askedForAppt) { $messageType = 'appointment_request'; }
+    elseif (($flags['wants_coping'] ?? false) || ($autoCopingTrigger ?? false)) { $messageType = 'coping_request'; }
 
-    if ($unreadable) {
-        $messageType = 'unreadable';
-    } elseif ($selfThreat || $msgRisk === 'high') {
-        $messageType = 'crisis';
-    } elseif ($askedForAppt) {
-        $messageType = 'appointment_request';
-    } elseif (($flags['wants_coping'] ?? false) || $autoCopingTrigger) {
-        $messageType = 'coping_request';
-    } elseif ($inVentWindow) {
+    $trajectory = $this->analyzeTrajectory($session, $msgRisk, $sessionEmotionCounts, $sessionUserMsgCount);
+    $bypass = $this->shouldBypassVenting_EN($norm, $msgRisk, $flags);
+    $inEmotionalRange = ($msgRisk !== 'low') || !empty($labels);
+    $inVentWindow = $inEmotionalRange && ($ventTurns < 3) && !$bypass;
+    $conversationStage = $this->detectConversationStage($session, $msgRisk, $flags, $sessionUserMsgCount, $askedForAppt, $inVentWindow);
 
-        $messageType = 'emotional_vent';
-    } elseif ($flags['is_question'] ?? false) {
-        $messageType = 'question';
-    }
-
-        // Conversation trajectory + stage for smarter policies
-    $trajectory = $this->analyzeTrajectory(
-        $session,
-        $msgRisk,
-        $sessionEmotionCounts,
-        $sessionUserMsgCount
-    );
-
-    $conversationStage = $this->detectConversationStage(
-        $session,
-        $msgRisk,
-        $flags,
-        $sessionUserMsgCount,
-        $askedForAppt,
-        $inVentWindow
-    );
-
-    // Build metadata (richer for Rasa policies)
+    // Build metadata for Rasa policies
     $metadata = [
         'lumichat' => [
             'session_id' => $sessionId,
@@ -568,22 +535,18 @@ if ($nonMental && !$unreadable) {
                 'scores'      => $scores,
             ],
             'session'    => [
-                'stage'              => $conversationStage,      // opening / exploration / coping / crisis / closing / etc.
-                'trajectory'         => $trajectory,             // rising_risk / stable_low / persistent_high / etc.
+                'stage'              => $conversationStage,
+                'trajectory'         => $trajectory,
                 'overall_risk'       => $session->risk_level ?: 'low',
-                'topic_summary'      => $session->topic_summary,
                 'emotion_counts'     => $sessionEmotionCounts,
                 'user_message_count' => $sessionUserMsgCount,
                 'vent_turns'         => $ventTurns,
-                'in_vent_window'     => $inVentWindow,
-                'non_mental_topic'   => false,                   // only mental messages reach here
                 'asked_for_appt'     => $askedForAppt,
             ],
-            'analysis'   => [
-                'emotions'        => $labels,
-                'intents'         => $flags,
-                'scores'          => $scores,
-                'last_bot_intent' => $lastIntent,
+            'analysis' => [
+                'emotions' => $labels,
+                'intents'  => $flags,
+                'scores'   => $scores,
             ],
         ],
         'user' => [
@@ -593,168 +556,86 @@ if ($nonMental && !$unreadable) {
         ],
     ];
 
+    // 🚨 EMERGENCY BYPASS: High risk immediately receives hotlines
+    if ($msgRisk === 'high' && !$askedForAppt) {
+        $botReplies = $this->crisisResponse($first);
+        \Log::info('[CRISIS_FLOW] Triggered crisis response', ['session_id' => $sessionId, 'user' => $first]);
+    } else {
+        if ($unreadable) {
+            $botReplies[] = [
+                'text'    => "I’m not sure I understood that, {USER_FIRST}. Could you say it in a simpler or clearer way so I can support you better?",
+            ];
+        } elseif (($flags['refused_to_share'] ?? false)) {
+            $botReplies[] = ['text' => "It’s completely okay if you’re not ready to share right now, {USER_FIRST}. You’re not alone here, and there’s no pressure."];
+            $botReplies[] = [
+                'text'    => "If it would help to talk later, you’re always welcome to come back. You can also book time with a school counselor here: {APPOINTMENT_LINK}",
+                'buttons' => [['title' => 'Book counselor', 'payload' => '{APPOINTMENT_LINK}']],
+            ];
+        } elseif ($inVentWindow && !$askedForAppt) {
+            $stage = max(1, min(3, $ventTurns + 1));
+            $memory = $this->sessionService->getMemory($sessionId);
+            $previousTopic = $this->sessionService->getPrimaryTopic($memory);
+            $topic = $this->nluService->extractTopic($norm, $previousTopic, $memory);
+            $keywords = $this->nluService->extractKeyPhrases($norm);
+            
+            $replyText = $this->responseService->buildMemoryAwareResponse($first, $norm, $labels, $topic, $keywords, $stage, $memory);
+            $this->sessionService->updateMemory($sessionId, $topic, $keywords, $labels, $replyText);
+            
+            $botReplies[] = ['text' => $replyText];
+            session([$ventKey => $ventTurns + 1]);
+        } elseif ($ventTurns >= 3 && !$askedForAppt) {
+            // 🏁 Transition: Venting is done → offer coping or counseling
+            $botReplies[] = ['text' => "I hear you, {$first}, and I’m really glad you’re sharing this with me. Since we’ve been talking for a bit, I want to make sure you have some practical support too."];
+            $botReplies[] = [
+                'text'    => "Would you like to try some coping tips together, or would you prefer to book a time to talk with a school counselor? {APPOINTMENT_LINK}",
+                'buttons' => [
+                    ['title' => 'Coping tips',   'payload' => '/offer_coping'],
+                    ['title' => 'Book counselor', 'payload' => '{APPOINTMENT_LINK}'],
+                ],
+            ];
+            $this->logActivity('transition_offered', 'Offered coping/counseling after venting', $sessionId);
+        } elseif (
+            ($intent === '/offer_coping') || ($flags['wants_coping'] ?? false) || (($flags['yes'] ?? false) && $lastIntent === 'offer_coping') || ($autoCopingTrigger ?? false)
+        ) {
+            $botReplies = $this->generateCopingResponse($first);
+            session(['chat_stage' => 'coping']);
+            // Clear venting history to save memory/CPU
+            session()->forget([$ventKey, 'venting_active', 'venting_history']);
+            $this->logActivity('coping_started', 'User started coping tips flow', $sessionId);
+        } else {
+            $callRasa = true;
+        }
 
+        if ($callRasa) {
+            $rasaUrl = $this->rasaWebhookUrl();
+            $timeout = (int) config('services.rasa.timeout', 8);
+            $verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
 
-    // ===== 6) Branching + deciding if we call Rasa =====
-    $callRasa    = false;
-    $rasaMessage = $text;
+            try {
+                $r = Http::timeout($timeout)
+                    ->withOptions(['verify' => $verify])
+                    ->post($rasaUrl, [
+                        'sender'   => 'u_' . $userId . '_s_' . $sessionId,
+                        'message'  => $text,
+                        'metadata' => $metadata,
+                    ]);
 
-    if ($flags['done'] ?? false) {
-        $ventKey = 'vent_turns_for_session_'.$sessionId;
-        session([$ventKey => 0]);
-
-        $botReplies[] = [
-            'text'    => "Thank you for sharing with me today, {USER_FIRST}. If you ever want to talk again or try more coping tools, you can just send another message and we’ll continue from there.",
-            'buttons' => [],
-        ];
-        $botReplies[] = [
-            'text'    => "And if at any point you’d like to talk to a school counselor in person, you can book an appointment here:",
-            'buttons' => [
-                ['title' => 'Book counselor', 'payload' => '{APPOINTMENT_LINK}'],
-            ],
-        ];
-    } elseif ($unreadable) {
-        $botReplies[] = [
-            'text'    => "I’m not sure I understood that, {USER_FIRST}. Could you say it in a simpler or clearer way so I can support you better?",
-            'buttons' => [],
-        ];
-    } elseif (($flags['refused_to_share'] ?? false)) {
-        $supportLine = "It’s completely okay if you’re not ready to share right now, {USER_FIRST}. You’re not alone here, and there’s no pressure.";
-        $ctaReply    = "If it would help to talk later, you’re always welcome to come back. You can also book time with a school counselor here: {APPOINTMENT_LINK}";
-
-        $botReplies[] = ['text' => $supportLine, 'buttons' => []];
-        $botReplies[] = [
-            'text'    => $ctaReply,
-            'buttons' => [
-                ['title' => 'Book counselor', 'payload' => '{APPOINTMENT_LINK}'],
-            ],
-        ];
-    } elseif ($inVentWindow && !$askedForAppt && $msgRisk !== 'high') {
-        // 🔍 DEBUG: Venting branch taken
-        \Log::info('[VENT_FLOW] Taking VENTING branch', [
-            'session_id' => $sessionId,
-            'stage' => $ventTurns + 1,
-            'in_vent_window' => $inVentWindow,
-            'asked_for_appt' => $askedForAppt,
-            'msg_risk' => $msgRisk,
-        ]);
-        
-        $stage = max(1, min(3, $ventTurns + 1));
-        
-        // ✅ Get conversation memory FIRST for context
-        $memory = $this->sessionService->getMemory($sessionId);
-        $previousTopic = $this->sessionService->getPrimaryTopic($memory);
-        
-        // ✅ Extract context from user input with memory context
-        $topic = $this->nluService->extractTopic($norm, $previousTopic, $memory);
-        $keywords = $this->nluService->extractKeyPhrases($norm);
-        
-        // ✅ Build memory-aware response (references previous turns)
-        $replyText = $this->responseService->buildMemoryAwareResponse(
-            $first,
-            $norm,
-            $labels,
-            $topic,
-            $keywords,
-            $stage,
-            $memory
-        );
-        
-        // ✅ Update conversation memory AFTER generating response
-        $this->sessionService->updateMemory(
-            $sessionId,
-            $topic,
-            $keywords,
-            $labels,
-            $replyText  // Store the question we asked
-        );
-        
-        $botReplies[] = ['text' => $replyText, 'buttons' => []];
-        session([$ventKey => $ventTurns + 1]);
-        
-        \Log::info('[VENT_FLOW] Venting response generated', [
-            'session_id' => $sessionId,
-            'new_vent_turns' => $ventTurns + 1,
-            'topic' => $topic,
-        ]);
-   } elseif (
-    (
-        ($flags['wants_coping'] ?? false)
-        || (($flags['yes'] ?? false) && $lastIntent === 'offer_coping')
-        || $autoCopingTrigger   // 👈 every 5th moderate hit
-    )
-    && $canOfferCoping
-) {
-    // we're explicitly going into coping flow
-    \Log::info('[VENT_FLOW] Taking COPING branch', [
-        'session_id' => $sessionId,
-        'wants_coping' => $flags['wants_coping'] ?? false,
-        'auto_coping_trigger' => $autoCopingTrigger,
-        'moderate_hits' => $moderateHits,
-    ]);
-    
-    session([$copingThrottleKey => $nowEpoch]);
-    $callRasa = true;
-} else {
-    // 🔍 DEBUG: Default Rasa branch
-    \Log::info('[VENT_FLOW] Taking DEFAULT RASA branch', [
-        'session_id' => $sessionId,
-        'reason' => 'No venting/coping conditions met',
-        'in_vent_window' => $inVentWindow,
-        'vent_turns' => $ventTurns,
-        'bypass' => $bypass,
-        'msg_risk' => $msgRisk,
-    ]);
-    
-    $callRasa = true;
-}
-
-    // ===== 6.a) If needed, call Rasa now and append replies =====
-    if ($callRasa) {
-        $timeout = (int) config('services.rasa.timeout', (int) env('RASA_TIMEOUT', 8));
-        $verify  = filter_var(env('RASA_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
-
-        try {
-            $r = Http::timeout($timeout)
-                ->withOptions(['verify' => $verify])
-                ->withHeaders(['Accept' => 'application/json'])
-                ->post($rasaUrl, [
-                    'sender'   => 'u_' . $userId . '_s_' . $sessionId,
-                    'message'  => $rasaMessage,
-                    'metadata' => $metadata,
-                ]);
-
-            if ($r->ok()) {
-                $payload = $r->json() ?? [];
-                foreach ($payload as $piece) {
-                    if (is_array($piece)) {
-                        $txt = isset($piece['text']) ? (string) $piece['text'] : '';
-                        $btn = (isset($piece['buttons']) && is_array($piece['buttons'])) ? $piece['buttons'] : [];
-                        if ($txt !== '' || !empty($btn)) {
-                            $botReplies[] = ['text' => $txt, 'buttons' => $btn];
-                        }
-                    } else {
-                        $txt = trim((string) $piece);
-                        if ($txt !== '') {
-                            $botReplies[] = ['text' => $txt, 'buttons' => []];
+                if ($r->ok()) {
+                    foreach ($r->json() ?? [] as $piece) {
+                        if (is_array($piece)) {
+                            $txt = $piece['text'] ?? '';
+                            $btn = $piece['buttons'] ?? [];
+                            if ($txt !== '' || !empty($btn)) {
+                                $botReplies[] = ['text' => $txt, 'buttons' => $btn];
+                            }
                         }
                     }
                 }
-            }
-       } catch (\Throwable $e) {
-        $botReplies = [[
-            'text' => $this->fallbackSupportLine(),
-        ]];
+            } catch (\Throwable $e) {}
+        }
     }
 
-    if (empty($botReplies)) {
-        $botReplies = [[
-            'text' => $this->fallbackSupportLine(),
-        ]];
-    }
-    }
-
-    // ===== 7) Risk elevation logging (only for mental messages) =====
+    // ===== 7) Risk elevation logging =====
     $current = $session->risk_level ?: 'low';
     $order   = ['low' => 0, 'moderate' => 1, 'high' => 2];
     $new     = ($order[$msgRisk] > $order[$current]) ? $msgRisk : $current;
@@ -773,7 +654,7 @@ if ($nonMental && !$unreadable) {
         $this->logActivity('crisis_prompt', 'Crisis context sent to Rasa', $sessionId, null);
     }
 
-    // ===== 7.5) Appointment CTA injection (only if not already present) =====
+    // ===== 7.5) Appointment CTA injection =====
     $askedForAppt = $askedForAppt || $this->confirmedAfterOffer($analysisText, $sessionId);
     $hasApptPlaceholder = false;
     foreach ($botReplies as $rpl) {
@@ -782,45 +663,41 @@ if ($nonMental && !$unreadable) {
         }
     }
 
-    // ===== 8) Build appointment link + save bot replies (with name personalization) =====
+    // ===== 8) Build appointment link + save bot replies =====
     $link = \Illuminate\Support\Facades\Route::has('features.enable_appointment')
         ? \Illuminate\Support\Facades\URL::signedRoute('features.enable_appointment')
         : (\Illuminate\Support\Facades\Route::has('appointment.index') ? route('appointment.index') : url('/appointment'));
-
     $ctaHtml = '<a href="' . e($link) . '">Book an appointment</a>';
-
     $botPayload = [];
+
+    if (empty($botReplies)) {
+        $botReplies = [['text' => $this->fallbackSupportLine()]];
+    }
+
     foreach ($botReplies as $replyObj) {
         $replyText = (string) ($replyObj['text'] ?? '');
         $replyBtns = (isset($replyObj['buttons']) && is_array($replyObj['buttons'])) ? $replyObj['buttons'] : [];
 
         if (str_contains($replyText, '{APPOINTMENT_LINK}')) {
             $replyText = str_replace('{APPOINTMENT_LINK}', $ctaHtml, $replyText);
-                
         }
-
-        $safeName  = e($name);
-        $safeFirst = e($first);
         $replyText = str_replace(
             ['{USER_NAME}', '{USER_FIRST}', '{USER}', '{NAME}'],
-            [$safeName,     $safeFirst,     $safeFirst, $safeName],
+            [e($name), e($first), e($first), e($name)],
             $replyText
         );
-        // 💜 Add emotional tone based on the student’s current message
-            $replyText = $this->applyEmotionTone($replyText, $norm, $labels, $msgRisk);
-
+        $replyText = $this->applyEmotionTone($replyText, $norm, $labels, $msgRisk);
 
         $normalizedBtns = [];
         foreach ($replyBtns as $b) {
             $title   = (string)($b['title'] ?? 'Open');
             $payload = $b['payload'] ?? null;
             $url     = $b['url'] ?? null;
-
             if (is_string($payload) && trim($payload) === '{APPOINTMENT_LINK}') {
                 $normalizedBtns[] = ['title' => $title, 'url' => $link];
             } else {
                 $one = ['title' => $title];
-                if ($url)     $one['url'] = $url;
+                if ($url) $one['url'] = $url;
                 if ($payload) $one['payload'] = $payload;
                 $normalizedBtns[] = $one;
             }
@@ -833,7 +710,6 @@ if ($nonMental && !$unreadable) {
             'message'         => Crypt::encryptString($replyText),
             'sent_at'         => now(),
         ]);
-
         $botPayload[] = [
             'id'         => $bot->id,
             'text'       => $replyText,
@@ -1119,6 +995,9 @@ if ($nonMental && !$unreadable) {
     /** Core normalization + typo softening (English only). */
     private function nluNormalize(string $raw): string
     {
+        // Safety: Limit processing to 1000 characters to prevent backtracking CPU spikes
+        $raw = mb_substr($raw, 0, 1000);
+        
         $s = preg_replace('/[\p{Cf}\p{Cc}\x{200B}\x{200C}\x{200D}\x{2060}\x{FEFF}]/u','',$raw) ?? '';
         $s = str_replace(["\r","\n","\t"], ' ', $s);
         // leetspeak & common swaps
@@ -1194,218 +1073,178 @@ private function hasAnyWordExact(string $text, array $terms): bool
     /** Regex builder allowing spaces/hyphens between words and minor letter swaps. */
     private function flex(string $phrase): string
     {
-        // kill myself -> k[i1]ll\s*my\s*self
+        // kill myself -> k[i1!|]ll\s*my\s*s[e3]lf
         $letters = [
-            'a'=>'[a@4]','e'=>'[e3]','i'=>'[i1!]','o'=>'[o0]','s'=>'[s5$]','t'=>'[t7]','l'=>'[l1]',
-            // keep others as is
+            'a' => '[a@4]', 'e' => '[e3]', 'i' => '[i1!|]', 'o' => '[o0]',
+            's' => '[s5$]', 't' => '[t7]', 'l' => '[l1]',
         ];
-        $out = preg_replace_callback('/[a-z]/i', fn($m)=>($letters[strtolower($m[0])]??$m[0]), $phrase);
+        $out = preg_replace_callback('/[a-z]/i', fn($m) => ($letters[strtolower($m[0])] ?? $m[0]), $phrase);
         $out = preg_replace('/\s+/', '\s*[- ]?\s*', $out);
         return $out;
     }
 
-/** Rich risk assessment with typo/slang + EN / Taglish coverage. */
-private function assessRisk(string $raw): array
-{
-    $t = $this->nluNormalize($raw);
+    /** Rich risk assessment with typo/slang + EN / Taglish coverage. */
+    /** Rich risk assessment with typo/slang + EN / Taglish coverage. */
+    private function assessRisk(string $raw): array
+    {
+        $t = $this->nluNormalize($raw);
 
-    // -----------------------------------------------------------------
-    // 0) Negation shield – “I don’t want to die / hurt myself”
-    //    We don’t want this to instantly flag as HIGH if they’re
-    //    explicitly saying they *don’t* want to.
-    // -----------------------------------------------------------------
-    $negationShield = false;
-
-    // English
-    if (preg_match(
-        '/\bi\s*(don\'?t|do\s+not)\s*(want|plan|intend)\s*to\s*'
-        .'(die|kill myself|hurt myself|end my life|harm myself)\b/u',
-        $t
-    )) {
-        $negationShield = true;
-    }
-
-    // Tagalog / Taglish
-    if (preg_match(
-        '/\bayoko(?:ng)?\s+(mamatay|masaktan\s+ang\s+sarili|magpakamatay|mawala)\b/u',
-        $t
-    )) {
-        $negationShield = true;
-    }
-
-    // -----------------------------------------------------------------
-    // 1) Slang / shorthand that directly implies self-harm/suicide
-    // -----------------------------------------------------------------
-    $slangHigh = [
-        'kms',                 // kill myself
-        'kys',                 // kill yourself / kill yourself (still critical)
-        'end it', 'end it all',
-        'unalive',
-        'i can\'t go on', 'cant go on', 'can\'t go on',
-        'no reason to live', 'nothing to live for',
-        'life is pointless', 'life is meaningless',
-
-       
-    ];
-
-    foreach ($slangHigh as $s) {
-        if (preg_match('/\b'.$this->flex($s).'\b/u', $t)) {
-            return [
-                'level' => $negationShield ? 'moderate' : 'high',
-                'hits'  => [$s],
-            ];
+        // -----------------------------------------------------------------
+        // 0) Negation shield – “I don’t want to die”
+        // -----------------------------------------------------------------
+        $negationShield = false;
+        if (preg_match('/\bi\s*(don\'?t|do\s+not)\s*(want|plan|intend)\s*to\s*(die|kill myself|hurt myself|end my life|harm myself)\b/u', $t)) {
+            $negationShield = true;
         }
-    }
-
-    // -----------------------------------------------------------------
-    // 2) Explicit HIGH phrases (methods, direct self-harm)
-    // -----------------------------------------------------------------
-    $highPhrases = [
-        // English – direct self-harm / suicide
-        'kill myself', 'kill my self',
-        'commit suicide', 'sui cide', 'suicide', 'sucide', 'suicde', 'suiside',
-        'end my life', 'end myl ife',
-        'i want to die', 'i wanna die', 'i plan to die', 'i am going to die',
-        'wish i was dead', 'wish i were dead',
-        'overdose', 'overdosing',
-        'hang myself', 'hang my self',
-        'jump off a bridge', 'jump off the bridge',
-        'jump off a building', 'jump off the building',
-        'jump in front of a bus', 'jump in front of a train',
-        'slit my wrist', 'slit my wrists',
-        'cut my wrists', 'cut my wrist',
-        'self harm', 'self-harm', 'hurt myself on purpose',
-
-        // “Kill me” variants – still treat as critical in this context
-        'someone kill me', 'pls kill me', 'please kill me',
-
-        // Filipino / Taglish explicit phrases
-        'magpakamatay na lang ako',
-        'papatayin ko ang sarili ko', 'papatayin ko sarili ko',
-        'saktan ang sarili ko', 'saktan ko ang sarili ko',
-        'hiwain ang pulsuhan ko', 'hiwain ko ang pulsuhan ko', 'hiwain ko ang pulso ko',
-        'tumalon sa tulay', 'tumalon sa building', 'tumalon sa bubong',
-        'tatalon ako sa tulay', 'tatalon ako sa building', 'tatalon ako sa bubong',
-    ];
-
-    foreach ($highPhrases as $p) {
-        if (preg_match('/\b'.$this->flex($p).'\b/u', $t)) {
-            return [
-                'level' => $negationShield ? 'moderate' : 'high',
-                'hits'  => [$p],
-            ];
+        if (preg_match('/\bayoko(?:ng)?\s+(mamatay|masaktan\s+ang\s+sarili|magpakamatay|mawala)\b/u', $t)) {
+            $negationShield = true;
         }
-    }
-    // -----------------------------------------------------------------
-// 2.5) Standalone "die" / "mamatay" etc. in emotional/personal context
-// -----------------------------------------------------------------
-$criticalActs = ['die', 'mamatay', 'magpakamatay'];
 
-if (!$negationShield && $this->hasAnyWordExact($t, $criticalActs)) {
-    // Any first-person / self reference
-    $hasSelf = (bool) preg_match(
-        '/\b(i|im|i\'m|ive|i\'ve|me|my|mine|myself|ako|ko|akin)\b/u',
-        $t
-    );
-
-    // Emotional / context words that make "die" clearly about the self
-    $hasEmotionContext = $this->hasAnyWord($t, [
-        'sad','down','tired','hopeless','lonely','empty','numb',
-        'pointless','meaningless','worthless','useless','burden',
-        'hurt','hurting','pain','scared','afraid',
-        // also allow "positive" framing like "smile" → still a death wish
-        'smile','happy','peaceful','okay','ok',
-    ]);
-
-    // Very short lines like "die with a smile", "just die", etc.
-    $isShort = mb_strlen($t) <= 30;
-
-    if ($hasSelf || $hasEmotionContext || $isShort) {
-        return [
-            'level' => $negationShield ? 'moderate' : 'high',
-            'hits'  => ['die_direct'],
+        // -----------------------------------------------------------------
+        // 1) High Risk Trigger Phrases
+        // -----------------------------------------------------------------
+        $highPhrases = [
+            // Slang / Shorthand
+            'kms', 'kys', 'end it', 'unalive', 
+            'i can\'t go on', 'cant go on', 'no reason to live', 'nothing to live for',
+            'life is pointless', 'life is meaningless',
+            
+            // Explicit English
+            'kill myself', 'kill my self', 'commit suicide', 'suicide', 'end my life', 'i want to die', 'i wanna die', 
+            'wish i was dead', 'wish i were dead', 'overdose', 'hang myself', 'slit my wrist',
+            'jump off a bridge', 'jump off a building', 'self harm', 'hurt myself on purpose',
+            'someone kill me', 'pls kill me',
+            
+            // Filipino / Taglish
+            'magpakamatay na lang ako', 'papatayin ko ang sarili ko', 'saktan ang sarili ko',
+            'hiwain ang pulsuhan ko', 'tumalon sa tulay', 'tatalon ako sa building',
+            'gusto na ko mamatay', 'maghikog', 'wala na ko paglaum', 'tapuson na nako tanan',
+            'mmtay nako'
         ];
+
+        foreach ($highPhrases as $p) {
+            // Speed optimization: check if phrase exists before running regex
+            if (stripos($t, $p) !== false || preg_match('/\b' . $this->flex($p) . '\b/iu', $t)) {
+                return [
+                    'level' => $negationShield ? 'moderate' : 'high',
+                    'hits'  => [$p],
+                ];
+            }
+        }
+
+        // Special case for "die" with punctuation or short trailing text
+        if (!$negationShield && (stripos($t, 'die') !== false)) {
+            if (preg_match('/\bi\s*(?:just\s*)?(?:wanna|want\s*to)?\s*die\b/iu', $t)) {
+                return ['level' => 'high', 'hits' => ['i_die_direct']];
+            }
+        }
+
+        // -----------------------------------------------------------------
+        // 2) Contextual "die" check
+        // -----------------------------------------------------------------
+        $criticalActs = ['die', 'mamatay', 'magpakamatay'];
+        if (!$negationShield && $this->hasAnyWordExact($t, $criticalActs)) {
+            $hasSelf = (bool) preg_match('/\b(i|im|i\'m|ive|i\'ve|me|my|mine|myself|ako|ko|akin)\b/u', $t);
+            $hasEmotionContext = $this->hasAnyWord($t, [
+                'sad','down','tired','hopeless','lonely','empty','numb','pointless','worthless','hurt','pain','scared'
+            ]);
+            $isShort = mb_strlen($t) <= 35;
+            
+            if ($hasSelf || $hasEmotionContext || $isShort) {
+                return ['level' => 'high', 'hits' => ['critical_act_personal']];
+            }
+        }
+
+        // -----------------------------------------------------------------
+        // 3) Intent + Act Proximity check (OPTIMIZED distance check)
+        // -----------------------------------------------------------------
+        $intentWords = ['wanna','want','plan','planning','think','thinking','feel','feel like','should','will','might','need','tryna','trying','balak','plano','gusto'];
+        $actWords    = ['suicide','die','unalive','kill','myself','self','end','overdose','hang','jump','cut','harm','mamatay','magpakamatay','saktan'];
+        
+        $tWords = explode(' ', $t);
+        $foundIntent = -1;
+        $foundAct = -1;
+
+        foreach ($tWords as $idx => $word) {
+            $word = trim($word, ".,!?");
+            if ($foundIntent === -1 && in_array($word, $intentWords)) $foundIntent = $idx;
+            if ($foundAct === -1 && in_array($word, $actWords)) $foundAct = $idx;
+            
+            if ($foundIntent !== -1 && $foundAct !== -1) {
+                if (abs($foundIntent - $foundAct) <= 8) {
+                    return [
+                        'level' => $negationShield ? 'moderate' : 'high',
+                        'hits'  => ['intent_act_proximity']
+                    ];
+                }
+            }
+        }
+
+        // -----------------------------------------------------------------
+        // 4) Moderate Risk
+        // -----------------------------------------------------------------
+        $moderate = [
+            'i hate myself', 'worthless', 'i am a burden', 
+            'i want to disappear', 'i wanna disappear', 'dont want to exist', 
+            'i wish i never existed', 'i wish i wasn\'t here',
+            'feel like dying', 'give up on life', 'tired of everything', 'done with everything',
+            'pagod na ako', 'ayoko na', 'sawa na ako',
+            'depressed', 'anxiety', 'panic', 'overwhelmed', 'burnout',
+            'i am not okay', 'im not ok', 'i am not fine'
+        ];
+
+        foreach ($moderate as $p) {
+            if (stripos($t, $p) !== false || preg_match('/\b' . $this->flex($p) . '\b/iu', $t)) {
+                return ['level' => 'moderate', 'hits' => [$p]];
+            }
+        }
+
+        return ['level' => 'low', 'hits' => []];
     }
-}
 
-
-    // -----------------------------------------------------------------
-    // 3) Intent + act within proximity (~8 tokens), both orders
-    // -----------------------------------------------------------------
-    $intent = '(wanna|want|plan|planning|think|thinking|feel like|should|will|might|need|tryna|trying|balak|plano|gusto ko)';
-    $act    = '('
-        .'suic(?:ide|de|e)'
-        .'|die'
-        .'|unalive'
-        .'|kill\s*my\s*self'
-        .'|end\s*my\s*life'
-        .'|end\s*it'
-        .'|overdose'
-        .'|hang'
-        .'|jump'
-        .'|cut'
-        .'|self[- ]?harm'
-        .'|hurt\s*my\s*self'
-        .'|magpakamatay'
-        .'|mamatay'
-        .'|saktan\s+ang\s+sarili'
-        .'|maglaslas'
-    .')';
-
-    if (
-        preg_match('/\b'.$intent.'\b(?:\W+\w+){0,8}\b'.$act.'\b/iu', $t)
-        || preg_match('/\b'.$act.'\b(?:\W+\w+){0,8}\b'.$intent.'\b/iu', $t)
-    ) {
+    /** Immediate crisis response with hotlines and counselor link. */
+    private function crisisResponse(string $first): array
+    {
+        $hName  = config('services.hotline_name', '988 Suicide & Crisis Lifeline');
+        $hPhone = config('services.hotline_phone', '988');
+        $hText  = config('services.hotline_text', 'Text HOME to 741741');
+        
         return [
-            'level' => $negationShield ? 'moderate' : 'high',
-            'hits'  => ['intent+act'],
+            [
+                'text' => "I am very concerned about what you’re telling me, {$first}. Please know that you are not alone and there is support available for you right now.",
+                'buttons' => []
+            ],
+            [
+                'text' => "If you are in immediate danger, please reach out to: \n- **{$hName}**: Call or Text **{$hPhone}** \n- {$hText}",
+                'buttons' => []
+            ],
+            [
+                'text' => "You can also talk to a school counselor in person. We can help you find a safe space to talk.",
+                'buttons' => [
+                    ['title' => 'Talk to a Counselor', 'payload' => '{APPOINTMENT_LINK}']
+                ]
+            ]
         ];
     }
 
-    // -----------------------------------------------------------------
-    // 4) MODERATE – expanded hopeless / self-hatred set
-    // -----------------------------------------------------------------
-    $moderate = [
-        // Self-hatred / worthlessness
-        'i hate myself', 'i hat myself', 'i hte myself',
-        'i am worthless', 'worthles', 'worthless', 'useless', 'i am a burden', 'burdn',
-        'i\'m a burden', 'im a burden', 'feeling like a burden',
 
-        // Disappearing / not existing
-        'i want to disappear', 'i wanna disappear',
-        'i dont want to exist', 'i don\'t want to exist',
-        'i wish i never existed', 'i wish i wasn\'t here',
-
-        // “Done with life” / “tapos na ako” style
-        'feel like dying', 'feel lik dyin',
-        'give up on life', 'i give up on life', 'i want to give up',
-        'tired of everything', 'done with everything',
-        'pagod na ako sa lahat', 'pagod na ako', 'sobra na pagod ko',
-        'ayoko na', 'sawa na ako', 'sawang sawa na ako',
-
-        // Strong depressive / anxiety words
-        'overwhelmed', 'overwhelm',
-        'burnout', 'burn out', 'burned out',
-        'panic', 'anxiety', 'anxious',
-        'depressed', 'depressd', 'depresed', 'deprssd', 'deprsd',
-
-        // Not okay / low-functioning
-        'i am not okay', 'im not ok', 'i\'m not ok', 'im not okay', 'i\'m not okay',
-        'not okey', 'not ok',
-        'i am not okey', 'i am not fine', 'im not fine', 'i\'m not fine',
-    ];
-
-    foreach ($moderate as $p) {
-        if (preg_match('/\b'.$this->flex($p).'\b/u', $t)) {
-            return ['level' => 'moderate', 'hits' => [$p]];
+        /** Generates structured coping tips for the user. */
+        private function generateCopingResponse(string $first): array
+        {
+            return [
+                [
+                    'text' => "I understand you're going through a lot, {$first}. Here are some coping techniques we can try together to help you find some calm:",
+                    'buttons' => []
+                ],
+                [
+                    'text' => "✨ **1. Butterfly Hug**\nCross your arms over your chest and hook your thumbs. Slowly alternate tapping your hands on your shoulders (like butterfly wings). Breathe slowly while doing this.\n\n🌊 **2. 5-4-3-2-1 Grounding**\nObserve your surroundings and name:\n- 5 things you see\n- 4 things you can touch\n- 3 things you hear\n- 2 things you can smell\n- 1 thing you can taste\n\n🌬️ **3. Square Breathing**\nInhale for 4 seconds, hold for 4, exhale for 4, and hold for 4. Repeat until your heart rate slows down.",
+                    'buttons' => [
+                        ['title' => 'Talk to a Counselor', 'payload' => '{APPOINTMENT_LINK}'],
+                        ['title' => 'Maybe later', 'payload' => 'exit_chat']
+                    ]
+                ]
+            ];
         }
-    }
-
-    // -----------------------------------------------------------------
-    // 5) Default
-    // -----------------------------------------------------------------
-    return ['level' => 'low', 'hits' => []];
-}
 
     /** Broad emotion tagging (with misspellings, synonyms, and key phrases). */
         private function labelEmotions(string $raw): array
@@ -1591,10 +1430,14 @@ private function classifyIntents(string $raw): array
         'grounding','breathing exercise','breath exercise'
     ];
     $wantsCoping = false;
-    foreach ($coping as $p) {
-        if (preg_match('/\b'.$this->flex($p).'\b/u', $t)) {
-            $wantsCoping = true;
-            break;
+    if (preg_match('~/(offer_coping|wants_coping)~i', $t)) {
+        $wantsCoping = true;
+    } else {
+        foreach ($coping as $p) {
+            if (preg_match('/\b'.$this->flex($p).'\b/u', $t)) {
+                $wantsCoping = true;
+                break;
+            }
         }
     }
 
