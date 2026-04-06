@@ -571,18 +571,31 @@ if ($nonMental && !$unreadable) {
                 'text'    => "If it would help to talk later, you’re always welcome to come back. You can also book time with a school counselor here: {APPOINTMENT_LINK}",
                 'buttons' => [['title' => 'Book counselor', 'payload' => '{APPOINTMENT_LINK}']],
             ];
-        } elseif ($inVentWindow && !$askedForAppt) {
-            $stage = max(1, min(3, $ventTurns + 1));
-            $memory = $this->sessionService->getMemory($sessionId);
-            $previousTopic = $this->sessionService->getPrimaryTopic($memory);
-            $topic = $this->nluService->extractTopic($norm, $previousTopic, $memory);
-            $keywords = $this->nluService->extractKeyPhrases($norm);
-            
-            $replyText = $this->responseService->buildMemoryAwareResponse($first, $norm, $labels, $topic, $keywords, $stage, $memory);
-            $this->sessionService->updateMemory($sessionId, $topic, $keywords, $labels, $replyText);
-            
-            $botReplies[] = ['text' => $replyText];
-            session([$ventKey => $ventTurns + 1]);
+        } elseif (($inVentWindow || $msgRisk === 'moderate') && !$askedForAppt) {
+            if ($msgRisk === 'moderate') {
+                // 🏁 Immediate Transition for distress
+                $botReplies[] = ['text' => "I hear you, {$first}, and I’m really glad you’re sharing this with me. Since you're feeling this way, I want to make sure you have some practical support right now."];
+                $botReplies[] = [
+                    'text'    => "Would you like to try some coping tips together, or would you prefer to book a time to talk with a school counselor? {APPOINTMENT_LINK}",
+                    'buttons' => [
+                        ['title' => 'Coping tips',   'payload' => '/offer_coping'],
+                        ['title' => 'Book counselor', 'payload' => '{APPOINTMENT_LINK}'],
+                    ],
+                ];
+                $this->logActivity('transition_offered', 'Offered coping/counseling for moderate distress', $sessionId);
+            } else {
+                $stage = max(1, min(3, $ventTurns + 1));
+                $memory = $this->sessionService->getMemory($sessionId);
+                $previousTopic = $this->sessionService->getPrimaryTopic($memory);
+                $topic = $this->nluService->extractTopic($t, $previousTopic, $memory);
+                $keywords = $this->nluService->extractKeyPhrases($t);
+                
+                $replyText = $this->responseService->buildMemoryAwareResponse($first, $t, $labels, $topic, $keywords, $stage, $memory);
+                $this->sessionService->updateMemory($sessionId, $topic, $keywords, $labels, $replyText);
+                
+                $botReplies[] = ['text' => $replyText];
+                session([$ventKey => $ventTurns + 1]);
+            }
         } elseif ($ventTurns >= 3 && !$askedForAppt) {
             // 🏁 Transition: Venting is done → offer coping or counseling
             $botReplies[] = ['text' => "I hear you, {$first}, and I’m really glad you’re sharing this with me. Since we’ve been talking for a bit, I want to make sure you have some practical support too."];
@@ -1161,22 +1174,40 @@ private function hasAnyWordExact(string $text, array $terms): bool
         $intentWords = ['wanna','want','plan','planning','think','thinking','feel','feel like','should','will','might','need','tryna','trying','balak','plano','gusto'];
         $actWords    = ['suicide','die','unalive','kill','myself','self','end','overdose','hang','jump','cut','harm','mamatay','magpakamatay','saktan'];
         
-        $tWords = explode(' ', $t);
-        $foundIntent = -1;
-        $foundAct = -1;
+        $tWords = explode(' ', mb_strtolower($t));
+        $lastIntent = -1;
+        $lastAct = -1;
 
         foreach ($tWords as $idx => $word) {
             $word = trim($word, ".,!?");
-            if ($foundIntent === -1 && in_array($word, $intentWords)) $foundIntent = $idx;
-            if ($foundAct === -1 && in_array($word, $actWords)) $foundAct = $idx;
+            if (in_array($word, $intentWords)) $lastIntent = $idx;
+            if (in_array($word, $actWords)) $lastAct = $idx;
             
-            if ($foundIntent !== -1 && $foundAct !== -1) {
-                if (abs($foundIntent - $foundAct) <= 8) {
+            if ($lastIntent !== -1 && $lastAct !== -1) {
+                if (abs($lastIntent - $lastAct) <= 8) {
                     return [
                         'level' => $negationShield ? 'moderate' : 'high',
                         'hits'  => ['intent_act_proximity']
                     ];
                 }
+            }
+        }
+
+        // -----------------------------------------------------------------
+        // 4) Despair / Hopelessness (MODERATE) -> Trigger Coping Tips
+        // -----------------------------------------------------------------
+        $despairPhrases = [
+            'dont know what to do', 'don\'t know what to do', 'no idea what to do',
+            'losing hope', 'lost hope', 'give up', 'tired of everything',
+            'no one cares', 'nobody cares', 'alone in this',
+            'stress anymore', 'cannot go on', 'can\'t go on'
+        ];
+        foreach ($despairPhrases as $dp) {
+            if (stripos($t, $dp) !== false) {
+                return [
+                    'level' => 'moderate',
+                    'hits'  => ['despair_phrase'],
+                ];
             }
         }
 
