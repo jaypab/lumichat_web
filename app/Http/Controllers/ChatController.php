@@ -298,6 +298,7 @@ public function store(Request $request)
     $nonMental = !$unreadable && $this->isNonMentalTopic($norm, $labels, $riskStruct, $flags);
 
     // ===== 3.a) Save user message (idempotent) =====
+    $storedText = $analysisText;
     try {
         $userMsg = Chat::firstOrCreate(
             ['idempotency_key' => $idem],
@@ -482,6 +483,7 @@ if ($nonMental && !$unreadable) {
     $moderateHits  = (int) session($modKey, 0);
     $autoCopingTrigger = ($moderateHits > 0 && $moderateHits % 5 === 0);
 
+    $intent = trim($text); // 👈 Use raw payload (e.g. /offer_coping) for button handling
     $askedForAppt =
         ($flags['wants_appointment'] ?? false)
         || (($flags['yes'] ?? false) && $lastIntent === 'offer_appointment')
@@ -560,20 +562,28 @@ if ($nonMental && !$unreadable) {
     if ($msgRisk === 'high' && !$askedForAppt) {
         $botReplies = $this->crisisResponse($first);
         \Log::info('[CRISIS_FLOW] Triggered crisis response', ['session_id' => $sessionId, 'user' => $first]);
+    } elseif (
+        ($intent === '/offer_coping') || ($flags['wants_coping'] ?? false) || (($flags['yes'] ?? false) && $lastIntent === 'offer_coping') || ($autoCopingTrigger ?? false)
+    ) {
+        // 🎯 Explicit Coping Request (PRIORITY)
+        $botReplies = $this->generateCopingResponse($first);
+        session(['chat_stage' => 'coping']);
+        session()->forget([$ventKey, 'venting_active', 'venting_history']);
+        $this->logActivity('coping_started', 'User started coping tips flow', $sessionId);
     } else {
         if ($unreadable) {
             $botReplies[] = [
-                'text'    => "I’m not sure I understood that, {USER_FIRST}. Could you say it in a simpler or clearer way so I can support you better?",
+                'text'    => "I’m not sure I understood that, {$first}. Could you say it in a simpler or clearer way so I can support you better?",
             ];
         } elseif (($flags['refused_to_share'] ?? false)) {
-            $botReplies[] = ['text' => "It’s completely okay if you’re not ready to share right now, {USER_FIRST}. You’re not alone here, and there’s no pressure."];
+            $botReplies[] = ['text' => "It’s completely okay if you’re not ready to share right now, {$first}. You’re not alone here, and there’s no pressure."];
             $botReplies[] = [
                 'text'    => "If it would help to talk later, you’re always welcome to come back. You can also book time with a school counselor here: {APPOINTMENT_LINK}",
                 'buttons' => [['title' => 'Book counselor', 'payload' => '{APPOINTMENT_LINK}']],
             ];
         } elseif (($inVentWindow || $msgRisk === 'moderate') && !$askedForAppt) {
             if ($msgRisk === 'moderate') {
-                // 🏁 Immediate Transition for distress
+                // 🏁 Immediate Transition offer for distress
                 $botReplies[] = ['text' => "I hear you, {$first}, and I’m really glad you’re sharing this with me. Since you're feeling this way, I want to make sure you have some practical support right now."];
                 $botReplies[] = [
                     'text'    => "Would you like to try some coping tips together, or would you prefer to book a time to talk with a school counselor? {APPOINTMENT_LINK}",
@@ -597,7 +607,7 @@ if ($nonMental && !$unreadable) {
                 session([$ventKey => $ventTurns + 1]);
             }
         } elseif ($ventTurns >= 3 && !$askedForAppt) {
-            // 🏁 Transition: Venting is done → offer coping or counseling
+            // 🏁 Auto-Transition offer after venting
             $botReplies[] = ['text' => "I hear you, {$first}, and I’m really glad you’re sharing this with me. Since we’ve been talking for a bit, I want to make sure you have some practical support too."];
             $botReplies[] = [
                 'text'    => "Would you like to try some coping tips together, or would you prefer to book a time to talk with a school counselor? {APPOINTMENT_LINK}",
@@ -607,17 +617,10 @@ if ($nonMental && !$unreadable) {
                 ],
             ];
             $this->logActivity('transition_offered', 'Offered coping/counseling after venting', $sessionId);
-        } elseif (
-            ($intent === '/offer_coping') || ($flags['wants_coping'] ?? false) || (($flags['yes'] ?? false) && $lastIntent === 'offer_coping') || ($autoCopingTrigger ?? false)
-        ) {
-            $botReplies = $this->generateCopingResponse($first);
-            session(['chat_stage' => 'coping']);
-            // Clear venting history to save memory/CPU
-            session()->forget([$ventKey, 'venting_active', 'venting_history']);
-            $this->logActivity('coping_started', 'User started coping tips flow', $sessionId);
         } else {
             $callRasa = true;
         }
+    }
 
         if ($callRasa) {
             $rasaUrl = $this->rasaWebhookUrl();
@@ -646,7 +649,6 @@ if ($nonMental && !$unreadable) {
                 }
             } catch (\Throwable $e) {}
         }
-    }
 
     // ===== 7) Risk elevation logging =====
     $current = $session->risk_level ?: 'low';
@@ -1268,7 +1270,7 @@ private function hasAnyWordExact(string $text, array $terms): bool
                     'buttons' => []
                 ],
                 [
-                    'text' => "✨ **1. Butterfly Hug**\nCross your arms over your chest and hook your thumbs. Slowly alternate tapping your hands on your shoulders (like butterfly wings). Breathe slowly while doing this.\n\n🌊 **2. 5-4-3-2-1 Grounding**\nObserve your surroundings and name:\n- 5 things you see\n- 4 things you can touch\n- 3 things you hear\n- 2 things you can smell\n- 1 thing you can taste\n\n🌬️ **3. Square Breathing**\nInhale for 4 seconds, hold for 4, exhale for 4, and hold for 4. Repeat until your heart rate slows down.",
+                    'text' => "✨ **1. Butterfly Hug**\nCross your arms over your chest and hook your thumbs. Slowly alternate tapping your hands on your shoulders (like butterfly wings). Breathe slowly while doing this.\n\n🌊 **2. 5-4-3-2-1 Grounding**\nObserve your surroundings and name:\n- 5 things you see\n- 4 things you can touch\n- 3 things you hear\n- 2 things you can smell\n- 1 thing you can taste\n\n🌬️ **3. Square Breathing**\nInhale for 4 seconds, hold for 4, exhale for 4, and hold for 4. Repeat until your heart rate slows down.\n\nI hope these help you feel a bit more grounded. If you feel like you need more support, you can always talk to a school counselor. Would you like to book a time to talk now?",
                     'buttons' => [
                         ['title' => 'Talk to a Counselor', 'payload' => '{APPOINTMENT_LINK}'],
                         ['title' => 'Maybe later', 'payload' => 'exit_chat']
